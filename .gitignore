@@ -1,0 +1,9 @@
+.electron-cache/
+.npm-cache/
+.vite/
+node_modules/
+test-results/
+startup.log
+dist/
+coverage/
+*.log

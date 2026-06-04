@@ -1,0 +1,5 @@
+dist
+.vite
+node_modules
+docs
+test-results
