@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 
+import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
+import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 
 let mainWindow: BrowserWindow | null = null;
@@ -33,6 +35,13 @@ const createWindow = () => {
 
 app.setName('IndicoInk');
 
+const logStartupError = (source: string) => (error: unknown) => {
+  appendStartupLogEntry(app.getPath('userData'), source, error);
+};
+
+process.on('uncaughtException', logStartupError('uncaughtException'));
+process.on('unhandledRejection', logStartupError('unhandledRejection'));
+
 ipcMain.handle(
   'app:get-info',
   (): AppInfo => ({
@@ -43,6 +52,7 @@ ipcMain.handle(
 );
 
 app.whenReady().then(() => {
+  assertLaunchArtifacts(getLaunchArtifacts(__dirname, MAIN_WINDOW_VITE_NAME));
   createWindow();
 
   app.on('activate', () => {
