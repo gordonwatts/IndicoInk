@@ -12,6 +12,8 @@ export const external = [
   ...Object.keys(packageJson.dependencies || {}),
 ];
 
+const viteDevServerUrls = {};
+
 export const getBuildConfig = (env) => {
   const { root, mode, command } = env;
   return {
@@ -28,13 +30,25 @@ export const getBuildConfig = (env) => {
 };
 
 export const getBuildDefine = (env) => {
-  void env;
-  return {
-    MAIN_WINDOW_VITE_DEV_SERVER_URL: JSON.stringify(
-      process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL || '',
-    ),
-    MAIN_WINDOW_VITE_NAME: JSON.stringify('main_window'),
-  };
+  const { command, forgeConfig } = env;
+  const names = forgeConfig.renderer
+    .filter(({ name }) => name != null)
+    .map(({ name }) => name);
+  const define = {};
+
+  for (const name of names) {
+    const upperName = name.toUpperCase().replaceAll('-', '_');
+    const viteDevServerKey = `${upperName}_VITE_DEV_SERVER_URL`;
+    const viteNameKey = `${upperName}_VITE_NAME`;
+
+    define[viteDevServerKey] =
+      command === 'serve'
+        ? JSON.stringify(viteDevServerUrls[viteDevServerKey] ?? '')
+        : undefined;
+    define[viteNameKey] = JSON.stringify(name);
+  }
+
+  return define;
 };
 
 export const pluginHotRestart = (event) => ({
@@ -72,6 +86,16 @@ export const pluginExposeRenderer = (name) => ({
         },
       },
     };
+  },
+  configureServer(server) {
+    server.httpServer?.once('listening', () => {
+      const address = server.httpServer?.address();
+      if (typeof address === 'object' && address && 'port' in address) {
+        const upperName = name.toUpperCase().replaceAll('-', '_');
+        viteDevServerUrls[`${upperName}_VITE_DEV_SERVER_URL`] =
+          `http://localhost:${address.port}`;
+      }
+    });
   },
 });
 
