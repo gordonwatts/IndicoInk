@@ -517,19 +517,29 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
               const marker =
                 pointerMarker?.pageIndex === index ? pointerMarker : null;
               const strokeSegments = pageStrokes.flatMap((stroke) =>
-                createStrokeSegmentList(stroke.points, pageSize).map((segment, segmentIndex) => (
-                  <line
-                    key={`${stroke.id}-${segmentIndex}`}
-                    x1={segment.x1}
-                    y1={segment.y1}
-                    x2={segment.x2}
-                    y2={segment.y2}
-                    stroke="#111111"
-                    strokeWidth={segment.width}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )),
+                stroke.points.length === 1
+                  ? [
+                      <circle
+                        key={`${stroke.id}-point`}
+                        cx={stroke.points[0]!.x * (pageSize.width || 1)}
+                        cy={stroke.points[0]!.y * (pageSize.height || 1)}
+                        r={stroke.points[0]!.pressure > 0 ? 2.5 + stroke.points[0]!.pressure * 2 : 3}
+                        fill="#111111"
+                      />,
+                    ]
+                  : createStrokeSegmentList(stroke.points, pageSize).map((segment, segmentIndex) => (
+                      <line
+                        key={`${stroke.id}-${segmentIndex}`}
+                        x1={segment.x1}
+                        y1={segment.y1}
+                        x2={segment.x2}
+                        y2={segment.y2}
+                        stroke="#111111"
+                        strokeWidth={segment.width}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )),
               );
 
               return (
