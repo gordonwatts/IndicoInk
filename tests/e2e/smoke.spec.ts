@@ -3,12 +3,14 @@ import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const electronCacheRoot = resolve('.electron-cache');
+
 test('launches and closes the Electron app', async () => {
   const buildEnv = {
     ...process.env,
-    ELECTRON_CONFIG_CACHE: 'D:\\Code\\llm\\IndicoInk\\.electron-cache',
-    electron_config_cache: 'D:\\Code\\llm\\IndicoInk\\.electron-cache',
-    ELECTRON_CACHE: 'D:\\Code\\llm\\IndicoInk\\.electron-cache',
+    ELECTRON_CONFIG_CACHE: electronCacheRoot,
+    electron_config_cache: electronCacheRoot,
+    ELECTRON_CACHE: electronCacheRoot,
   };
 
   execSync('npx vite build --config vite.main.config.mjs', {
@@ -49,9 +51,9 @@ test('launches and closes the Electron app', async () => {
     args: ['.vite/build/main.js'],
     env: {
       ...process.env,
-      ELECTRON_CONFIG_CACHE: 'D:\\Code\\llm\\IndicoInk\\.electron-cache',
-      electron_config_cache: 'D:\\Code\\llm\\IndicoInk\\.electron-cache',
-      ELECTRON_CACHE: 'D:\\Code\\llm\\IndicoInk\\.electron-cache',
+      ELECTRON_CONFIG_CACHE: electronCacheRoot,
+      electron_config_cache: electronCacheRoot,
+      ELECTRON_CACHE: electronCacheRoot,
     },
   });
   await app.evaluate(({ app }) => app.quit());
