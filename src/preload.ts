@@ -8,12 +8,17 @@ const getAppInfo = async (): Promise<AppInfo> =>
 
 const openPdf = async (): Promise<PdfSelection> => ipcRenderer.invoke('pdf:open');
 
+const readPdfBytes = async (filePath: string): Promise<Uint8Array> =>
+  ipcRenderer.invoke('pdf:read', filePath);
+
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
   openPdf,
+  readPdfBytes,
 });
 
 export type IndicoInkApi = {
   getAppInfo: () => Promise<AppInfo>;
   openPdf: () => Promise<PdfSelection>;
+  readPdfBytes: (filePath: string) => Promise<Uint8Array>;
 };

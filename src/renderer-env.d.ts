@@ -6,6 +6,7 @@ declare global {
     indicoInk: {
       getAppInfo: () => Promise<AppInfo>;
       openPdf: () => Promise<PdfSelection>;
+      readPdfBytes: (filePath: string) => Promise<Uint8Array>;
     };
   }
 }

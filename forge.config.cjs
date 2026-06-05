@@ -1,10 +1,19 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const { readdirSync } = require('node:fs');
+const { join } = require('node:path');
+
+const electronCacheRoot = join(__dirname, '.electron-cache');
+const electronZipDir = readdirSync(electronCacheRoot, { withFileTypes: true })
+  .find((entry) => entry.isDirectory())?.name;
 
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 module.exports = {
   packagerConfig: {
     asar: true,
+    electronZipDir: electronZipDir
+      ? join(electronCacheRoot, electronZipDir)
+      : undefined,
   },
   rebuildConfig: {},
   makers: [

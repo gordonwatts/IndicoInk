@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
@@ -15,7 +16,7 @@ const getMainWindowDevServerUrl = () =>
   '';
 
 const getPackagedRendererPath = () =>
-  join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+  join(app.getAppPath(), `.vite/renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
 
 const logStartupEvent = (source: string, detail: string) => {
   appendStartupLogEntry(app.getPath('userData'), source, detail);
@@ -103,6 +104,10 @@ ipcMain.handle(
 
 ipcMain.handle('pdf:open', async () =>
   openPdfSelection((options) => dialog.showOpenDialog(options)),
+);
+
+ipcMain.handle('pdf:read', async (_event, filePath: string) =>
+  new Uint8Array(await readFile(filePath)),
 );
 
 app.whenReady().then(() => {

@@ -644,6 +644,68 @@ input:focus-visible {
   padding: 22px;
 }
 
+.pdf-preview {
+  display: grid;
+  gap: 16px;
+}
+
+.pdf-preview-stage {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  overflow: auto;
+  border-radius: 18px;
+  background: var(--surface-panel-muted);
+  border: 1px solid rgba(58, 67, 81, 0.08);
+}
+
+.pdf-preview-pages {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+}
+
+.pdf-preview-page {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.pdf-preview-page-caption {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.pdf-preview-sheet {
+  position: relative;
+  display: grid;
+  grid-template: 1fr / 1fr;
+  justify-items: center;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(36, 46, 61, 0.12);
+}
+
+.pdf-preview-sheet > canvas,
+.pdf-preview-sheet > svg {
+  grid-area: 1 / 1;
+}
+
+.pdf-preview-canvas {
+  display: block;
+  max-width: none;
+  border-radius: 12px;
+}
+
+.pdf-preview-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .surface-panel-header {
   display: grid;
   gap: 4px;

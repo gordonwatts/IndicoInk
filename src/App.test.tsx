@@ -16,6 +16,7 @@ describe('App', () => {
         canceled: true,
         filePath: null,
       }),
+      readPdfBytes: vi.fn().mockResolvedValue(new Uint8Array()),
     };
   });
 

@@ -14,6 +14,7 @@ import {
   StatusLabel,
   ThemePreview,
 } from './ui';
+import { PdfPreview } from './PdfPreview';
 
 type Destination = 'library' | 'agenda' | 'bookmarks' | 'annotated' | 'settings';
 
@@ -184,6 +185,7 @@ export function App() {
     'https://indico.example.org/event/indicoink-design-summit',
   );
   const [pdfSelectionStatus, setPdfSelectionStatus] = React.useState<string | null>(null);
+  const [selectedPdfPath, setSelectedPdfPath] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
 
   React.useEffect(() => {
@@ -195,12 +197,19 @@ export function App() {
 
   const handleOpenPdf = async () => {
     const selection = await window.indicoInk.openPdf();
+    if (selection.canceled) {
+      setPdfSelectionStatus('Open PDF canceled');
+      return;
+    }
+
+    if (selection.filePath) {
+      setSelectedPdfPath(selection.filePath);
+      setPdfSelectionStatus(`Selected PDF: ${selection.filePath}`);
+      return;
+    }
+
     setPdfSelectionStatus(
-      selection.canceled
-        ? 'Open PDF canceled'
-        : selection.filePath
-          ? `Selected PDF: ${selection.filePath}`
-          : 'Open PDF returned no file',
+      'Open PDF returned no file',
     );
   };
 
@@ -318,6 +327,10 @@ export function App() {
                     <EventSummaryRow key={event.title} event={event} />
                   ))}
                 </div>
+              </section>
+
+              <section className="surface-panel" aria-label="PDF preview">
+                <PdfPreview filePath={selectedPdfPath} />
               </section>
             </section>
           )}
