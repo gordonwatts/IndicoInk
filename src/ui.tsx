@@ -123,7 +123,7 @@ export function PrimaryButton({
     <button
       className={`primary-button${className ? ` ${className}` : ''}`}
       type="button"
-      title={title}
+      title={title ?? (typeof children === 'string' ? children : undefined)}
       onClick={onClick}
     >
       {icon ? <Icon name={icon} /> : null}
@@ -193,13 +193,14 @@ export function SegmentedControl<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="segmented-control" role="tablist" aria-label="View filter">
+    <div className="segmented-control" role="group" aria-label="View filter">
       {options.map((option) => (
         <button
           key={option.value}
           className={`segmented-control-option${value === option.value ? ' is-selected' : ''}`}
           type="button"
           aria-pressed={value === option.value}
+          title={option.label}
           onClick={() => onChange(option.value)}
         >
           {option.label}
@@ -235,11 +236,14 @@ export function DetailsSurface({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const titleId = React.useId();
+  const subtitleId = React.useId();
+
   return (
-    <section className="details-surface">
+    <section className="details-surface" aria-labelledby={titleId} aria-describedby={subtitle ? subtitleId : undefined}>
       <div className="details-surface-header">
-        <h2>{title}</h2>
-        {subtitle ? <p>{subtitle}</p> : null}
+        <h2 id={titleId}>{title}</h2>
+        {subtitle ? <p id={subtitleId}>{subtitle}</p> : null}
       </div>
       {children}
     </section>
@@ -257,14 +261,23 @@ export function DialogSurface({
   primaryLabel: string;
   secondaryLabel: string;
 }) {
+  const titleId = React.useId();
+  const bodyId = React.useId();
+
   return (
-    <section className="dialog-surface" role="dialog" aria-modal="false">
+    <section
+      className="dialog-surface"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      aria-describedby={bodyId}
+    >
       <div className="dialog-surface-header">
         <div className="dialog-surface-title">
           <Icon name="dialog" />
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
         </div>
-        <p>{body}</p>
+        <p id={bodyId}>{body}</p>
       </div>
       <div className="dialog-surface-actions">
         <button className="secondary-button" type="button">

@@ -45,6 +45,11 @@ describe('App', () => {
         name: 'Settings',
       }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Search',
+      }).getAttribute('title'),
+    ).toBe('Search');
 
     expect(
       screen.getByRole('heading', {
@@ -64,5 +69,33 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(screen.getByText('Current event active')).toBeTruthy();
+  });
+
+  it('supports keyboard navigation into the shell destinations', async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', {
+        name: 'Library',
+      }),
+    );
+
+    await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', {
+        name: 'Agenda',
+      }),
+    );
+
+    await user.keyboard('{Enter}');
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Event agenda',
+      }),
+    ).toBeTruthy();
   });
 });
