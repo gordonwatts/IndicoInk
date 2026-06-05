@@ -1,0 +1,67 @@
+%PDF-1.4
+% IndicoInk fixtures
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 2532 >>
+stream
+BT
+/F1 18 Tf
+72 730 Td
+(Text-heavy fixture) Tj
+0 -24 Td
+/F1 10 Tf
+0 -18 Td (Line 01: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 02: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 03: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 04: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 05: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 06: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 07: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 08: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 09: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 10: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 11: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 12: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 13: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 14: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 15: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 16: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 17: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 18: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 19: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 20: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 21: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 22: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 23: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 24: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 25: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 26: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 27: repeated talk-title and metadata text for layout stress testing.) Tj
+0 -18 Td (Line 28: repeated talk-title and metadata text for layout stress testing.) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Type /Page /Parent 4 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >>  >> /Contents 2 0 R >>
+endobj
+4 0 obj
+<< /Type /Pages /Count 1 /Kids [ 3 0 R ] >>
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 4 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000030 00000 n 
+0000000100 00000 n 
+0000002684 00000 n 
+0000002811 00000 n 
+0000002870 00000 n 
+trailer
+<< /Size 6 /Root 5 0 R >>
+startxref
+2919
+%%EOF
