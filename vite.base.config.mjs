@@ -31,7 +31,10 @@ export const getBuildConfig = (env) => {
 
 export const getBuildDefine = (env) => {
   const { command, forgeConfig } = env;
-  const names = forgeConfig.renderer
+  const rendererConfigs = forgeConfig?.renderer?.length
+    ? forgeConfig.renderer
+    : [{ name: 'main_window' }];
+  const names = rendererConfigs
     .filter(({ name }) => name != null)
     .map(({ name }) => name);
   const define = {};
