@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
@@ -14,16 +15,54 @@ describe('App', () => {
     };
   });
 
-  it('renders the app shell and preload-backed runtime info', async () => {
+  it('renders the V1 shell with reachable destinations', async () => {
+    const user = userEvent.setup();
+
     render(<App />);
 
     expect(
-      screen.getByRole('heading', {
-        name: 'Conference notes for slide decks.',
+      screen.getByRole('button', {
+        name: 'Library',
       }),
     ).toBeTruthy();
-    expect(await screen.findByText('IndicoInk')).toBeTruthy();
-    expect(await screen.findByText('0.1.0')).toBeTruthy();
-    expect(await screen.findByText('42.3.2')).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Agenda',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Bookmarks',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Annotated',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Settings',
+      }),
+    ).toBeTruthy();
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Open a conference event',
+      }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Agenda',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Event agenda',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('Current event active')).toBeTruthy();
   });
 });
