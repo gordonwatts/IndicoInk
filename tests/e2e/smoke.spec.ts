@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const electronCacheRoot = resolve('.electron-cache');
+const electronDistPath = resolve('node_modules/electron/dist');
 
 test('launches and closes the Electron app', async () => {
   const buildEnv = {
@@ -11,6 +12,7 @@ test('launches and closes the Electron app', async () => {
     ELECTRON_CONFIG_CACHE: electronCacheRoot,
     electron_config_cache: electronCacheRoot,
     ELECTRON_CACHE: electronCacheRoot,
+    ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
   };
 
   execSync('npx vite build --config vite.main.config.mjs', {
@@ -54,6 +56,7 @@ test('launches and closes the Electron app', async () => {
       ELECTRON_CONFIG_CACHE: electronCacheRoot,
       electron_config_cache: electronCacheRoot,
       ELECTRON_CACHE: electronCacheRoot,
+      ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
     },
   });
   await app.evaluate(({ app }) => app.quit());
