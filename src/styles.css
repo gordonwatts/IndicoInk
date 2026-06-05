@@ -725,6 +725,7 @@ input:focus-visible {
   border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 10px 24px rgba(36, 46, 61, 0.12);
+  touch-action: pan-x pan-y;
 }
 
 .pdf-preview-sheet > canvas,
@@ -764,6 +765,21 @@ input:focus-visible {
 
 .pdf-preview-overlay.ink-layer.unknown {
   opacity: 0.01;
+}
+
+.pdf-preview-pointer-marker {
+  fill: rgba(15, 23, 42, 0.12);
+  stroke: rgba(15, 23, 42, 0.75);
+  stroke-width: 1.5;
+}
+
+.pdf-preview-pointer-marker.pen {
+  fill: rgba(15, 23, 42, 0.1);
+}
+
+.pdf-preview-pointer-marker.eraser {
+  fill: rgba(239, 68, 68, 0.08);
+  stroke: rgba(239, 68, 68, 0.82);
 }
 
 .surface-panel-header {

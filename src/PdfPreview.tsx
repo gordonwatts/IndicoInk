@@ -8,6 +8,12 @@ import {
   type PointerSample,
   type PointerTool,
 } from './pointerTools';
+import { toNormalizedPagePoint, type NormalizedPagePoint, type PageSize } from './inkGeometry';
+import {
+  createStrokeSegmentList,
+  strokeHitsPoint,
+  type InkStroke,
+} from './strokeTools';
 import { StatusLabel } from './ui';
 
 type PdfPreviewState =
@@ -41,6 +47,26 @@ type PointerDiagnostics = {
   overlayClass: string;
 };
 
+type PointerMarker = {
+  pageIndex: number;
+  point: NormalizedPagePoint;
+  tool: PointerTool;
+};
+
+type ActiveInkAction =
+  | {
+      kind: 'draw';
+      pointerId: number;
+      pageIndex: number;
+      strokeId: string;
+    }
+  | {
+      kind: 'erase';
+      pointerId: number;
+      pageIndex: number;
+    }
+  | null;
+
 const getFileName = (filePath: string) => {
   const normalized = filePath.replaceAll('\\', '/');
   return normalized.slice(normalized.lastIndexOf('/') + 1);
@@ -51,6 +77,9 @@ const waitForNextFrame = () =>
 
 const createPageSizes = (pageCount: number) =>
   Array.from({ length: pageCount }, () => ({ width: 0, height: 0 }));
+
+const createEmptyStrokePages = (pageCount: number) =>
+  Array.from({ length: pageCount }, () => [] as InkStroke[]);
 
 const createIdlePointerDiagnostics = (): PointerDiagnostics => ({
   eventKind: 'idle',
@@ -75,6 +104,24 @@ const toPointerSample = (event: React.PointerEvent<HTMLDivElement>): PointerSamp
   isPrimary: event.isPrimary,
 });
 
+const getPagePoint = (
+  event: React.PointerEvent<HTMLElement>,
+  pageSize: PageSize,
+): NormalizedPagePoint => {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const relativePoint = {
+    x: event.clientX - bounds.left,
+    y: event.clientY - bounds.top,
+    pressure: event.pressure,
+    time: event.timeStamp,
+  };
+
+  return toNormalizedPagePoint(relativePoint, pageSize);
+};
+
+const createStrokeId = () =>
+  `stroke-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+
 export function PdfPreview({ filePath }: { filePath: string | null }) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [pointerDiagnostics, setPointerDiagnostics] = React.useState<PointerDiagnostics>(
@@ -82,6 +129,9 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   );
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
   const latchedToolRef = React.useRef<PointerTool | null>(null);
+  const activeInkActionRef = React.useRef<ActiveInkAction>(null);
+  const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>([]);
+  const [pointerMarker, setPointerMarker] = React.useState<PointerMarker | null>(null);
 
   const updatePointerDiagnostics = React.useCallback(
     (eventKind: PointerEventKind, event: React.PointerEvent<HTMLDivElement>) => {
@@ -124,6 +174,133 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     [updatePointerDiagnostics],
   );
 
+  const updateStrokePage = React.useCallback(
+    (pageIndex: number, updater: (currentStrokes: InkStroke[]) => InkStroke[]) => {
+      setStrokesByPage((currentPages) =>
+        currentPages.map((pageStrokes, currentIndex) =>
+          currentIndex === pageIndex ? updater(pageStrokes) : pageStrokes,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handlePagePointerEvent = React.useCallback(
+    (pageIndex: number, eventKind: PointerEventKind) =>
+      (event: React.PointerEvent<HTMLDivElement>) => {
+        const pageSize = state.kind === 'loading' || state.kind === 'ready'
+          ? state.pageSizes[pageIndex]
+          : undefined;
+
+        if (!pageSize || pageSize.width <= 0 || pageSize.height <= 0) {
+          handlePointerEvent(eventKind)(event);
+          return;
+        }
+
+        handlePointerEvent(eventKind)(event);
+
+        const sample = toPointerSample(event);
+        const toolState = createPointerToolState(sample, eventKind, latchedToolRef.current);
+        const pagePoint = getPagePoint(event, pageSize);
+        const shouldShowMarker =
+          toolState.renderedTool === 'pen' || toolState.renderedTool === 'eraser';
+
+        if (shouldShowMarker) {
+          setPointerMarker({
+            pageIndex,
+            point: pagePoint,
+            tool: toolState.renderedTool,
+          });
+        } else {
+          setPointerMarker(null);
+        }
+
+        if (eventKind === 'pointerdown') {
+          if (toolState.renderedTool === 'mouse' || toolState.renderedTool === 'pen') {
+            const strokeId = createStrokeId();
+            activeInkActionRef.current = {
+              kind: 'draw',
+              pointerId: event.pointerId,
+              pageIndex,
+              strokeId,
+            };
+            setStrokesByPage((currentPages) => {
+              const nextPages = currentPages.length ? [...currentPages] : createEmptyStrokePages(state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0);
+              const currentPageStrokes = nextPages[pageIndex] ?? [];
+              nextPages[pageIndex] = [
+                ...currentPageStrokes,
+                {
+                  id: strokeId,
+                  pageNumber: pageIndex + 1,
+                  points: [pagePoint],
+                },
+              ];
+              return nextPages;
+            });
+            return;
+          }
+
+          if (toolState.renderedTool === 'eraser') {
+            activeInkActionRef.current = {
+              kind: 'erase',
+              pointerId: event.pointerId,
+              pageIndex,
+            };
+            setStrokesByPage((currentPages) => {
+              const nextPages = currentPages.length ? [...currentPages] : createEmptyStrokePages(state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0);
+              nextPages[pageIndex] = (nextPages[pageIndex] ?? []).filter(
+                (stroke) => !strokeHitsPoint(stroke, pagePoint, pageSize),
+              );
+              return nextPages;
+            });
+          }
+        }
+
+        if (
+          eventKind === 'pointermove' &&
+          activeInkActionRef.current &&
+          activeInkActionRef.current.pointerId === event.pointerId
+        ) {
+          if (
+            activeInkActionRef.current.kind === 'draw' &&
+            activeInkActionRef.current.pageIndex === pageIndex
+          ) {
+            const currentStrokeId = activeInkActionRef.current.strokeId;
+            updateStrokePage(pageIndex, (currentStrokes) =>
+              currentStrokes.map((stroke) =>
+                stroke.id === currentStrokeId
+                  ? { ...stroke, points: [...stroke.points, pagePoint] }
+                  : stroke,
+              ),
+            );
+          }
+
+          if (
+            activeInkActionRef.current.kind === 'erase' &&
+            activeInkActionRef.current.pageIndex === pageIndex
+          ) {
+            updateStrokePage(pageIndex, (currentStrokes) =>
+              currentStrokes.filter((stroke) => !strokeHitsPoint(stroke, pagePoint, pageSize)),
+            );
+          }
+        }
+
+        if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+          if (
+            activeInkActionRef.current?.pointerId === event.pointerId &&
+            activeInkActionRef.current.pageIndex === pageIndex
+          ) {
+            activeInkActionRef.current = null;
+          }
+
+          if (pointerMarker?.pageIndex === pageIndex) {
+            setPointerMarker(null);
+          }
+        }
+      },
+    [handlePointerEvent, pointerMarker, state, updateStrokePage],
+  );
+
   React.useEffect(() => {
     let cancelled = false;
     let loadingTask: { promise: Promise<any>; destroy: () => Promise<void> | void } | null =
@@ -136,6 +313,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       if (!filePath) {
         pageCanvasRefs.current = [];
         setState({ kind: 'idle' });
+        setStrokesByPage([]);
+        setPointerMarker(null);
         return;
       }
 
@@ -166,6 +345,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
 
         const pageCount = document.numPages;
         pageCanvasRefs.current = Array.from({ length: pageCount }, () => null);
+        setStrokesByPage(createEmptyStrokePages(pageCount));
+        setPointerMarker(null);
         const pageSizes = createPageSizes(pageCount);
         setState({
           kind: 'loading',
@@ -324,15 +505,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         </div>
       </div>
 
-      <div
-        className="pdf-preview-stage"
-        onPointerEnter={handlePointerEvent('pointerenter')}
-        onPointerMove={handlePointerEvent('pointermove')}
-        onPointerDown={handlePointerEvent('pointerdown')}
-        onPointerUp={handlePointerEvent('pointerup')}
-        onPointerCancel={handlePointerEvent('pointercancel')}
-        onPointerLeave={handlePointerEvent('pointerleave')}
-      >
+      <div className="pdf-preview-stage">
         {state.kind === 'ready' || state.kind === 'loading' ? (
           <div className="pdf-preview-pages">
             {Array.from({ length: state.pageCount }, (_, index) => {
@@ -340,6 +513,24 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                 width: 1,
                 height: 1,
               };
+              const pageStrokes = strokesByPage[index] ?? [];
+              const marker =
+                pointerMarker?.pageIndex === index ? pointerMarker : null;
+              const strokeSegments = pageStrokes.flatMap((stroke) =>
+                createStrokeSegmentList(stroke.points, pageSize).map((segment, segmentIndex) => (
+                  <line
+                    key={`${stroke.id}-${segmentIndex}`}
+                    x1={segment.x1}
+                    y1={segment.y1}
+                    x2={segment.x2}
+                    y2={segment.y2}
+                    stroke="#111111"
+                    strokeWidth={segment.width}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )),
+              );
 
               return (
                 <figure key={index} className="pdf-preview-page">
@@ -350,6 +541,12 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                     className="pdf-preview-sheet"
                     data-rendered-tool={pointerDiagnostics.renderedTool}
                     style={{ cursor: pointerDiagnostics.cursor }}
+                    onPointerEnter={handlePagePointerEvent(index, 'pointerenter')}
+                    onPointerMove={handlePagePointerEvent(index, 'pointermove')}
+                    onPointerDown={handlePagePointerEvent(index, 'pointerdown')}
+                    onPointerUp={handlePagePointerEvent(index, 'pointerup')}
+                    onPointerCancel={handlePagePointerEvent(index, 'pointercancel')}
+                    onPointerLeave={handlePagePointerEvent(index, 'pointerleave')}
                   >
                     <canvas
                       ref={(element) => {
@@ -362,7 +559,30 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                       className={`pdf-preview-overlay ${pointerDiagnostics.overlayClass}`}
                       viewBox={`0 0 ${pageSize.width || 1} ${pageSize.height || 1}`}
                       preserveAspectRatio="none"
-                    />
+                    >
+                      {strokeSegments}
+                      {marker ? (
+                        marker.tool === 'pen' ? (
+                          <circle
+                            key="pointer-marker"
+                            cx={marker.point.x * (pageSize.width || 1)}
+                            cy={marker.point.y * (pageSize.height || 1)}
+                            r="8"
+                            className="pdf-preview-pointer-marker pen"
+                          />
+                        ) : (
+                          <rect
+                            key="pointer-marker"
+                            x={marker.point.x * (pageSize.width || 1) - 8}
+                            y={marker.point.y * (pageSize.height || 1) - 8}
+                            width="16"
+                            height="16"
+                            rx="3"
+                            className="pdf-preview-pointer-marker eraser"
+                          />
+                        )
+                      ) : null}
+                    </svg>
                   </div>
                 </figure>
               );
