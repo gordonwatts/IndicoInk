@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
+import { openPdfSelection } from './openPdf';
 import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 
@@ -98,6 +99,10 @@ ipcMain.handle(
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron ?? 'unknown',
   }),
+);
+
+ipcMain.handle('pdf:open', async () =>
+  openPdfSelection((options) => dialog.showOpenDialog(options)),
 );
 
 app.whenReady().then(() => {

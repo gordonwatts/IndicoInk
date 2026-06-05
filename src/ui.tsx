@@ -11,6 +11,7 @@ export type IconName =
   | 'refresh'
   | 'export'
   | 'event'
+  | 'open'
   | 'chevron'
   | 'check'
   | 'info'
@@ -34,6 +35,8 @@ const iconPaths: Record<IconName, string> = {
   export: 'M12 4.5 16 8.5h-2.75V14h-2.5V8.5H8L12 4.5Zm-6 11h12v2H6v-2Z',
   event:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Zm0 4h5v2H8v-2Z',
+  open:
+    'M7 5.5h10A1.5 1.5 0 0 1 18.5 7v10A1.5 1.5 0 0 1 17 18.5H7A1.5 1.5 0 0 1 5.5 17V7A1.5 1.5 0 0 1 7 5.5Zm0 2a.5.5 0 0 0-.5.5v9.5h11V8a.5.5 0 0 0-.5-.5H7Zm2 1.5h6v2H9V9Zm0 4h4v2H9v-2Z',
   chevron: 'M9.2 6.9 14.3 12l-5.1 5.1-1.4-1.4 3.7-3.7-3.7-3.7 1.4-1.4Z',
   check:
     'M10 16.2 5.8 12l1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2Z',

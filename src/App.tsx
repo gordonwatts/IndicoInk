@@ -183,6 +183,7 @@ export function App() {
   const [eventUrl, setEventUrl] = React.useState(
     'https://indico.example.org/event/indicoink-design-summit',
   );
+  const [pdfSelectionStatus, setPdfSelectionStatus] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
 
   React.useEffect(() => {
@@ -191,6 +192,17 @@ export function App() {
 
   const eventFocused =
     destination === 'agenda' || destination === 'bookmarks' || destination === 'annotated';
+
+  const handleOpenPdf = async () => {
+    const selection = await window.indicoInk.openPdf();
+    setPdfSelectionStatus(
+      selection.canceled
+        ? 'Open PDF canceled'
+        : selection.filePath
+          ? `Selected PDF: ${selection.filePath}`
+          : 'Open PDF returned no file',
+    );
+  };
 
   return (
     <div className="app-frame">
@@ -287,6 +299,12 @@ export function App() {
                   <PrimaryButton icon="event" className="large" onClick={() => setDestination('agenda')}>
                     Open event
                   </PrimaryButton>
+                  <PrimaryButton icon="open" className="large" onClick={handleOpenPdf}>
+                    Open PDF
+                  </PrimaryButton>
+                  {pdfSelectionStatus ? (
+                    <StatusLabel label={pdfSelectionStatus} tone="neutral" icon="info" />
+                  ) : null}
                 </div>
               </div>
 

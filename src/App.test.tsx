@@ -12,6 +12,10 @@ describe('App', () => {
         appVersion: '0.1.0',
         electronVersion: '42.3.2',
       }),
+      openPdf: vi.fn().mockResolvedValue({
+        canceled: true,
+        filePath: null,
+      }),
     };
   });
 
@@ -56,6 +60,13 @@ describe('App', () => {
         name: 'Open a conference event',
       }),
     ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open PDF',
+      }),
+    );
+    expect(window.indicoInk.openPdf).toHaveBeenCalledTimes(1);
 
     await user.click(
       screen.getByRole('button', {
