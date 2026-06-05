@@ -649,6 +649,46 @@ input:focus-visible {
   gap: 16px;
 }
 
+.pdf-preview-diagnostics {
+  display: grid;
+  gap: 10px;
+}
+
+.pdf-preview-diagnostics-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pdf-preview-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.92);
+  border: 1px solid rgba(58, 67, 81, 0.08);
+}
+
+.pdf-preview-diagnostics-grid div {
+  display: grid;
+  gap: 4px;
+}
+
+.pdf-preview-diagnostics-grid span {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pdf-preview-diagnostics-grid strong {
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 .pdf-preview-stage {
   min-height: 320px;
   display: grid;
@@ -704,6 +744,26 @@ input:focus-visible {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+.pdf-preview-overlay.ink-layer.mouse {
+  opacity: 0.01;
+}
+
+.pdf-preview-overlay.ink-layer.pen {
+  opacity: 0.01;
+}
+
+.pdf-preview-overlay.ink-layer.eraser {
+  opacity: 0.01;
+}
+
+.pdf-preview-overlay.ink-layer.touch {
+  opacity: 0.01;
+}
+
+.pdf-preview-overlay.ink-layer.unknown {
+  opacity: 0.01;
 }
 
 .surface-panel-header {

@@ -79,6 +79,16 @@ const createWindow = () => {
     logStartupEvent('window:render-process-gone', JSON.stringify(details));
   });
 
+  mainWindow.webContents.on(
+    'cursor-changed',
+    (_event, type, _image, scale, size, hotspot) => {
+      logStartupEvent(
+        'window:cursor-changed',
+        JSON.stringify({ type, scale, size, hotspot }),
+      );
+    },
+  );
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
