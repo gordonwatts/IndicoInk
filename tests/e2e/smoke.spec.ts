@@ -59,10 +59,6 @@ test('launches and closes the Electron app', async () => {
   const app = await electron.launch({
     executablePath: resolve('node_modules/electron/dist/electron.exe'),
     args: [
-      '--disable-gpu',
-      '--disable-gpu-compositing',
-      '--enable-unsafe-swiftshader',
-      '--use-angle=swiftshader',
       `--user-data-dir=${mkdtempSync(resolve(tmpdir(), 'indicoink-e2e-'))}`,
       '.vite/build/main.js',
     ],
@@ -72,7 +68,6 @@ test('launches and closes the Electron app', async () => {
       electron_config_cache: electronCacheRoot,
       ELECTRON_CACHE: electronCacheRoot,
       ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
-      INDICOINK_DISABLE_GPU: '1',
     },
   });
   await app.evaluate(({ app }) => app.quit());
