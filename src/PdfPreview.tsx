@@ -6,6 +6,7 @@ import {
   getPointerInteractionMode,
   getPointerOverlayClass,
   type PointerEventKind,
+  type PointerInteractionMode,
   type PointerSample,
   type PointerTool,
 } from './pointerTools';
@@ -20,7 +21,7 @@ import {
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
-import { StatusLabel } from './ui';
+import { SegmentedControl, StatusLabel } from './ui';
 
 type PdfPreviewState =
   | { kind: 'idle' }
@@ -49,6 +50,7 @@ type PointerDiagnostics = {
   resolvedTool: PointerTool;
   latchedTool: PointerTool | null;
   renderedTool: PointerTool;
+  interactionMode: PointerInteractionMode;
   cursor: string;
   overlayClass: string;
 };
@@ -81,6 +83,13 @@ type ActiveInkAction =
     }
   | null;
 
+type MouseMode = 'draw' | 'pan';
+
+const mouseModeOptions = [
+  { label: 'Draw', value: 'draw' as const },
+  { label: 'Pan', value: 'pan' as const },
+];
+
 const getFileName = (filePath: string) => {
   const normalized = filePath.replaceAll('\\', '/');
   return normalized.slice(normalized.lastIndexOf('/') + 1);
@@ -106,9 +115,18 @@ const createIdlePointerDiagnostics = (): PointerDiagnostics => ({
   resolvedTool: 'unknown',
   latchedTool: null,
   renderedTool: 'unknown',
+  interactionMode: 'none',
   cursor: getPointerCursor('unknown'),
   overlayClass: getPointerOverlayClass('unknown'),
 });
+
+const getPointerCursorForInteraction = (
+  renderedTool: PointerTool,
+  interactionMode: PointerInteractionMode,
+) =>
+  renderedTool === 'mouse' && interactionMode === 'pan'
+    ? 'default'
+    : getPointerCursor(renderedTool);
 
 const toPointerSample = (
   event: React.PointerEvent<HTMLDivElement>,
@@ -140,6 +158,7 @@ const createStrokeId = () =>
 
 export function PdfPreview({ filePath }: { filePath: string | null }) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
+  const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -164,13 +183,20 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         latchedToolRef.current,
       );
 
+      const interactionMode =
+        toolState.renderedTool === 'mouse'
+          ? mouseMode === 'draw'
+            ? 'draw'
+            : 'pan'
+          : getPointerInteractionMode(toolState.renderedTool);
+
       return {
         sample,
         toolState,
-        interactionMode: getPointerInteractionMode(toolState.renderedTool),
+        interactionMode,
       };
     },
-    [],
+    [mouseMode],
   );
 
   const updatePointerDiagnostics = React.useCallback(
@@ -178,7 +204,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       eventKind: PointerEventKind,
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
-      const { sample, toolState } = resolvePointerInteraction(eventKind, event);
+      const { sample, toolState, interactionMode } = resolvePointerInteraction(
+        eventKind,
+        event,
+      );
 
       latchedToolRef.current = toolState.latchedTool;
       setPointerDiagnostics({
@@ -192,7 +221,11 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         resolvedTool: toolState.resolvedTool,
         latchedTool: toolState.latchedTool,
         renderedTool: toolState.renderedTool,
-        cursor: getPointerCursor(toolState.renderedTool),
+        interactionMode,
+        cursor: getPointerCursorForInteraction(
+          toolState.renderedTool,
+          interactionMode,
+        ),
         overlayClass: getPointerOverlayClass(toolState.renderedTool),
       });
     },
@@ -546,6 +579,14 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   }, [filePath]);
 
   const pointerToolLabel = pointerDiagnostics.renderedTool;
+  const pointerModeLabel =
+    pointerDiagnostics.resolvedTool === 'mouse'
+      ? mouseMode
+      : pointerDiagnostics.interactionMode;
+  const pointerCursorLabel =
+    pointerDiagnostics.resolvedTool === 'mouse'
+      ? getPointerCursorForInteraction('mouse', mouseMode)
+      : pointerDiagnostics.cursor;
 
   return (
     <section className="pdf-preview" aria-label="PDF preview">
@@ -568,6 +609,18 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         />
       )}
 
+      <div className="pdf-preview-toolbar" aria-label="Mouse drawing mode">
+        <div className="surface-panel-header">
+          <h4>Input mode</h4>
+          <p>Mouse input can stay in draw mode or pan the document.</p>
+        </div>
+        <SegmentedControl
+          options={mouseModeOptions}
+          value={mouseMode}
+          onChange={setMouseMode}
+        />
+      </div>
+
       <div className="pdf-preview-diagnostics" aria-label="Pointer diagnostics">
         <div className="pdf-preview-diagnostics-row">
           <StatusLabel
@@ -575,10 +628,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             tone={pointerToolLabel === 'eraser' ? 'warning' : 'neutral'}
             icon={pointerToolLabel === 'eraser' ? 'annotated' : 'info'}
           />
-          <StatusLabel
-            label={`Cursor: ${pointerDiagnostics.cursor}`}
-            icon="info"
-          />
+          <StatusLabel label={`Mode: ${pointerModeLabel}`} icon="info" />
+          <StatusLabel label={`Cursor: ${pointerCursorLabel}`} icon="info" />
           <StatusLabel
             label={`SVG class: ${pointerDiagnostics.overlayClass}`}
             icon="info"
@@ -620,6 +671,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           <div>
             <span>Latched</span>
             <strong>{pointerDiagnostics.latchedTool ?? 'none'}</strong>
+          </div>
+          <div>
+            <span>Mode</span>
+            <strong>{pointerModeLabel}</strong>
           </div>
         </div>
       </div>

@@ -715,6 +715,29 @@ input:focus-visible {
   gap: 16px;
 }
 
+.pdf-preview-toolbar {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--surface-panel-strong);
+  border: 1px solid var(--border-subtle);
+}
+
+.pdf-preview-toolbar .surface-panel-header {
+  margin-bottom: 0;
+}
+
+.pdf-preview-toolbar .surface-panel-header h4 {
+  margin: 0;
+  font-size: var(--font-size-talk-title);
+  line-height: var(--line-height-tight);
+}
+
+.pdf-preview-toolbar .surface-panel-header p {
+  margin: 0;
+}
+
 .pdf-preview-diagnostics {
   display: grid;
   gap: 10px;
