@@ -31,3 +31,5 @@
 - The app is using Electron Forge with Vite, TypeScript, React, and npm.
 - The startup and packaging flow still needs more diagnostics before the later PDF and persistence work lands.
 - Any future local-data layout should be documented only after the implementation is validated.
+- Dev launches now support an isolated `userData` directory via `INDICOINK_ISOLATED_USER_DATA=1`, while GPU-disabled startup remains opt-in via `INDICOINK_DISABLE_GPU=1`.
+- The PDF preview diagnostics now expose worker source, renderer URL, base URI, page status, page sizing, and render-completion counts so blank or gray-page failures can be separated from pointer and ink issues.

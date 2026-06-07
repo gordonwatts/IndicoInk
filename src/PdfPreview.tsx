@@ -697,6 +697,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   const pressureWidthLabel = `${getStrokeWidth(pointerDiagnostics.pressure).toFixed(1)} px`;
   const pdfWorkerSrc = getPdfWorkerSrc();
   const rendererLocation = window.location.href;
+  const rendererBaseUri = document.baseURI;
+  const rendererPath = window.location.pathname;
   const renderedPageCount =
     state.kind === 'loading' || state.kind === 'ready'
       ? state.pageStatuses.filter((pageStatus) => pageStatus === 'ready').length
@@ -865,6 +867,14 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             <div>
               <span>Renderer</span>
               <strong>{rendererLocation}</strong>
+            </div>
+            <div>
+              <span>Base URI</span>
+              <strong>{rendererBaseUri}</strong>
+            </div>
+            <div>
+              <span>Path</span>
+              <strong>{rendererPath}</strong>
             </div>
             <div>
               <span>File</span>

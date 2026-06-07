@@ -5,15 +5,24 @@ import { join } from 'node:path';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
 import { openPdfSelection } from './openPdf';
+import {
+  getIsolatedUserDataPath,
+  shouldDisableGpu,
+  shouldUseIsolatedUserData,
+} from './runtimeModes';
 import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 
 let mainWindow: BrowserWindow | null = null;
 
-if (process.env.INDICOINK_DISABLE_GPU === '1') {
+if (shouldDisableGpu()) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('disable-gpu');
   app.commandLine.appendSwitch('disable-software-rasterizer');
+}
+
+if (shouldUseIsolatedUserData()) {
+  app.setPath('userData', getIsolatedUserDataPath('IndicoInk'));
 }
 
 const getMainWindowDevServerUrl = () =>
@@ -101,6 +110,13 @@ const createWindow = () => {
 };
 
 app.setName('IndicoInk');
+logStartupEvent(
+  'launch:modes',
+  JSON.stringify({
+    isolatedUserData: shouldUseIsolatedUserData(),
+    gpuDisabled: shouldDisableGpu(),
+  }),
+);
 
 const logStartupError = (source: string) => (error: unknown) => {
   appendStartupLogEntry(app.getPath('userData'), source, error);

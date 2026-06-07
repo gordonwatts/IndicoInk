@@ -5,8 +5,9 @@
   "description": "Indico slide notes app",
   "main": ".vite/build/main.js",
   "scripts": {
-    "start": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
-    "dev": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
+    "start": "node scripts/ensure-electron-path.mjs && cross-env INDICOINK_ISOLATED_USER_DATA=1 ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
+    "start:gpu": "node scripts/ensure-electron-path.mjs && cross-env INDICOINK_ISOLATED_USER_DATA=1 INDICOINK_DISABLE_GPU=1 ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
+    "dev": "node scripts/ensure-electron-path.mjs && cross-env INDICOINK_ISOLATED_USER_DATA=1 ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
     "package": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge package",
     "make": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge make",
     "build": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge package",
