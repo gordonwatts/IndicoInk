@@ -30,12 +30,14 @@ type PdfPreviewState =
       label: string;
       pageCount: number;
       pageSizes: Array<{ width: number; height: number }>;
+      pageStatuses: Array<'pending' | 'ready'>;
     }
   | {
       kind: 'ready';
       label: string;
       pageCount: number;
       pageSizes: Array<{ width: number; height: number }>;
+      pageStatuses: Array<'pending' | 'ready'>;
     }
   | { kind: 'error'; label: string };
 
@@ -102,6 +104,11 @@ const waitForNextFrame = () =>
 const createPageSizes = (pageCount: number) =>
   Array.from({ length: pageCount }, () => ({ width: 0, height: 0 }));
 
+const createPageStatuses = (pageCount: number) =>
+  Array.from({ length: pageCount }, () => 'pending' as const) as Array<
+    'pending' | 'ready'
+  >;
+
 const createEmptyStrokePages = (pageCount: number) =>
   Array.from({ length: pageCount }, () => [] as InkStroke[]);
 
@@ -136,6 +143,17 @@ const getPointerCursorForInteraction = (
   renderedTool === 'mouse' && interactionMode === 'pan'
     ? 'default'
     : getPointerCursor(renderedTool);
+
+const getRenderedToolForInteraction = (
+  resolvedTool: PointerTool,
+  renderedTool: PointerTool,
+  interactionMode: PointerInteractionMode,
+) =>
+  interactionMode === 'erase'
+    ? 'eraser'
+    : resolvedTool === 'mouse'
+      ? 'mouse'
+      : renderedTool;
 
 const toPointerSample = (
   event: React.PointerEvent<HTMLDivElement>,
@@ -216,6 +234,11 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         sample,
         toolState,
         interactionMode,
+        renderedTool: getRenderedToolForInteraction(
+          toolState.resolvedTool,
+          toolState.renderedTool,
+          interactionMode,
+        ),
       };
     },
     [manualTool, mouseMode],
@@ -226,10 +249,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       eventKind: PointerEventKind,
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
-      const { sample, toolState, interactionMode } = resolvePointerInteraction(
-        eventKind,
-        event,
-      );
+      const { sample, toolState, interactionMode, renderedTool } =
+        resolvePointerInteraction(eventKind, event);
 
       latchedToolRef.current = toolState.latchedTool;
       setPointerDiagnostics({
@@ -242,13 +263,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         isPrimary: sample.isPrimary,
         resolvedTool: toolState.resolvedTool,
         latchedTool: toolState.latchedTool,
-        renderedTool: toolState.renderedTool,
+        renderedTool,
         interactionMode,
-        cursor: getPointerCursorForInteraction(
-          toolState.renderedTool,
-          interactionMode,
-        ),
-        overlayClass: getPointerOverlayClass(toolState.renderedTool),
+        cursor: getPointerCursorForInteraction(renderedTool, interactionMode),
+        overlayClass: getPointerOverlayClass(renderedTool),
       });
     },
     [resolvePointerInteraction],
@@ -338,7 +356,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           pageSize && pageSize.width > 0 && pageSize.height > 0
             ? getPagePoint(event, pageSize)
             : null;
-        const { interactionMode } = resolvePointerInteraction(eventKind, event);
+        const { interactionMode, renderedTool } = resolvePointerInteraction(
+          eventKind,
+          event,
+        );
         const shouldShowMarker =
           pagePoint !== null &&
           (interactionMode === 'draw' || interactionMode === 'erase');
@@ -347,7 +368,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           setPointerMarker({
             pageIndex,
             point: pagePoint,
-            tool: interactionMode === 'erase' ? 'eraser' : 'pen',
+            tool: renderedTool === 'eraser' ? 'eraser' : 'pen',
           });
         } else {
           setPointerMarker(null);
@@ -523,6 +544,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         label: `Loading ${getFileName(filePath)} with PDF.js print intent`,
         pageCount: 0,
         pageSizes: [],
+        pageStatuses: [],
       });
 
       try {
@@ -550,11 +572,13 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         setRedoStack([]);
         setPointerMarker(null);
         const pageSizes = createPageSizes(pageCount);
+        const pageStatuses = createPageStatuses(pageCount);
         setState({
           kind: 'loading',
           label: `Rendering ${pageCount} pages from ${getFileName(filePath)}`,
           pageCount,
           pageSizes,
+          pageStatuses,
         });
         await waitForNextFrame();
 
@@ -563,6 +587,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           label: `Rendering ${pageCount} pages from ${getFileName(filePath)}`,
           pageCount,
           pageSizes,
+          pageStatuses,
         });
 
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
@@ -601,11 +626,13 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           }).promise;
 
           pageSizes[pageNumber - 1] = { width, height };
+          pageStatuses[pageNumber - 1] = 'ready';
           setState((currentState) =>
             currentState.kind === 'loading' || currentState.kind === 'ready'
               ? {
                   ...currentState,
                   pageSizes: [...pageSizes],
+                  pageStatuses: [...pageStatuses],
                 }
               : currentState,
           );
@@ -617,6 +644,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             label: `Rendered ${pageCount} pages from ${getFileName(filePath)}`,
             pageCount,
             pageSizes,
+            pageStatuses,
           });
         }
 
@@ -789,6 +817,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                 width: 1,
                 height: 1,
               };
+              const pageStatus =
+                (state.kind === 'loading' || state.kind === 'ready'
+                  ? state.pageStatuses[index]
+                  : undefined) ?? 'pending';
               const pageStrokes = strokesByPage[index] ?? [];
               const marker =
                 pointerMarker?.pageIndex === index ? pointerMarker : null;
@@ -827,7 +859,12 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
               return (
                 <figure key={index} className="pdf-preview-page">
                   <figcaption className="pdf-preview-page-caption">
-                    Page {index + 1}
+                    <span>Page {index + 1}</span>
+                    <StatusLabel
+                      label={pageStatus === 'ready' ? 'Ready' : 'Loading'}
+                      tone={pageStatus === 'ready' ? 'success' : 'neutral'}
+                      icon={pageStatus === 'ready' ? 'check' : 'info'}
+                    />
                   </figcaption>
                   <div
                     className="pdf-preview-sheet"

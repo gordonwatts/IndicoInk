@@ -845,6 +845,10 @@ input:focus-visible {
 }
 
 .pdf-preview-page-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   font-size: var(--font-size-supporting);
   color: var(--text-secondary);
 }
