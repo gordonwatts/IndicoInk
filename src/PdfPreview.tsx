@@ -590,6 +590,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             <strong>{pointerDiagnostics.eventKind}</strong>
           </div>
           <div>
+            <span>Pointer id</span>
+            <strong>{pointerDiagnostics.pointerId ?? 'none'}</strong>
+          </div>
+          <div>
             <span>Pointer type</span>
             <strong>{pointerDiagnostics.pointerType}</strong>
           </div>
