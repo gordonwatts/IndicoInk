@@ -434,8 +434,12 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             ? getPagePoint(event, pageSize)
             : null;
         const { interactionMode, renderedTool } = resolution;
+        const isStylusTool =
+          resolution.toolState.resolvedTool === 'pen' ||
+          resolution.toolState.resolvedTool === 'eraser';
         const shouldShowMarker =
           pagePoint !== null &&
+          isStylusTool &&
           (interactionMode === 'draw' || interactionMode === 'erase');
 
         if (shouldShowMarker) {
