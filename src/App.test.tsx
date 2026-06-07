@@ -17,6 +17,12 @@ describe('App', () => {
         filePath: null,
       }),
       readPdfBytes: vi.fn().mockResolvedValue(new Uint8Array()),
+      loadPdfWorkspaceState: vi.fn().mockResolvedValue(null),
+      savePdfWorkspaceState: vi.fn().mockResolvedValue({
+        sourceUrl: '',
+        pageCount: 0,
+        savedAt: Date.now(),
+      }),
     };
   });
 

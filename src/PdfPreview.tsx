@@ -23,6 +23,7 @@ import {
   type InkStroke,
 } from './strokeTools';
 import { getPdfWorkerSrc } from './pdfjs';
+import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import { IconButton, SegmentedControl, StatusLabel } from './ui';
 
 type PdfPreviewState =
@@ -64,6 +65,13 @@ type PointerMarker = {
   point: NormalizedPagePoint;
   tool: PointerTool;
 };
+
+type PersistenceStatus =
+  | { kind: 'idle'; label: string }
+  | { kind: 'loading'; label: string }
+  | { kind: 'saving'; label: string }
+  | { kind: 'saved'; label: string }
+  | { kind: 'error'; label: string };
 
 type PointerInteractionResolution = {
   sample: PointerSample;
@@ -197,6 +205,11 @@ const formatPageSizeLabel = (pageSize: { width: number; height: number }) =>
     ? `${Math.round(pageSize.width)} x ${Math.round(pageSize.height)} px`
     : 'pending';
 
+const createIdlePersistenceStatus = (): PersistenceStatus => ({
+  kind: 'idle',
+  label: 'No saved workspace',
+});
+
 export function PdfPreview({ filePath }: { filePath: string | null }) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
@@ -218,10 +231,17 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   );
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
+  const [persistenceStatus, setPersistenceStatus] =
+    React.useState<PersistenceStatus>(createIdlePersistenceStatus());
   const pointerDiagnosticsFrameRef = React.useRef<number | null>(null);
   const pendingPointerDiagnosticsRef = React.useRef<PointerDiagnostics | null>(
     null,
   );
+  const persistenceSaveTimerRef = React.useRef<number | null>(null);
+  const persistenceHydratedRef = React.useRef(false);
+  const pendingWorkspaceRestoreRef =
+    React.useRef<PdfWorkspaceSnapshot | null>(null);
+  const currentSlideNumberRef = React.useRef(1);
 
   const resolvePointerInteraction = React.useCallback(
     (
@@ -419,9 +439,92 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     setStrokesByPage(nextPages);
   }, [redoStack, strokesByPage]);
 
+  const currentPageCount =
+    state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0;
+
+  const schedulePersistenceSave = React.useCallback(() => {
+    if (!filePath || state.kind !== 'ready' || !persistenceHydratedRef.current) {
+      return;
+    }
+
+    if (persistenceSaveTimerRef.current !== null) {
+      window.clearTimeout(persistenceSaveTimerRef.current);
+    }
+
+    setPersistenceStatus({
+      kind: 'saving',
+      label: 'Saving workspace...',
+    });
+
+    persistenceSaveTimerRef.current = window.setTimeout(() => {
+      persistenceSaveTimerRef.current = null;
+
+      if (
+        !filePath ||
+        state.kind !== 'ready' ||
+        !persistenceHydratedRef.current
+      ) {
+        return;
+      }
+
+      void window.indicoInk
+        .savePdfWorkspaceState({
+          sourceUrl: filePath,
+          pageCount: currentPageCount,
+          strokesByPage,
+          currentSlideNumber: currentSlideNumberRef.current,
+          scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
+          scrollTop: stageScrollRef.current?.scrollTop ?? 0,
+          zoom: 1,
+        })
+        .then((result) => {
+          setPersistenceStatus({
+            kind: 'saved',
+            label: `Saved ${getFileName(result.sourceUrl)}`,
+          });
+        })
+        .catch((error) => {
+          setPersistenceStatus({
+            kind: 'error',
+            label:
+              error instanceof Error
+                ? error.message
+                : 'Failed to save workspace.',
+          });
+        });
+    }, 400);
+  }, [currentPageCount, filePath, state.kind, strokesByPage]);
+
+  React.useEffect(() => {
+    if (!filePath || state.kind !== 'ready' || !persistenceHydratedRef.current) {
+      return;
+    }
+
+    schedulePersistenceSave();
+  }, [filePath, schedulePersistenceSave, state.kind, strokesByPage]);
+
+  const handleStageScroll = React.useCallback(() => {
+    if (!filePath || state.kind !== 'ready' || !persistenceHydratedRef.current) {
+      return;
+    }
+
+    schedulePersistenceSave();
+  }, [filePath, schedulePersistenceSave, state.kind]);
+
+  React.useEffect(
+    () => () => {
+      if (persistenceSaveTimerRef.current !== null) {
+        window.clearTimeout(persistenceSaveTimerRef.current);
+        persistenceSaveTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
   const handlePagePointerEvent = React.useCallback(
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
+        currentSlideNumberRef.current = pageIndex + 1;
         const pageSize =
           state.kind === 'loading' || state.kind === 'ready'
             ? state.pageSizes[pageIndex]
@@ -614,6 +717,13 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         setUndoStack([]);
         setRedoStack([]);
         setPointerMarker(null);
+        pendingWorkspaceRestoreRef.current = null;
+        persistenceHydratedRef.current = false;
+        if (persistenceSaveTimerRef.current !== null) {
+          window.clearTimeout(persistenceSaveTimerRef.current);
+          persistenceSaveTimerRef.current = null;
+        }
+        setPersistenceStatus(createIdlePersistenceStatus());
         return;
       }
 
@@ -624,6 +734,12 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         pageSizes: [],
         pageStatuses: [],
       });
+      pendingWorkspaceRestoreRef.current = null;
+      persistenceHydratedRef.current = false;
+      if (persistenceSaveTimerRef.current !== null) {
+        window.clearTimeout(persistenceSaveTimerRef.current);
+        persistenceSaveTimerRef.current = null;
+      }
 
       try {
         const bytes = await window.indicoInk.readPdfBytes(filePath);
@@ -667,6 +783,30 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           pageSizes,
           pageStatuses,
         });
+
+        persistenceHydratedRef.current = false;
+        setPersistenceStatus({
+          kind: 'loading',
+          label: `Loading saved workspace for ${getFileName(filePath)}`,
+        });
+        const savedWorkspace = await window.indicoInk.loadPdfWorkspaceState(
+          filePath,
+        );
+        if (cancelled) {
+          return;
+        }
+
+        if (savedWorkspace) {
+          setStrokesByPage(
+            savedWorkspace.strokesByPage.length
+              ? savedWorkspace.strokesByPage
+              : createEmptyStrokePages(pageCount),
+          );
+          pendingWorkspaceRestoreRef.current = savedWorkspace;
+        } else {
+          setStrokesByPage(createEmptyStrokePages(pageCount));
+          pendingWorkspaceRestoreRef.current = null;
+        }
 
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
           if (cancelled) {
@@ -746,9 +886,44 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       if (pointerDiagnosticsFrameRef.current !== null) {
         window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
       }
+      if (persistenceSaveTimerRef.current !== null) {
+        window.clearTimeout(persistenceSaveTimerRef.current);
+      }
       void loadingTask?.destroy?.();
     };
   }, [filePath]);
+
+  React.useEffect(() => {
+    if (state.kind !== 'ready' || !filePath) {
+      return;
+    }
+
+    const restore = pendingWorkspaceRestoreRef.current;
+    if (!restore) {
+      persistenceHydratedRef.current = true;
+      setPersistenceStatus(createIdlePersistenceStatus());
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      if (stageScrollRef.current) {
+        stageScrollRef.current.scrollLeft = restore.scrollLeft;
+        stageScrollRef.current.scrollTop = restore.scrollTop;
+      }
+
+      currentSlideNumberRef.current = restore.currentSlideNumber;
+      pendingWorkspaceRestoreRef.current = null;
+      persistenceHydratedRef.current = true;
+      setPersistenceStatus({
+        kind: 'saved',
+        label: `Restored ${getFileName(filePath)}`,
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [filePath, state.kind]);
 
   const pointerToolLabel = pointerDiagnostics.renderedTool;
   const pointerModeLabel =
@@ -853,6 +1028,19 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
               disabled={!redoStack.length}
             />
           </div>
+        </div>
+        <div className="pdf-preview-toolbar-status">
+          <StatusLabel
+            label={persistenceStatus.label}
+            tone={
+              persistenceStatus.kind === 'error'
+                ? 'error'
+                : persistenceStatus.kind === 'saved'
+                  ? 'success'
+                  : 'neutral'
+            }
+            icon={persistenceStatus.kind === 'saved' ? 'check' : 'info'}
+          />
         </div>
       </div>
 
@@ -990,10 +1178,14 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         </div>
       </div>
 
-      <div ref={stageScrollRef} className="pdf-preview-stage">
+      <div
+        ref={stageScrollRef}
+        className="pdf-preview-stage"
+        onScroll={handleStageScroll}
+      >
         {state.kind === 'ready' || state.kind === 'loading' ? (
           <div className="pdf-preview-pages">
-            {Array.from({ length: state.pageCount }, (_, index) => {
+            {Array.from({ length: currentPageCount }, (_, index) => {
               const pageSize = state.pageSizes[index] ?? {
                 width: 1,
                 height: 1,

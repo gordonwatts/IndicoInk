@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
 import { openPdfSelection } from './openPdf';
+import { PersistenceStore } from './persistenceStore';
+import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import {
   getIsolatedUserDataPath,
   shouldDisableGpu,
@@ -14,6 +16,7 @@ import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 
 let mainWindow: BrowserWindow | null = null;
+let persistenceStore: PersistenceStore | null = null;
 
 if (shouldDisableGpu()) {
   app.disableHardwareAcceleration();
@@ -36,6 +39,12 @@ const getPackagedRendererPath = () =>
 const logStartupEvent = (source: string, detail: string) => {
   appendStartupLogEntry(app.getPath('userData'), source, detail);
 };
+
+const getPersistenceStore = () =>
+  persistenceStore ??
+  (persistenceStore = new PersistenceStore(
+    join(app.getPath('userData'), 'indicoink-persistence.sqlite3'),
+  ));
 
 const createWindow = () => {
   const packagedRendererPath = getPackagedRendererPath();
@@ -141,6 +150,16 @@ ipcMain.handle('pdf:open', async () =>
 ipcMain.handle(
   'pdf:read',
   async (_event, filePath: string) => new Uint8Array(await readFile(filePath)),
+);
+
+ipcMain.handle('persistence:load-pdf-workspace', async (_event, sourceUrl: string) =>
+  getPersistenceStore().loadLocalPdfWorkspace(sourceUrl),
+);
+
+ipcMain.handle(
+  'persistence:save-pdf-workspace',
+  async (_event, snapshot: PdfWorkspaceSnapshot) =>
+    getPersistenceStore().saveLocalPdfWorkspace(snapshot),
 );
 
 app.whenReady().then(() => {
