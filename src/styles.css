@@ -36,17 +36,22 @@
   --surface-accent: #1f3b63;
   --surface-accent-strong: #19314f;
   --surface-accent-soft: rgba(32, 56, 92, 0.12);
+  --surface-panel: #ffffff;
+  --surface-panel-strong: rgba(255, 255, 255, 0.96);
 
   --text-primary: #1f2633;
   --text-secondary: #5d687a;
+  --text-tertiary: #7a8494;
   --text-muted: #617086;
   --text-inverse: #ffffff;
 
   --border-subtle: rgba(58, 67, 81, 0.1);
   --border-strong: rgba(58, 67, 81, 0.16);
+  --border-focus: rgba(124, 159, 211, 0.9);
   --accent: #203a62;
   --accent-hover: #284877;
   --focus-ring: #7c9fd3;
+  --status-info: #17395f;
   --status-success: #2d6a4f;
   --status-warning: #a06400;
   --status-error: #a23c3c;
@@ -88,17 +93,22 @@
     --surface-accent: #446ea8;
     --surface-accent-strong: #28456f;
     --surface-accent-soft: rgba(96, 134, 198, 0.18);
+    --surface-panel: #171c25;
+    --surface-panel-strong: rgba(26, 32, 44, 0.96);
 
     --text-primary: #eef2f8;
     --text-secondary: #b4bece;
+    --text-tertiary: #8f9db0;
     --text-muted: #98a6b9;
     --text-inverse: #f9fbff;
 
     --border-subtle: rgba(158, 173, 197, 0.18);
     --border-strong: rgba(158, 173, 197, 0.26);
+    --border-focus: rgba(136, 173, 230, 0.95);
     --accent: #5d8ed0;
     --accent-hover: #6c9ae0;
     --focus-ring: #88ade6;
+    --status-info: #9ec0f2;
     --status-success: #80d0a2;
     --status-warning: #efc26b;
     --status-error: #ef8b8b;
@@ -286,8 +296,8 @@ input:focus-visible {
   margin-top: auto;
   padding: 16px 14px;
   border-radius: 16px;
-  background: var(--surface-raised);
-  box-shadow: 0 12px 32px rgba(36, 46, 61, 0.06);
+  background: var(--surface-panel-strong);
+  border: 1px solid var(--border-subtle);
   display: grid;
   gap: 4px;
 }
@@ -494,7 +504,7 @@ input:focus-visible {
   padding: 22px;
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
-  background: var(--surface-raised);
+  background: var(--surface-panel);
   box-shadow: 0 18px 50px rgba(34, 45, 63, 0.08);
   backdrop-filter: blur(18px);
 }
@@ -609,7 +619,7 @@ input:focus-visible {
   min-height: 36px;
   padding: 0 12px;
   border-radius: var(--radius-pill);
-  background: var(--surface-elevated);
+  background: var(--surface-panel-strong);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
   font-size: var(--font-size-supporting);
@@ -636,7 +646,7 @@ input:focus-visible {
 .surface-panel {
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
-  background: var(--surface-raised);
+  background: var(--surface-panel);
   box-shadow: 0 18px 50px rgba(34, 45, 63, 0.08);
   backdrop-filter: blur(18px);
 }
@@ -710,11 +720,7 @@ input:focus-visible {
   gap: 10px;
   padding: 14px;
   border-radius: 18px;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.96),
-    rgba(247, 249, 252, 0.98)
-  );
+  background: var(--surface-panel-strong);
   border: 1px solid rgba(15, 23, 42, 0.14);
   box-shadow: 0 12px 26px rgba(36, 46, 61, 0.08);
 }
@@ -726,18 +732,14 @@ input:focus-visible {
 }
 
 .pdf-preview-diagnostics-row .status-label {
-  background: linear-gradient(
-    180deg,
-    rgba(248, 250, 252, 0.98),
-    rgba(235, 240, 248, 0.98)
-  );
-  color: #10233d;
+  background: var(--surface-panel-strong);
+  color: var(--status-info);
   border-color: rgba(15, 23, 42, 0.2);
   box-shadow: 0 4px 10px rgba(36, 46, 61, 0.08);
 }
 
 .pdf-preview-diagnostics-row .status-label svg {
-  color: #17395f;
+  color: var(--status-info);
 }
 
 .pdf-preview-diagnostics-grid {
@@ -746,7 +748,7 @@ input:focus-visible {
   gap: 10px 12px;
   padding: 14px 16px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--surface-panel-strong);
   border: 1px solid rgba(15, 23, 42, 0.12);
 }
 
@@ -759,13 +761,13 @@ input:focus-visible {
   font-size: var(--font-size-supporting);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
 }
 
 .pdf-preview-diagnostics-grid strong {
   font-size: var(--font-size-body);
   font-weight: var(--font-weight-semibold);
-  color: #0f172a;
+  color: var(--text-primary);
   word-break: break-word;
 }
 
@@ -879,7 +881,7 @@ input:focus-visible {
 .stat-card {
   padding: 14px 16px;
   border-radius: 16px;
-  background: rgba(247, 249, 252, 0.92);
+  background: var(--surface-panel-strong);
   border: 1px solid rgba(58, 67, 81, 0.08);
   display: grid;
   gap: 2px;
