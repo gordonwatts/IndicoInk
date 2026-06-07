@@ -702,6 +702,20 @@ input:focus-visible {
   font-size: var(--font-size-supporting);
 }
 
+.field-help {
+  font-size: var(--font-size-supporting);
+  color: var(--text-secondary);
+}
+
+.field-help code {
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.field-error {
+  display: flex;
+}
+
 .field input {
   min-height: 48px;
   padding: 0 14px;

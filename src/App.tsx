@@ -14,7 +14,6 @@ import {
   StatusLabel,
   ThemePreview,
 } from './ui';
-import { PdfPreview } from './PdfPreview';
 
 type Destination =
   | 'library'
@@ -59,17 +58,7 @@ const currentEvent: EventSummary = {
   cacheStatus: 'Cached for offline use',
 };
 
-const recentEvents: EventSummary[] = [
-  currentEvent,
-  {
-    title: 'Windows Dev Day 2026',
-    dates: 'May 3-4, 2026',
-    host: 'events.example.net',
-    lastOpened: 'Opened yesterday',
-    annotationSummary: '4 annotated slides',
-    cacheStatus: 'Online only',
-  },
-];
+const recentEvents: EventSummary[] = [];
 
 const filterOptions = [
   { label: 'All', value: 'all' as const },
@@ -80,13 +69,38 @@ const filterOptions = [
 
 type GalleryFilter = (typeof filterOptions)[number]['value'];
 
+const validateEventUrl = (value: string) => {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return 'Paste an Indico event URL.';
+  }
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return 'Enter a valid URL that starts with https://.';
+  }
+
+  if (url.protocol !== 'https:') {
+    return 'Use an https:// Indico event URL.';
+  }
+
+  if (!/\/event\/[^/?#]+/.test(url.pathname)) {
+    return 'Use an Indico event URL that points to an event.';
+  }
+
+  return null;
+};
+
 function EventSummaryRow({ event }: { event: EventSummary }) {
   return (
     <Row
       title={event.title}
       meta={
         <>
-          {event.dates} · {event.host}
+          {event.dates} - {event.host}
         </>
       }
       detail={
@@ -143,7 +157,7 @@ function ComponentGallery() {
             />
             <Row
               title="Talk row"
-              meta="Start time · title · speaker"
+              meta="Start time - title - speaker"
               detail={
                 <StatusLabel
                   label="3 annotated slides"
@@ -220,15 +234,8 @@ function ComponentGallery() {
 
 export function App() {
   const [destination, setDestination] = React.useState<Destination>('library');
-  const [eventUrl, setEventUrl] = React.useState(
-    'https://indico.example.org/event/indicoink-design-summit',
-  );
-  const [pdfSelectionStatus, setPdfSelectionStatus] = React.useState<
-    string | null
-  >(null);
-  const [selectedPdfPath, setSelectedPdfPath] = React.useState<string | null>(
-    null,
-  );
+  const [eventUrl, setEventUrl] = React.useState('');
+  const [eventUrlTouched, setEventUrlTouched] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
 
   React.useEffect(() => {
@@ -239,21 +246,15 @@ export function App() {
     destination === 'agenda' ||
     destination === 'bookmarks' ||
     destination === 'annotated';
+  const eventUrlError = eventUrlTouched ? validateEventUrl(eventUrl) : null;
+  const handleOpenEvent = () => {
+    setEventUrlTouched(true);
 
-  const handleOpenPdf = async () => {
-    const selection = await window.indicoInk.openPdf();
-    if (selection.canceled) {
-      setPdfSelectionStatus('Open PDF canceled');
+    if (validateEventUrl(eventUrl)) {
       return;
     }
 
-    if (selection.filePath) {
-      setSelectedPdfPath(selection.filePath);
-      setPdfSelectionStatus(`Selected PDF: ${selection.filePath}`);
-      return;
-    }
-
-    setPdfSelectionStatus('Open PDF returned no file');
+    setDestination('agenda');
   };
 
   return (
@@ -312,11 +313,13 @@ export function App() {
             )
           }
           leading={
-            <IconButton
-              label="Back"
-              icon="back"
-              onClick={() => setDestination('library')}
-            />
+            destination === 'library' ? undefined : (
+              <IconButton
+                label="Back"
+                icon="back"
+                onClick={() => setDestination('library')}
+              />
+            )
           }
           actions={
             <>
@@ -327,7 +330,7 @@ export function App() {
                 <span className="runtime-pill-label">Runtime</span>
                 <span className="runtime-pill-value">
                   {info
-                    ? `${info.appName} · Electron ${info.electronVersion}`
+                    ? `${info.appName} - Electron ${info.electronVersion}`
                     : 'Loading...'}
                 </span>
               </div>
@@ -345,9 +348,8 @@ export function App() {
                     Open an Indico event or return to one already on disk.
                   </h2>
                   <p className="lede">
-                    The V1 library keeps the primary action upfront and the
-                    recent event list calm and grouped, ready for touch or
-                    keyboard input.
+                    Paste a conference URL, keep invalid input visible, and
+                    open the event from one prominent touch target.
                   </p>
                 </div>
                 <div className="hero-actions">
@@ -355,34 +357,43 @@ export function App() {
                     <span>Event URL</span>
                     <input
                       value={eventUrl}
-                      onChange={(event) => setEventUrl(event.target.value)}
+                      onChange={(event) => {
+                        setEventUrl(event.target.value);
+                        setEventUrlTouched(true);
+                      }}
+                      onBlur={() => setEventUrlTouched(true)}
                       type="url"
                       inputMode="url"
                       autoComplete="off"
                       placeholder="https://indico.example.org/event/..."
+                      aria-invalid={eventUrlError ? 'true' : undefined}
+                      aria-describedby={
+                        eventUrlError
+                          ? 'event-url-help event-url-error'
+                          : 'event-url-help'
+                      }
                     />
                   </label>
+                  <div className="field-help" id="event-url-help">
+                    Use a full Indico event URL such as
+                    <code>https://indico.example.org/event/...</code>
+                  </div>
+                  {eventUrlError ? (
+                    <div className="field-error" id="event-url-error">
+                      <StatusLabel
+                        label={eventUrlError}
+                        tone="error"
+                        icon="info"
+                      />
+                    </div>
+                  ) : null}
                   <PrimaryButton
                     icon="event"
                     className="large"
-                    onClick={() => setDestination('agenda')}
+                    onClick={handleOpenEvent}
                   >
                     Open event
                   </PrimaryButton>
-                  <PrimaryButton
-                    icon="open"
-                    className="large"
-                    onClick={handleOpenPdf}
-                  >
-                    Open PDF
-                  </PrimaryButton>
-                  {pdfSelectionStatus ? (
-                    <StatusLabel
-                      label={pdfSelectionStatus}
-                      tone="neutral"
-                      icon="info"
-                    />
-                  ) : null}
                 </div>
               </div>
 
@@ -391,15 +402,22 @@ export function App() {
                   <h3>Recently opened</h3>
                   <p>Most recent event first.</p>
                 </div>
-                <div className="event-list">
-                  {recentEvents.map((event) => (
-                    <EventSummaryRow key={event.title} event={event} />
-                  ))}
-                </div>
-              </section>
-
-              <section className="surface-panel" aria-label="PDF preview">
-                <PdfPreview filePath={selectedPdfPath} />
+                {recentEvents.length ? (
+                  <div className="event-list">
+                    {recentEvents.map((event) => (
+                      <EventSummaryRow key={event.title} event={event} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <Icon name="library" />
+                    <strong>No saved events yet</strong>
+                    <span>
+                      Open a conference event to start building the local
+                      library.
+                    </span>
+                  </div>
+                )}
               </section>
             </section>
           )}
@@ -500,7 +518,7 @@ export function App() {
                       <span>Runtime</span>
                       <strong>
                         {info
-                          ? `${info.appName} · ${info.electronVersion}`
+                          ? `${info.appName} - ${info.electronVersion}`
                           : 'Loading...'}
                       </strong>
                     </div>

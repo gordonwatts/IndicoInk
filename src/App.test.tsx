@@ -26,7 +26,7 @@ describe('App', () => {
     };
   });
 
-  it('renders the V1 shell with reachable destinations', async () => {
+  it('renders the empty library view with URL validation', async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -56,13 +56,6 @@ describe('App', () => {
         name: 'Settings',
       }),
     ).toBeTruthy();
-    expect(
-      screen
-        .getByRole('button', {
-          name: 'Search',
-        })
-        .getAttribute('title'),
-    ).toBe('Search');
 
     expect(
       screen.getByRole('heading', {
@@ -70,16 +63,43 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    await user.click(
+    expect(
       screen.getByRole('button', {
-        name: 'Open PDF',
+        name: 'Open event',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('No saved events yet')).toBeTruthy();
+
+    await user.type(
+      screen.getByRole('textbox', {
+        name: 'Event URL',
+      }),
+      'http://example.com/not-an-indico-event',
+    );
+
+    expect(
+      screen.getByText('Use an https:// Indico event URL.'),
+    ).toBeTruthy();
+
+    await user.clear(
+      screen.getByRole('textbox', {
+        name: 'Event URL',
       }),
     );
-    expect(window.indicoInk.openPdf).toHaveBeenCalledTimes(1);
+    await user.type(
+      screen.getByRole('textbox', {
+        name: 'Event URL',
+      }),
+      'https://indico.example.org/event/example-2026',
+    );
+
+    expect(
+      screen.queryByText('Use an https:// Indico event URL.'),
+    ).toBeNull();
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Agenda',
+        name: 'Open event',
       }),
     );
 
@@ -88,7 +108,6 @@ describe('App', () => {
         name: 'Event agenda',
       }),
     ).toBeTruthy();
-    expect(screen.getByText('Current event active')).toBeTruthy();
   });
 
   it('supports keyboard navigation into the shell destinations', async () => {
