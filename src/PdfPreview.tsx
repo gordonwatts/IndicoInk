@@ -21,7 +21,7 @@ import {
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
-import { SegmentedControl, StatusLabel } from './ui';
+import { IconButton, SegmentedControl, StatusLabel } from './ui';
 
 type PdfPreviewState =
   | { kind: 'idle' }
@@ -84,6 +84,7 @@ type ActiveInkAction =
   | null;
 
 type MouseMode = 'draw' | 'pan';
+type ManualTool = 'pen' | 'eraser';
 
 const mouseModeOptions = [
   { label: 'Draw', value: 'draw' as const },
@@ -103,6 +104,14 @@ const createPageSizes = (pageCount: number) =>
 
 const createEmptyStrokePages = (pageCount: number) =>
   Array.from({ length: pageCount }, () => [] as InkStroke[]);
+
+const cloneStrokePages = (pages: Array<InkStroke[]>) =>
+  pages.map((pageStrokes) =>
+    pageStrokes.map((stroke) => ({
+      ...stroke,
+      points: [...stroke.points],
+    })),
+  );
 
 const createIdlePointerDiagnostics = (): PointerDiagnostics => ({
   eventKind: 'idle',
@@ -159,6 +168,7 @@ const createStrokeId = () =>
 export function PdfPreview({ filePath }: { filePath: string | null }) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
+  const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -166,6 +176,12 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
   const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>(
+    [],
+  );
+  const [undoStack, setUndoStack] = React.useState<Array<Array<InkStroke[]>>>(
+    [],
+  );
+  const [redoStack, setRedoStack] = React.useState<Array<Array<InkStroke[]>>>(
     [],
   );
   const [pointerMarker, setPointerMarker] =
@@ -186,9 +202,15 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       const interactionMode =
         toolState.renderedTool === 'mouse'
           ? mouseMode === 'draw'
-            ? 'draw'
+            ? manualTool === 'eraser'
+              ? 'erase'
+              : 'draw'
             : 'pan'
-          : getPointerInteractionMode(toolState.renderedTool);
+          : toolState.renderedTool === 'pen'
+            ? manualTool === 'eraser'
+              ? 'erase'
+              : 'draw'
+            : getPointerInteractionMode(toolState.renderedTool);
 
       return {
         sample,
@@ -196,7 +218,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         interactionMode,
       };
     },
-    [mouseMode],
+    [manualTool, mouseMode],
   );
 
   const updatePointerDiagnostics = React.useCallback(
@@ -264,6 +286,44 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     [],
   );
 
+  const recordStrokeSnapshot = React.useCallback(() => {
+    setUndoStack((currentUndoStack) => [
+      cloneStrokePages(strokesByPage),
+      ...currentUndoStack,
+    ]);
+    setRedoStack([]);
+  }, [strokesByPage]);
+
+  const handleUndo = React.useCallback(() => {
+    const previousPages = undoStack[0];
+    if (!previousPages) {
+      return;
+    }
+
+    const rest = undoStack.slice(1);
+    setRedoStack((currentRedoStack) => [
+      cloneStrokePages(strokesByPage),
+      ...currentRedoStack,
+    ]);
+    setUndoStack(rest);
+    setStrokesByPage(previousPages);
+  }, [strokesByPage, undoStack]);
+
+  const handleRedo = React.useCallback(() => {
+    const nextPages = redoStack[0];
+    if (!nextPages) {
+      return;
+    }
+
+    const rest = redoStack.slice(1);
+    setUndoStack((currentUndoStack) => [
+      cloneStrokePages(strokesByPage),
+      ...currentUndoStack,
+    ]);
+    setRedoStack(rest);
+    setStrokesByPage(nextPages);
+  }, [redoStack, strokesByPage]);
+
   const handlePagePointerEvent = React.useCallback(
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
@@ -278,20 +338,16 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           pageSize && pageSize.width > 0 && pageSize.height > 0
             ? getPagePoint(event, pageSize)
             : null;
-        const { toolState, interactionMode } = resolvePointerInteraction(
-          eventKind,
-          event,
-        );
+        const { interactionMode } = resolvePointerInteraction(eventKind, event);
         const shouldShowMarker =
           pagePoint !== null &&
-          (toolState.renderedTool === 'pen' ||
-            toolState.renderedTool === 'eraser');
+          (interactionMode === 'draw' || interactionMode === 'erase');
 
         if (shouldShowMarker) {
           setPointerMarker({
             pageIndex,
             point: pagePoint,
-            tool: toolState.renderedTool,
+            tool: interactionMode === 'erase' ? 'eraser' : 'pen',
           });
         } else {
           setPointerMarker(null);
@@ -300,6 +356,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         if (eventKind === 'pointerdown') {
           if (interactionMode === 'draw' && pagePoint) {
             event.preventDefault();
+            recordStrokeSnapshot();
             const strokeId = createStrokeId();
             activeInkActionRef.current = {
               kind: 'draw',
@@ -331,6 +388,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
 
           if (interactionMode === 'erase' && pagePoint && pageSize) {
             event.preventDefault();
+            recordStrokeSnapshot();
             activeInkActionRef.current = {
               kind: 'erase',
               pointerId: event.pointerId,
@@ -437,6 +495,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       pointerMarker,
       resolvePointerInteraction,
       state,
+      recordStrokeSnapshot,
       updateStrokePage,
     ],
   );
@@ -453,6 +512,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         pageCanvasRefs.current = [];
         setState({ kind: 'idle' });
         setStrokesByPage([]);
+        setUndoStack([]);
+        setRedoStack([]);
         setPointerMarker(null);
         return;
       }
@@ -485,6 +546,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         const pageCount = document.numPages;
         pageCanvasRefs.current = Array.from({ length: pageCount }, () => null);
         setStrokesByPage(createEmptyStrokePages(pageCount));
+        setUndoStack([]);
+        setRedoStack([]);
         setPointerMarker(null);
         const pageSizes = createPageSizes(pageCount);
         setState({
@@ -581,11 +644,20 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   const pointerToolLabel = pointerDiagnostics.renderedTool;
   const pointerModeLabel =
     pointerDiagnostics.resolvedTool === 'mouse'
-      ? mouseMode
+      ? mouseMode === 'draw'
+        ? manualTool
+        : 'pan'
       : pointerDiagnostics.interactionMode;
   const pointerCursorLabel =
     pointerDiagnostics.resolvedTool === 'mouse'
-      ? getPointerCursorForInteraction('mouse', mouseMode)
+      ? getPointerCursorForInteraction(
+          'mouse',
+          mouseMode === 'draw'
+            ? manualTool === 'eraser'
+              ? 'erase'
+              : 'draw'
+            : 'pan',
+        )
       : pointerDiagnostics.cursor;
 
   return (
@@ -614,11 +686,41 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           <h4>Input mode</h4>
           <p>Mouse input can stay in draw mode or pan the document.</p>
         </div>
-        <SegmentedControl
-          options={mouseModeOptions}
-          value={mouseMode}
-          onChange={setMouseMode}
-        />
+        <div className="pdf-preview-toolbar-row">
+          <div className="pdf-preview-toolbar-actions">
+            <IconButton
+              label="Pen"
+              icon="pen"
+              onClick={() => setManualTool('pen')}
+              pressed={manualTool === 'pen'}
+            />
+            <IconButton
+              label="Eraser"
+              icon="eraser"
+              onClick={() => setManualTool('eraser')}
+              pressed={manualTool === 'eraser'}
+            />
+          </div>
+          <SegmentedControl
+            options={mouseModeOptions}
+            value={mouseMode}
+            onChange={setMouseMode}
+          />
+          <div className="pdf-preview-toolbar-actions">
+            <IconButton
+              label="Undo"
+              icon="undo"
+              onClick={handleUndo}
+              disabled={!undoStack.length}
+            />
+            <IconButton
+              label="Redo"
+              icon="redo"
+              onClick={handleRedo}
+              disabled={!redoStack.length}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="pdf-preview-diagnostics" aria-label="Pointer diagnostics">

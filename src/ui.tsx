@@ -10,9 +10,13 @@ export type IconName =
   | 'search'
   | 'refresh'
   | 'export'
+  | 'undo'
+  | 'redo'
   | 'event'
   | 'open'
   | 'chevron'
+  | 'pen'
+  | 'eraser'
   | 'check'
   | 'info'
   | 'dialog';
@@ -34,10 +38,15 @@ const iconPaths: Record<IconName, string> = {
   refresh:
     'M17.35 8.65A6.5 6.5 0 1 0 18.5 12h-2a4.5 4.5 0 1 1-.83-2.6L14 11h5V6l-1.65 1.65Z',
   export: 'M12 4.5 16 8.5h-2.75V14h-2.5V8.5H8L12 4.5Zm-6 11h12v2H6v-2Z',
+  undo: 'M10.2 7.3H15a4.8 4.8 0 1 1 0 9.6H7.4l2.2 2.2-1.4 1.4-4.6-4.6 4.6-4.6 1.4 1.4-2.2 2.2H15a2.8 2.8 0 1 0 0-5.6h-4.8v-2Z',
+  redo: 'M13.8 7.3H9a4.8 4.8 0 1 0 0 9.6h7.6l-2.2 2.2 1.4 1.4 4.6-4.6-4.6-4.6-1.4 1.4 2.2 2.2H9a2.8 2.8 0 1 1 0-5.6h4.8v-2Z',
   event:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Zm0 4h5v2H8v-2Z',
   open: 'M7 5.5h10A1.5 1.5 0 0 1 18.5 7v10A1.5 1.5 0 0 1 17 18.5H7A1.5 1.5 0 0 1 5.5 17V7A1.5 1.5 0 0 1 7 5.5Zm0 2a.5.5 0 0 0-.5.5v9.5h11V8a.5.5 0 0 0-.5-.5H7Zm2 1.5h6v2H9V9Zm0 4h4v2H9v-2Z',
   chevron: 'M9.2 6.9 14.3 12l-5.1 5.1-1.4-1.4 3.7-3.7-3.7-3.7 1.4-1.4Z',
+  pen: 'M5.5 18.5 8 16l5.6-5.6 2.8 2.8L10.8 18H5.5v.5Zm9.6-7.6-2.8-2.8 1.2-1.2c.5-.5 1.2-.5 1.7 0l1.1 1.1c.5.5.5 1.2 0 1.7l-1.2 1.2Z',
+  eraser:
+    'M7 16.5h9.4l2.1-2.1c.8-.8.8-2.1 0-2.9l-4.1-4.1c-.8-.8-2.1-.8-2.9 0L4.5 14.4c-.8.8-.8 2.1 0 2.9.3.2.7.3 1 .3H7Zm1.2-2L14 8.7l3.1 3.1-5.8 5.8H8.2Z',
   check: 'M10 16.2 5.8 12l1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2Z',
   info: 'M12 6.6a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Zm-1 2.4h2v7h-2V9Z',
   dialog:
@@ -57,19 +66,25 @@ export function IconButton({
   icon,
   title,
   onClick,
+  disabled,
+  pressed,
 }: {
   label: string;
   icon: IconName;
   title?: string;
   onClick?: () => void;
+  disabled?: boolean;
+  pressed?: boolean;
 }) {
   return (
     <button
-      className="icon-button"
+      className={`icon-button${pressed ? ' is-active' : ''}`}
       type="button"
       aria-label={label}
       title={title ?? label}
       onClick={onClick}
+      disabled={disabled}
+      aria-pressed={pressed}
     >
       <Icon name={icon} />
     </button>

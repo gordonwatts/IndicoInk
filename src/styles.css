@@ -274,6 +274,11 @@ input:focus-visible {
   background: rgba(32, 56, 92, 0.08);
 }
 
+.icon-button.is-active {
+  background: var(--surface-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--surface-accent-soft);
+}
+
 .shell-button.is-active {
   background: var(--surface-accent-soft);
   box-shadow: inset 0 0 0 1px var(--surface-accent-soft);
@@ -736,6 +741,25 @@ input:focus-visible {
 
 .pdf-preview-toolbar .surface-panel-header p {
   margin: 0;
+}
+
+.pdf-preview-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.pdf-preview-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
 }
 
 .pdf-preview-diagnostics {
