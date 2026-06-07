@@ -1,4 +1,8 @@
-import { toScreenPoint, type NormalizedPagePoint, type PageSize } from './inkGeometry';
+import {
+  toScreenPoint,
+  type NormalizedPagePoint,
+  type PageSize,
+} from './inkGeometry';
 
 export type InkStroke = {
   id: string;
@@ -19,7 +23,8 @@ export const STROKE_PRESSURE_SCALE = 0.5;
 export const ERASER_HIT_RADIUS = 12;
 
 export const getStrokeWidth = (pressure: number) =>
-  BASE_STROKE_WIDTH * (1 + Math.max(0, Math.min(pressure, 1)) * STROKE_PRESSURE_SCALE);
+  BASE_STROKE_WIDTH *
+  (1 + Math.max(0, Math.min(pressure, 1)) * STROKE_PRESSURE_SCALE);
 
 export const createStrokeSegmentList = (
   points: NormalizedPagePoint[],
@@ -39,7 +44,10 @@ export const createStrokeSegmentList = (
       y1: previousScreenPoint.y,
       x2: screenPoint.x,
       y2: screenPoint.y,
-      width: (getStrokeWidth(previousPoint.pressure) + getStrokeWidth(point.pressure)) / 2,
+      width:
+        (getStrokeWidth(previousPoint.pressure) +
+          getStrokeWidth(point.pressure)) /
+        2,
     };
   });
 };
@@ -75,8 +83,12 @@ export const strokeHitsPoint = (
 
   if (stroke.points.length === 1) {
     const singlePoint = toScreenPoint(stroke.points[0]!, pageSize);
-    return Math.hypot(screenPoint.x - singlePoint.x, screenPoint.y - singlePoint.y) <=
-      ERASER_HIT_RADIUS;
+    return (
+      Math.hypot(
+        screenPoint.x - singlePoint.x,
+        screenPoint.y - singlePoint.y,
+      ) <= ERASER_HIT_RADIUS
+    );
   }
 
   return segments.some((segment) => {

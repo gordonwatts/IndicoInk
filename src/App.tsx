@@ -16,7 +16,12 @@ import {
 } from './ui';
 import { PdfPreview } from './PdfPreview';
 
-type Destination = 'library' | 'agenda' | 'bookmarks' | 'annotated' | 'settings';
+type Destination =
+  | 'library'
+  | 'agenda'
+  | 'bookmarks'
+  | 'annotated'
+  | 'settings';
 
 type EventSummary = {
   title: string;
@@ -36,7 +41,12 @@ const destinations: Array<{
   { id: 'library', label: 'Library', shortLabel: 'Lib', icon: 'library' },
   { id: 'agenda', label: 'Agenda', shortLabel: 'Agenda', icon: 'agenda' },
   { id: 'bookmarks', label: 'Bookmarks', shortLabel: 'Book', icon: 'bookmark' },
-  { id: 'annotated', label: 'Annotated', shortLabel: 'Anno', icon: 'annotated' },
+  {
+    id: 'annotated',
+    label: 'Annotated',
+    shortLabel: 'Anno',
+    icon: 'annotated',
+  },
   { id: 'settings', label: 'Settings', shortLabel: 'Set', icon: 'settings' },
 ];
 
@@ -82,7 +92,11 @@ function EventSummaryRow({ event }: { event: EventSummary }) {
       detail={
         <div className="row-pills">
           <StatusLabel label={event.lastOpened} icon="info" />
-          <StatusLabel label={event.annotationSummary} tone="success" icon="annotated" />
+          <StatusLabel
+            label={event.annotationSummary}
+            tone="success"
+            icon="annotated"
+          />
           <StatusLabel label={event.cacheStatus} tone="neutral" icon="check" />
         </div>
       }
@@ -92,7 +106,8 @@ function EventSummaryRow({ event }: { event: EventSummary }) {
 }
 
 function ComponentGallery() {
-  const [galleryFilter, setGalleryFilter] = React.useState<GalleryFilter>('all');
+  const [galleryFilter, setGalleryFilter] =
+    React.useState<GalleryFilter>('all');
 
   return (
     <div className="gallery-grid">
@@ -105,7 +120,13 @@ function ComponentGallery() {
             <CommandBar
               kicker="Preview"
               title="Command bar"
-              status={<StatusLabel label="Light theme active" tone="success" icon="check" />}
+              status={
+                <StatusLabel
+                  label="Light theme active"
+                  tone="success"
+                  icon="check"
+                />
+              }
               leading={<IconButton label="Back" icon="back" />}
               actions={
                 <>
@@ -123,7 +144,13 @@ function ComponentGallery() {
             <Row
               title="Talk row"
               meta="Start time · title · speaker"
-              detail={<StatusLabel label="3 annotated slides" tone="warning" icon="annotated" />}
+              detail={
+                <StatusLabel
+                  label="3 annotated slides"
+                  tone="warning"
+                  icon="annotated"
+                />
+              }
               action={<PrimaryButton>Open slides</PrimaryButton>}
             />
             <DialogSurface
@@ -145,7 +172,13 @@ function ComponentGallery() {
             <CommandBar
               kicker="Preview"
               title="Command bar"
-              status={<StatusLabel label="Dark theme active" tone="success" icon="check" />}
+              status={
+                <StatusLabel
+                  label="Dark theme active"
+                  tone="success"
+                  icon="check"
+                />
+              }
               leading={<IconButton label="Back" icon="back" />}
               actions={
                 <>
@@ -163,7 +196,13 @@ function ComponentGallery() {
             <Row
               title="Details surface"
               meta="Supports metadata and decision-making content"
-              detail={<StatusLabel label="Cached for offline use" tone="neutral" icon="info" />}
+              detail={
+                <StatusLabel
+                  label="Cached for offline use"
+                  tone="neutral"
+                  icon="info"
+                />
+              }
               action={<PrimaryButton>Open event</PrimaryButton>}
             />
             <DialogSurface
@@ -184,8 +223,12 @@ export function App() {
   const [eventUrl, setEventUrl] = React.useState(
     'https://indico.example.org/event/indicoink-design-summit',
   );
-  const [pdfSelectionStatus, setPdfSelectionStatus] = React.useState<string | null>(null);
-  const [selectedPdfPath, setSelectedPdfPath] = React.useState<string | null>(null);
+  const [pdfSelectionStatus, setPdfSelectionStatus] = React.useState<
+    string | null
+  >(null);
+  const [selectedPdfPath, setSelectedPdfPath] = React.useState<string | null>(
+    null,
+  );
   const [info, setInfo] = React.useState<AppInfo | null>(null);
 
   React.useEffect(() => {
@@ -193,7 +236,9 @@ export function App() {
   }, []);
 
   const eventFocused =
-    destination === 'agenda' || destination === 'bookmarks' || destination === 'annotated';
+    destination === 'agenda' ||
+    destination === 'bookmarks' ||
+    destination === 'annotated';
 
   const handleOpenPdf = async () => {
     const selection = await window.indicoInk.openPdf();
@@ -208,9 +253,7 @@ export function App() {
       return;
     }
 
-    setPdfSelectionStatus(
-      'Open PDF returned no file',
-    );
+    setPdfSelectionStatus('Open PDF returned no file');
   };
 
   return (
@@ -259,12 +302,22 @@ export function App() {
           }
           status={
             eventFocused ? (
-              <StatusLabel label="Current event active" tone="success" icon="event" />
+              <StatusLabel
+                label="Current event active"
+                tone="success"
+                icon="event"
+              />
             ) : (
               <StatusLabel label="Library view" icon="library" />
             )
           }
-          leading={<IconButton label="Back" icon="back" onClick={() => setDestination('library')} />}
+          leading={
+            <IconButton
+              label="Back"
+              icon="back"
+              onClick={() => setDestination('library')}
+            />
+          }
           actions={
             <>
               <IconButton label="Search" icon="search" />
@@ -273,7 +326,9 @@ export function App() {
               <div className="runtime-pill" aria-label="Runtime information">
                 <span className="runtime-pill-label">Runtime</span>
                 <span className="runtime-pill-value">
-                  {info ? `${info.appName} · Electron ${info.electronVersion}` : 'Loading...'}
+                  {info
+                    ? `${info.appName} · Electron ${info.electronVersion}`
+                    : 'Loading...'}
                 </span>
               </div>
             </>
@@ -286,7 +341,9 @@ export function App() {
               <div className="hero-panel">
                 <div className="hero-copy">
                   <p className="eyebrow">Conference library</p>
-                  <h2>Open an Indico event or return to one already on disk.</h2>
+                  <h2>
+                    Open an Indico event or return to one already on disk.
+                  </h2>
                   <p className="lede">
                     The V1 library keeps the primary action upfront and the
                     recent event list calm and grouped, ready for touch or
@@ -305,14 +362,26 @@ export function App() {
                       placeholder="https://indico.example.org/event/..."
                     />
                   </label>
-                  <PrimaryButton icon="event" className="large" onClick={() => setDestination('agenda')}>
+                  <PrimaryButton
+                    icon="event"
+                    className="large"
+                    onClick={() => setDestination('agenda')}
+                  >
                     Open event
                   </PrimaryButton>
-                  <PrimaryButton icon="open" className="large" onClick={handleOpenPdf}>
+                  <PrimaryButton
+                    icon="open"
+                    className="large"
+                    onClick={handleOpenPdf}
+                  >
                     Open PDF
                   </PrimaryButton>
                   {pdfSelectionStatus ? (
-                    <StatusLabel label={pdfSelectionStatus} tone="neutral" icon="info" />
+                    <StatusLabel
+                      label={pdfSelectionStatus}
+                      tone="neutral"
+                      icon="info"
+                    />
                   ) : null}
                 </div>
               </div>
@@ -338,20 +407,37 @@ export function App() {
           {destination === 'agenda' && (
             <section className="page-stack">
               <div className="overview-grid">
-                <DetailsSurface title={currentEvent.title} subtitle={currentEvent.dates}>
+                <DetailsSurface
+                  title={currentEvent.title}
+                  subtitle={currentEvent.dates}
+                >
                   <div className="event-details">
                     <StatusLabel label={currentEvent.host} icon="info" />
-                    <StatusLabel label={currentEvent.cacheStatus} tone="success" icon="check" />
-                    <StatusLabel label={currentEvent.annotationSummary} tone="warning" icon="annotated" />
+                    <StatusLabel
+                      label={currentEvent.cacheStatus}
+                      tone="success"
+                      icon="check"
+                    />
+                    <StatusLabel
+                      label={currentEvent.annotationSummary}
+                      tone="warning"
+                      icon="annotated"
+                    />
                   </div>
                 </DetailsSurface>
-                <DetailsSurface title="Agenda frame" subtitle="Placeholder canvas structure for V1.">
+                <DetailsSurface
+                  title="Agenda frame"
+                  subtitle="Placeholder canvas structure for V1."
+                >
                   <div className="placeholder-canvas">
                     <div className="canvas-chip">Day strip</div>
                     <div className="canvas-chip">Filters</div>
                     <div className="canvas-block">
                       <strong>Session block</strong>
-                      <span>Time, room, talk rows, and shared canvas layout land here.</span>
+                      <span>
+                        Time, room, talk rows, and shared canvas layout land
+                        here.
+                      </span>
                     </div>
                   </div>
                 </DetailsSurface>
@@ -368,7 +454,9 @@ export function App() {
                 <div className="empty-state">
                   <Icon name="bookmark" />
                   <strong>No bookmarked talks yet</strong>
-                  <span>Saved talks will appear here once the agenda is wired up.</span>
+                  <span>
+                    Saved talks will appear here once the agenda is wired up.
+                  </span>
                 </div>
               </DetailsSurface>
             </section>
@@ -383,7 +471,10 @@ export function App() {
                 <div className="empty-state">
                   <Icon name="annotated" />
                   <strong>{currentEvent.annotationSummary}</strong>
-                  <span>Annotated talks will be surfaced here once slide notes exist.</span>
+                  <span>
+                    Annotated talks will be surfaced here once slide notes
+                    exist.
+                  </span>
                 </div>
               </DetailsSurface>
             </section>
@@ -407,7 +498,11 @@ export function App() {
                     </div>
                     <div className="settings-row">
                       <span>Runtime</span>
-                      <strong>{info ? `${info.appName} · ${info.electronVersion}` : 'Loading...'}</strong>
+                      <strong>
+                        {info
+                          ? `${info.appName} · ${info.electronVersion}`
+                          : 'Loading...'}
+                      </strong>
                     </div>
                   </div>
                 </DetailsSurface>

@@ -10,6 +10,12 @@ import type { AppInfo } from './shared/appInfo';
 
 let mainWindow: BrowserWindow | null = null;
 
+if (process.env.INDICOINK_DISABLE_GPU === '1') {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+}
+
 const getMainWindowDevServerUrl = () =>
   MAIN_WINDOW_VITE_DEV_SERVER_URL?.trim() ||
   process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL?.trim() ||
@@ -116,8 +122,9 @@ ipcMain.handle('pdf:open', async () =>
   openPdfSelection((options) => dialog.showOpenDialog(options)),
 );
 
-ipcMain.handle('pdf:read', async (_event, filePath: string) =>
-  new Uint8Array(await readFile(filePath)),
+ipcMain.handle(
+  'pdf:read',
+  async (_event, filePath: string) => new Uint8Array(await readFile(filePath)),
 );
 
 app.whenReady().then(() => {

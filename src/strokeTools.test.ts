@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { strokeHitsPoint, createStrokeSegmentList, getStrokeWidth } from './strokeTools';
+import {
+  strokeHitsPoint,
+  createStrokeSegmentList,
+  getStrokeWidth,
+} from './strokeTools';
 
 describe('strokeTools', () => {
   const pageSize = {

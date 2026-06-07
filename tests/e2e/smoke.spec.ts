@@ -1,6 +1,8 @@
 import { _electron as electron, test } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const electronCacheRoot = resolve('.electron-cache');
@@ -32,9 +34,15 @@ test('launches and closes the Electron app', async () => {
   const assetsDir = resolve(rendererDir, 'assets');
   const indexHtml = readFileSync(resolve(rendererDir, 'index.html'), 'utf8');
   const assetNames = readdirSync(assetsDir);
-  const mainJsName = assetNames.find((name) => name.startsWith('main_window-') && name.endsWith('.js'));
-  const cssName = assetNames.find((name) => name.startsWith('main_window-') && name.endsWith('.css'));
-  const workerName = assetNames.find((name) => name.startsWith('pdf.worker.min-') && name.endsWith('.mjs'));
+  const mainJsName = assetNames.find(
+    (name) => name.startsWith('main_window-') && name.endsWith('.js'),
+  );
+  const cssName = assetNames.find(
+    (name) => name.startsWith('main_window-') && name.endsWith('.css'),
+  );
+  const workerName = assetNames.find(
+    (name) => name.startsWith('pdf.worker.min-') && name.endsWith('.mjs'),
+  );
 
   test.expect(mainJsName).toBeTruthy();
   test.expect(cssName).toBeTruthy();
@@ -50,13 +58,21 @@ test('launches and closes the Electron app', async () => {
 
   const app = await electron.launch({
     executablePath: resolve('node_modules/electron/dist/electron.exe'),
-    args: ['.vite/build/main.js'],
+    args: [
+      '--disable-gpu',
+      '--disable-gpu-compositing',
+      '--enable-unsafe-swiftshader',
+      '--use-angle=swiftshader',
+      `--user-data-dir=${mkdtempSync(resolve(tmpdir(), 'indicoink-e2e-'))}`,
+      '.vite/build/main.js',
+    ],
     env: {
       ...process.env,
       ELECTRON_CONFIG_CACHE: electronCacheRoot,
       electron_config_cache: electronCacheRoot,
       ELECTRON_CACHE: electronCacheRoot,
       ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+      INDICOINK_DISABLE_GPU: '1',
     },
   });
   await app.evaluate(({ app }) => app.quit());

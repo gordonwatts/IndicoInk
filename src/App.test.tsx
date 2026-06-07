@@ -51,9 +51,11 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('button', {
-        name: 'Search',
-      }).getAttribute('title'),
+      screen
+        .getByRole('button', {
+          name: 'Search',
+        })
+        .getAttribute('title'),
     ).toBe('Search');
 
     expect(

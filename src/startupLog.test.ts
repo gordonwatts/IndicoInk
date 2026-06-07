@@ -7,7 +7,10 @@ describe('formatStartupLogEntry', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-04T00:00:00.000Z'));
 
-    const result = formatStartupLogEntry('uncaughtException', new Error('boom'));
+    const result = formatStartupLogEntry(
+      'uncaughtException',
+      new Error('boom'),
+    );
 
     expect(result).toContain('uncaughtException: Error: boom');
     expect(result).toContain('2026-06-04T00:00:00.000Z');

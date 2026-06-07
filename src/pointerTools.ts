@@ -1,5 +1,7 @@
 export type PointerTool = 'mouse' | 'pen' | 'eraser' | 'touch' | 'unknown';
 
+export type PointerInteractionMode = 'draw' | 'erase' | 'pan' | 'none';
+
 export type PointerSample = {
   pointerType: string;
   button: number;
@@ -70,9 +72,7 @@ export const getPointerCursor = (tool: PointerTool) => {
     case 'mouse':
       return 'crosshair';
     case 'pen':
-      return 'dot';
     case 'eraser':
-      return 'eraser';
     case 'touch':
       return 'none';
     default:
@@ -80,7 +80,24 @@ export const getPointerCursor = (tool: PointerTool) => {
   }
 };
 
-export const getPointerOverlayClass = (tool: PointerTool) => `ink-layer ${tool}`;
+export const getPointerOverlayClass = (tool: PointerTool) =>
+  `ink-layer ${tool}`;
+
+export const getPointerInteractionMode = (
+  tool: PointerTool,
+): PointerInteractionMode => {
+  switch (tool) {
+    case 'mouse':
+    case 'pen':
+      return 'draw';
+    case 'eraser':
+      return 'erase';
+    case 'touch':
+      return 'pan';
+    default:
+      return 'none';
+  }
+};
 
 export const isContactTool = (tool: PointerTool) =>
   tool === 'mouse' || tool === 'pen' || tool === 'eraser';
@@ -91,7 +108,11 @@ export const createPointerToolState = (
   previousLatchedTool: PointerTool | null,
 ): PointerToolState => {
   const resolvedTool = resolvePointerTool(sample);
-  const latchedTool = latchPointerTool(previousLatchedTool, eventKind, resolvedTool);
+  const latchedTool = latchPointerTool(
+    previousLatchedTool,
+    eventKind,
+    resolvedTool,
+  );
 
   return {
     resolvedTool,

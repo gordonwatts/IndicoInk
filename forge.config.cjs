@@ -4,8 +4,9 @@ const { readdirSync } = require('node:fs');
 const { join } = require('node:path');
 
 const electronCacheRoot = join(__dirname, '.electron-cache');
-const electronZipDir = readdirSync(electronCacheRoot, { withFileTypes: true })
-  .find((entry) => entry.isDirectory())?.name;
+const electronZipDir = readdirSync(electronCacheRoot, {
+  withFileTypes: true,
+}).find((entry) => entry.isDirectory())?.name;
 
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 module.exports = {

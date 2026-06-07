@@ -7,15 +7,6 @@ const ensureDir = (filePath) => {
   mkdirSync(dirname(filePath), { recursive: true });
 };
 
-const escapePdfText = (value) =>
-  value
-    .replaceAll('\\', '\\\\')
-    .replaceAll('(', '\\(')
-    .replaceAll(')', '\\)');
-
-const textLine = (x, y, text, size = 12) =>
-  `BT /F1 ${size} Tf ${x} ${y} Td (${escapePdfText(text)}) Tj ET`;
-
 const buildPdf = ({ pages, resources = '', extraObjects = [] }) => {
   const objects = [];
 
@@ -25,8 +16,12 @@ const buildPdf = ({ pages, resources = '', extraObjects = [] }) => {
     return id;
   };
 
-  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  const extraObjectIds = extraObjects.map((body) => addObject(body));
+  const fontId = addObject(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  );
+  extraObjects.forEach((body) => {
+    addObject(body);
+  });
 
   const pageContentIds = [];
   const pageIds = [];
@@ -93,7 +88,9 @@ const makeInlineImage = () => {
     for (let x = 0; x < width; x += 1) {
       const checker = ((x >> 3) + (y >> 3)) % 2 === 0;
       const color = checker ? [0x36, 0x60, 0x96] : [0xbc, 0xd2, 0xe8];
-      hex.push(color.map((channel) => channel.toString(16).padStart(2, '0')).join(''));
+      hex.push(
+        color.map((channel) => channel.toString(16).padStart(2, '0')).join(''),
+      );
     }
   }
 
@@ -194,9 +191,11 @@ const textHeavy = buildPdf({
         '(Text-heavy fixture) Tj',
         '0 -24 Td',
         '/F1 10 Tf',
-        ...(Array.from({ length: 28 }, (_, index) =>
-          `0 -18 Td (Line ${String(index + 1).padStart(2, '0')}: repeated talk-title and metadata text for layout stress testing.) Tj`,
-        )),
+        ...Array.from(
+          { length: 28 },
+          (_, index) =>
+            `0 -18 Td (Line ${String(index + 1).padStart(2, '0')}: repeated talk-title and metadata text for layout stress testing.) Tj`,
+        ),
         'ET',
       ],
     },

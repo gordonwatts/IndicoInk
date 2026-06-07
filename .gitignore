@@ -5,5 +5,6 @@ node_modules/
 test-results/
 startup.log
 dist/
+out/
 coverage/
 *.log

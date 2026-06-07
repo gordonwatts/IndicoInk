@@ -3,12 +3,18 @@ import React from 'react';
 import {
   createPointerToolState,
   getPointerCursor,
+  getPointerInteractionMode,
   getPointerOverlayClass,
   type PointerEventKind,
   type PointerSample,
   type PointerTool,
 } from './pointerTools';
-import { toNormalizedPagePoint, type NormalizedPagePoint, type PageSize } from './inkGeometry';
+import {
+  toNormalizedPagePoint,
+  type NormalizedPagePoint,
+  type PageSize,
+} from './inkGeometry';
+import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
   createStrokeSegmentList,
   strokeHitsPoint,
@@ -65,6 +71,14 @@ type ActiveInkAction =
       pointerId: number;
       pageIndex: number;
     }
+  | {
+      kind: 'pan';
+      pointerId: number;
+      startClientX: number;
+      startClientY: number;
+      startScrollLeft: number;
+      startScrollTop: number;
+    }
   | null;
 
 const getFileName = (filePath: string) => {
@@ -96,7 +110,9 @@ const createIdlePointerDiagnostics = (): PointerDiagnostics => ({
   overlayClass: getPointerOverlayClass('unknown'),
 });
 
-const toPointerSample = (event: React.PointerEvent<HTMLDivElement>): PointerSample => ({
+const toPointerSample = (
+  event: React.PointerEvent<HTMLDivElement>,
+): PointerSample => ({
   pointerType: event.pointerType,
   button: event.button,
   buttons: event.buttons,
@@ -124,19 +140,45 @@ const createStrokeId = () =>
 
 export function PdfPreview({ filePath }: { filePath: string | null }) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
-  const [pointerDiagnostics, setPointerDiagnostics] = React.useState<PointerDiagnostics>(
-    createIdlePointerDiagnostics(),
-  );
+  const [pointerDiagnostics, setPointerDiagnostics] =
+    React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
+  const stageScrollRef = React.useRef<HTMLDivElement | null>(null);
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
-  const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>([]);
-  const [pointerMarker, setPointerMarker] = React.useState<PointerMarker | null>(null);
+  const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>(
+    [],
+  );
+  const [pointerMarker, setPointerMarker] =
+    React.useState<PointerMarker | null>(null);
+
+  const resolvePointerInteraction = React.useCallback(
+    (
+      eventKind: PointerEventKind,
+      event: React.PointerEvent<HTMLDivElement>,
+    ) => {
+      const sample = toPointerSample(event);
+      const toolState = createPointerToolState(
+        sample,
+        eventKind,
+        latchedToolRef.current,
+      );
+
+      return {
+        sample,
+        toolState,
+        interactionMode: getPointerInteractionMode(toolState.renderedTool),
+      };
+    },
+    [],
+  );
 
   const updatePointerDiagnostics = React.useCallback(
-    (eventKind: PointerEventKind, event: React.PointerEvent<HTMLDivElement>) => {
-      const sample = toPointerSample(event);
-      const toolState = createPointerToolState(sample, eventKind, latchedToolRef.current);
+    (
+      eventKind: PointerEventKind,
+      event: React.PointerEvent<HTMLDivElement>,
+    ) => {
+      const { sample, toolState } = resolvePointerInteraction(eventKind, event);
 
       latchedToolRef.current = toolState.latchedTool;
       setPointerDiagnostics({
@@ -154,28 +196,32 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         overlayClass: getPointerOverlayClass(toolState.renderedTool),
       });
     },
-    [],
+    [resolvePointerInteraction],
   );
 
   const handlePointerEvent = React.useCallback(
-    (eventKind: PointerEventKind) => (event: React.PointerEvent<HTMLDivElement>) => {
-      if (eventKind === 'pointerdown') {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
-
-      updatePointerDiagnostics(eventKind, event);
-
-      if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
+    (eventKind: PointerEventKind) =>
+      (event: React.PointerEvent<HTMLDivElement>) => {
+        if (eventKind === 'pointerdown') {
+          event.currentTarget.setPointerCapture(event.pointerId);
         }
-      }
-    },
+
+        updatePointerDiagnostics(eventKind, event);
+
+        if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+        }
+      },
     [updatePointerDiagnostics],
   );
 
   const updateStrokePage = React.useCallback(
-    (pageIndex: number, updater: (currentStrokes: InkStroke[]) => InkStroke[]) => {
+    (
+      pageIndex: number,
+      updater: (currentStrokes: InkStroke[]) => InkStroke[],
+    ) => {
       setStrokesByPage((currentPages) =>
         currentPages.map((pageStrokes, currentIndex) =>
           currentIndex === pageIndex ? updater(pageStrokes) : pageStrokes,
@@ -188,22 +234,25 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   const handlePagePointerEvent = React.useCallback(
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
-        const pageSize = state.kind === 'loading' || state.kind === 'ready'
-          ? state.pageSizes[pageIndex]
-          : undefined;
-
-        if (!pageSize || pageSize.width <= 0 || pageSize.height <= 0) {
-          handlePointerEvent(eventKind)(event);
-          return;
-        }
+        const pageSize =
+          state.kind === 'loading' || state.kind === 'ready'
+            ? state.pageSizes[pageIndex]
+            : undefined;
 
         handlePointerEvent(eventKind)(event);
 
-        const sample = toPointerSample(event);
-        const toolState = createPointerToolState(sample, eventKind, latchedToolRef.current);
-        const pagePoint = getPagePoint(event, pageSize);
+        const pagePoint =
+          pageSize && pageSize.width > 0 && pageSize.height > 0
+            ? getPagePoint(event, pageSize)
+            : null;
+        const { toolState, interactionMode } = resolvePointerInteraction(
+          eventKind,
+          event,
+        );
         const shouldShowMarker =
-          toolState.renderedTool === 'pen' || toolState.renderedTool === 'eraser';
+          pagePoint !== null &&
+          (toolState.renderedTool === 'pen' ||
+            toolState.renderedTool === 'eraser');
 
         if (shouldShowMarker) {
           setPointerMarker({
@@ -216,7 +265,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         }
 
         if (eventKind === 'pointerdown') {
-          if (toolState.renderedTool === 'mouse' || toolState.renderedTool === 'pen') {
+          if (interactionMode === 'draw' && pagePoint) {
             const strokeId = createStrokeId();
             activeInkActionRef.current = {
               kind: 'draw',
@@ -225,7 +274,13 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
               strokeId,
             };
             setStrokesByPage((currentPages) => {
-              const nextPages = currentPages.length ? [...currentPages] : createEmptyStrokePages(state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0);
+              const nextPages = currentPages.length
+                ? [...currentPages]
+                : createEmptyStrokePages(
+                    state.kind === 'loading' || state.kind === 'ready'
+                      ? state.pageCount
+                      : 0,
+                  );
               const currentPageStrokes = nextPages[pageIndex] ?? [];
               nextPages[pageIndex] = [
                 ...currentPageStrokes,
@@ -240,19 +295,38 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             return;
           }
 
-          if (toolState.renderedTool === 'eraser') {
+          if (interactionMode === 'erase' && pagePoint && pageSize) {
             activeInkActionRef.current = {
               kind: 'erase',
               pointerId: event.pointerId,
               pageIndex,
             };
             setStrokesByPage((currentPages) => {
-              const nextPages = currentPages.length ? [...currentPages] : createEmptyStrokePages(state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0);
+              const nextPages = currentPages.length
+                ? [...currentPages]
+                : createEmptyStrokePages(
+                    state.kind === 'loading' || state.kind === 'ready'
+                      ? state.pageCount
+                      : 0,
+                  );
               nextPages[pageIndex] = (nextPages[pageIndex] ?? []).filter(
                 (stroke) => !strokeHitsPoint(stroke, pagePoint, pageSize),
               );
               return nextPages;
             });
+            return;
+          }
+
+          if (interactionMode === 'pan' && stageScrollRef.current) {
+            activeInkActionRef.current = {
+              kind: 'pan',
+              pointerId: event.pointerId,
+              startClientX: event.clientX,
+              startClientY: event.clientY,
+              startScrollLeft: stageScrollRef.current.scrollLeft,
+              startScrollTop: stageScrollRef.current.scrollTop,
+            };
+            event.preventDefault();
           }
         }
 
@@ -263,7 +337,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         ) {
           if (
             activeInkActionRef.current.kind === 'draw' &&
-            activeInkActionRef.current.pageIndex === pageIndex
+            activeInkActionRef.current.pageIndex === pageIndex &&
+            pagePoint
           ) {
             const currentStrokeId = activeInkActionRef.current.strokeId;
             updateStrokePage(pageIndex, (currentStrokes) =>
@@ -277,18 +352,40 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
 
           if (
             activeInkActionRef.current.kind === 'erase' &&
-            activeInkActionRef.current.pageIndex === pageIndex
+            activeInkActionRef.current.pageIndex === pageIndex &&
+            pagePoint &&
+            pageSize
           ) {
             updateStrokePage(pageIndex, (currentStrokes) =>
-              currentStrokes.filter((stroke) => !strokeHitsPoint(stroke, pagePoint, pageSize)),
+              currentStrokes.filter(
+                (stroke) => !strokeHitsPoint(stroke, pagePoint, pageSize),
+              ),
             );
+          }
+
+          if (
+            activeInkActionRef.current.kind === 'pan' &&
+            activeInkActionRef.current.pointerId === event.pointerId &&
+            stageScrollRef.current
+          ) {
+            const deltaX =
+              event.clientX - activeInkActionRef.current.startClientX;
+            const deltaY =
+              event.clientY - activeInkActionRef.current.startClientY;
+
+            stageScrollRef.current.scrollLeft =
+              activeInkActionRef.current.startScrollLeft - deltaX;
+            stageScrollRef.current.scrollTop =
+              activeInkActionRef.current.startScrollTop - deltaY;
+            event.preventDefault();
           }
         }
 
         if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
           if (
             activeInkActionRef.current?.pointerId === event.pointerId &&
-            activeInkActionRef.current.pageIndex === pageIndex
+            (activeInkActionRef.current.kind === 'pan' ||
+              activeInkActionRef.current.pageIndex === pageIndex)
           ) {
             activeInkActionRef.current = null;
           }
@@ -298,13 +395,18 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           }
         }
       },
-    [handlePointerEvent, pointerMarker, state, updateStrokePage],
+    [
+      handlePointerEvent,
+      pointerMarker,
+      resolvePointerInteraction,
+      state,
+      updateStrokePage,
+    ],
   );
 
   React.useEffect(() => {
     let cancelled = false;
-    let loadingTask: { promise: Promise<any>; destroy: () => Promise<void> | void } | null =
-      null;
+    let loadingTask: PDFDocumentLoadingTask | null = null;
 
     const renderPreview = async () => {
       latchedToolRef.current = null;
@@ -376,7 +478,9 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           const canvas = pageCanvasRefs.current[pageNumber - 1];
           const context = canvas?.getContext('2d');
           if (!canvas || !context) {
-            throw new Error(`Canvas rendering is unavailable for page ${pageNumber}.`);
+            throw new Error(
+              `Canvas rendering is unavailable for page ${pageNumber}.`,
+            );
           }
 
           const viewport = page.getViewport({ scale: 1.4 });
@@ -391,6 +495,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           context.setTransform(scale, 0, 0, scale, 0, 0);
 
           await page.render({
+            canvas,
             canvasContext: context,
             viewport,
           }).promise;
@@ -466,8 +571,14 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             tone={pointerToolLabel === 'eraser' ? 'warning' : 'neutral'}
             icon={pointerToolLabel === 'eraser' ? 'annotated' : 'info'}
           />
-          <StatusLabel label={`Cursor: ${pointerDiagnostics.cursor}`} icon="info" />
-          <StatusLabel label={`SVG class: ${pointerDiagnostics.overlayClass}`} icon="info" />
+          <StatusLabel
+            label={`Cursor: ${pointerDiagnostics.cursor}`}
+            icon="info"
+          />
+          <StatusLabel
+            label={`SVG class: ${pointerDiagnostics.overlayClass}`}
+            icon="info"
+          />
         </div>
         <div className="pdf-preview-diagnostics-grid">
           <div>
@@ -505,7 +616,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         </div>
       </div>
 
-      <div className="pdf-preview-stage">
+      <div ref={stageScrollRef} className="pdf-preview-stage">
         {state.kind === 'ready' || state.kind === 'loading' ? (
           <div className="pdf-preview-pages">
             {Array.from({ length: state.pageCount }, (_, index) => {
@@ -523,23 +634,29 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                         key={`${stroke.id}-point`}
                         cx={stroke.points[0]!.x * (pageSize.width || 1)}
                         cy={stroke.points[0]!.y * (pageSize.height || 1)}
-                        r={stroke.points[0]!.pressure > 0 ? 2.5 + stroke.points[0]!.pressure * 2 : 3}
+                        r={
+                          stroke.points[0]!.pressure > 0
+                            ? 2.5 + stroke.points[0]!.pressure * 2
+                            : 3
+                        }
                         fill="#111111"
                       />,
                     ]
-                  : createStrokeSegmentList(stroke.points, pageSize).map((segment, segmentIndex) => (
-                      <line
-                        key={`${stroke.id}-${segmentIndex}`}
-                        x1={segment.x1}
-                        y1={segment.y1}
-                        x2={segment.x2}
-                        y2={segment.y2}
-                        stroke="#111111"
-                        strokeWidth={segment.width}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    )),
+                  : createStrokeSegmentList(stroke.points, pageSize).map(
+                      (segment, segmentIndex) => (
+                        <line
+                          key={`${stroke.id}-${segmentIndex}`}
+                          x1={segment.x1}
+                          y1={segment.y1}
+                          x2={segment.x2}
+                          y2={segment.y2}
+                          stroke="#111111"
+                          strokeWidth={segment.width}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ),
+                    ),
               );
 
               return (
@@ -551,12 +668,21 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                     className="pdf-preview-sheet"
                     data-rendered-tool={pointerDiagnostics.renderedTool}
                     style={{ cursor: pointerDiagnostics.cursor }}
-                    onPointerEnter={handlePagePointerEvent(index, 'pointerenter')}
+                    onPointerEnter={handlePagePointerEvent(
+                      index,
+                      'pointerenter',
+                    )}
                     onPointerMove={handlePagePointerEvent(index, 'pointermove')}
                     onPointerDown={handlePagePointerEvent(index, 'pointerdown')}
                     onPointerUp={handlePagePointerEvent(index, 'pointerup')}
-                    onPointerCancel={handlePagePointerEvent(index, 'pointercancel')}
-                    onPointerLeave={handlePagePointerEvent(index, 'pointerleave')}
+                    onPointerCancel={handlePagePointerEvent(
+                      index,
+                      'pointercancel',
+                    )}
+                    onPointerLeave={handlePagePointerEvent(
+                      index,
+                      'pointerleave',
+                    )}
                   >
                     <canvas
                       ref={(element) => {
@@ -577,16 +703,16 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                             key="pointer-marker"
                             cx={marker.point.x * (pageSize.width || 1)}
                             cy={marker.point.y * (pageSize.height || 1)}
-                            r="8"
+                            r="5"
                             className="pdf-preview-pointer-marker pen"
                           />
                         ) : (
                           <rect
                             key="pointer-marker"
-                            x={marker.point.x * (pageSize.width || 1) - 8}
-                            y={marker.point.y * (pageSize.height || 1) - 8}
-                            width="16"
-                            height="16"
+                            x={marker.point.x * (pageSize.width || 1) - 6}
+                            y={marker.point.y * (pageSize.height || 1) - 6}
+                            width="12"
+                            height="12"
                             rx="3"
                             className="pdf-preview-pointer-marker eraser"
                           />

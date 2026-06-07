@@ -10,7 +10,12 @@ const readFixture = (name: string) =>
 
 describe('PDF fixtures', () => {
   it('includes the expected deterministic fixture set', () => {
-    const names = ['image-heavy.pdf', 'multi-page.pdf', 'one-page.pdf', 'text-heavy.pdf'];
+    const names = [
+      'image-heavy.pdf',
+      'multi-page.pdf',
+      'one-page.pdf',
+      'text-heavy.pdf',
+    ];
 
     for (const name of names) {
       const bytes = readFixture(name);

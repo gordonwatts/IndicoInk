@@ -1,6 +1,11 @@
 :root {
   color-scheme: light;
-  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+  font-family:
+    'Segoe UI Variable',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
     sans-serif;
   --space-1: 4px;
   --space-2: 8px;
@@ -43,9 +48,21 @@
 
   color: var(--text-primary);
   background:
-    radial-gradient(circle at top left, rgba(110, 135, 177, 0.18), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(184, 191, 210, 0.28), transparent 32%),
-    linear-gradient(180deg, var(--surface-body-start) 0%, var(--surface-body-end) 100%);
+    radial-gradient(
+      circle at top left,
+      rgba(110, 135, 177, 0.18),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(184, 191, 210, 0.28),
+      transparent 32%
+    ),
+    linear-gradient(
+      180deg,
+      var(--surface-body-start) 0%,
+      var(--surface-body-end) 100%
+    );
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -172,7 +189,11 @@ input:focus-visible {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, var(--surface-accent) 0%, var(--surface-accent-strong) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--surface-accent) 0%,
+    var(--surface-accent-strong) 100%
+  );
   color: var(--text-inverse);
   font-weight: 700;
   box-shadow: 0 12px 28px rgba(25, 46, 74, 0.18);
@@ -362,7 +383,11 @@ input:focus-visible {
 
 .primary-button {
   padding: 0 18px;
-  background: linear-gradient(180deg, var(--accent) 0%, var(--surface-accent-strong) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    var(--surface-accent-strong) 100%
+  );
   color: var(--text-inverse);
 }
 
@@ -371,7 +396,11 @@ input:focus-visible {
 }
 
 .primary-button:hover {
-  background: linear-gradient(180deg, var(--accent-hover) 0%, var(--surface-accent) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent-hover) 0%,
+    var(--surface-accent) 100%
+  );
 }
 
 .page-surface {
@@ -654,7 +683,11 @@ input:focus-visible {
   gap: 10px;
   padding: 14px;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 249, 252, 0.98));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.96),
+    rgba(247, 249, 252, 0.98)
+  );
   border: 1px solid rgba(15, 23, 42, 0.14);
   box-shadow: 0 12px 26px rgba(36, 46, 61, 0.08);
 }
@@ -666,7 +699,11 @@ input:focus-visible {
 }
 
 .pdf-preview-diagnostics-row .status-label {
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(235, 240, 248, 0.98));
+  background: linear-gradient(
+    180deg,
+    rgba(248, 250, 252, 0.98),
+    rgba(235, 240, 248, 0.98)
+  );
   color: #10233d;
   border-color: rgba(15, 23, 42, 0.2);
   box-shadow: 0 4px 10px rgba(36, 46, 61, 0.08);
@@ -741,7 +778,7 @@ input:focus-visible {
   border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 10px 24px rgba(36, 46, 61, 0.12);
-  touch-action: pan-x pan-y;
+  touch-action: none;
 }
 
 .pdf-preview-sheet > canvas,
@@ -826,7 +863,11 @@ input:focus-visible {
   padding: 18px;
   border-radius: 18px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-muted) 88%, transparent), var(--surface-raised)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-panel-muted) 88%, transparent),
+      var(--surface-raised)
+    ),
     repeating-linear-gradient(
       90deg,
       rgba(82, 100, 128, 0.05) 0,

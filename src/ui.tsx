@@ -31,17 +31,15 @@ const iconPaths: Record<IconName, string> = {
   back: 'M15.3 4.9 9.2 11l6.1 6.1-1.4 1.4-7.5-7.5 7.5-7.5 1.4 1.4Z',
   search:
     'M10.5 4.75a5.75 5.75 0 1 1 0 11.5 5.75 5.75 0 0 1 0-11.5Zm0 2a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Zm5.18 7.76 3.82 3.82-1.41 1.41-3.82-3.82 1.41-1.41Z',
-  refresh: 'M17.35 8.65A6.5 6.5 0 1 0 18.5 12h-2a4.5 4.5 0 1 1-.83-2.6L14 11h5V6l-1.65 1.65Z',
+  refresh:
+    'M17.35 8.65A6.5 6.5 0 1 0 18.5 12h-2a4.5 4.5 0 1 1-.83-2.6L14 11h5V6l-1.65 1.65Z',
   export: 'M12 4.5 16 8.5h-2.75V14h-2.5V8.5H8L12 4.5Zm-6 11h12v2H6v-2Z',
   event:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Zm0 4h5v2H8v-2Z',
-  open:
-    'M7 5.5h10A1.5 1.5 0 0 1 18.5 7v10A1.5 1.5 0 0 1 17 18.5H7A1.5 1.5 0 0 1 5.5 17V7A1.5 1.5 0 0 1 7 5.5Zm0 2a.5.5 0 0 0-.5.5v9.5h11V8a.5.5 0 0 0-.5-.5H7Zm2 1.5h6v2H9V9Zm0 4h4v2H9v-2Z',
+  open: 'M7 5.5h10A1.5 1.5 0 0 1 18.5 7v10A1.5 1.5 0 0 1 17 18.5H7A1.5 1.5 0 0 1 5.5 17V7A1.5 1.5 0 0 1 7 5.5Zm0 2a.5.5 0 0 0-.5.5v9.5h11V8a.5.5 0 0 0-.5-.5H7Zm2 1.5h6v2H9V9Zm0 4h4v2H9v-2Z',
   chevron: 'M9.2 6.9 14.3 12l-5.1 5.1-1.4-1.4 3.7-3.7-3.7-3.7 1.4-1.4Z',
-  check:
-    'M10 16.2 5.8 12l1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2Z',
-  info:
-    'M12 6.6a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Zm-1 2.4h2v7h-2V9Z',
+  check: 'M10 16.2 5.8 12l1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2Z',
+  info: 'M12 6.6a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Zm-1 2.4h2v7h-2V9Z',
   dialog:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Z',
 };
@@ -243,7 +241,11 @@ export function DetailsSurface({
   const subtitleId = React.useId();
 
   return (
-    <section className="details-surface" aria-labelledby={titleId} aria-describedby={subtitle ? subtitleId : undefined}>
+    <section
+      className="details-surface"
+      aria-labelledby={titleId}
+      aria-describedby={subtitle ? subtitleId : undefined}
+    >
       <div className="details-surface-header">
         <h2 id={titleId}>{title}</h2>
         {subtitle ? <p id={subtitleId}>{subtitle}</p> : null}
@@ -301,5 +303,7 @@ export function ThemePreview({
   theme: 'light' | 'dark';
   children: React.ReactNode;
 }) {
-  return <section className={`theme-preview theme-${theme}`}>{children}</section>;
+  return (
+    <section className={`theme-preview theme-${theme}`}>{children}</section>
+  );
 }

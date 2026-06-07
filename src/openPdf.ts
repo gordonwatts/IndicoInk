@@ -7,15 +7,15 @@ export type PdfDialogResult = {
   filePaths: string[];
 };
 
-export type ShowOpenPdfDialog = (
-  options: {
-    title: string;
-    properties: Array<'openFile'>;
-    filters: Array<{ name: string; extensions: string[] }>;
-  },
-) => Promise<PdfDialogResult>;
+export type ShowOpenPdfDialog = (options: {
+  title: string;
+  properties: Array<'openFile'>;
+  filters: Array<{ name: string; extensions: string[] }>;
+}) => Promise<PdfDialogResult>;
 
-export const resolvePdfSelection = (paths: string[] | undefined): PdfSelection => {
+export const resolvePdfSelection = (
+  paths: string[] | undefined,
+): PdfSelection => {
   if (!paths || paths.length === 0) {
     return { canceled: true, filePath: null };
   }

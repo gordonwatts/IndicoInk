@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createPointerToolState,
   getPointerCursor,
+  getPointerInteractionMode,
   getPointerOverlayClass,
   latchPointerTool,
   resolvePointerTool,
@@ -74,7 +75,16 @@ describe('pointerTools', () => {
     expect(state.resolvedTool).toBe('eraser');
     expect(state.latchedTool).toBe('eraser');
     expect(state.renderedTool).toBe('eraser');
-    expect(getPointerCursor(state.renderedTool)).toBe('eraser');
+    expect(getPointerCursor(state.renderedTool)).toBe('none');
     expect(getPointerOverlayClass(state.renderedTool)).toBe('ink-layer eraser');
+    expect(getPointerInteractionMode(state.renderedTool)).toBe('erase');
+  });
+
+  it('maps mouse, pen, touch, and unknown cursor modes explicitly', () => {
+    expect(getPointerCursor('mouse')).toBe('crosshair');
+    expect(getPointerCursor('pen')).toBe('none');
+    expect(getPointerCursor('eraser')).toBe('none');
+    expect(getPointerCursor('touch')).toBe('none');
+    expect(getPointerCursor('unknown')).toBe('default');
   });
 });
