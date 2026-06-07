@@ -1,12 +1,20 @@
 :root {
   color-scheme: light;
-  font-family:
-    'Segoe UI Variable',
-    'Segoe UI',
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  --font-family-base:
+    'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-size-display: 30px;
+  --font-size-page-title: 24px;
+  --font-size-section-title: 18px;
+  --font-size-talk-title: 16px;
+  --font-size-body: 15px;
+  --font-size-supporting: 12px;
+  --line-height-tight: 1.1;
+  --line-height-standard: 1.4;
+  --line-height-relaxed: 1.6;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -65,6 +73,9 @@
     );
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-standard);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -110,6 +121,8 @@ body,
 
 body {
   min-height: 100vh;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-standard);
 }
 
 button,
@@ -205,12 +218,12 @@ input:focus-visible {
 }
 
 .brand-title {
-  font-size: 1.02rem;
-  font-weight: 600;
+  font-size: var(--font-size-talk-title);
+  font-weight: var(--font-weight-semibold);
 }
 
 .brand-subtitle {
-  font-size: 0.85rem;
+  font-size: var(--font-size-supporting);
   color: var(--text-muted);
 }
 
@@ -326,15 +339,15 @@ input:focus-visible {
 
 .command-kicker {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--font-size-supporting);
   text-transform: uppercase;
   letter-spacing: 0.14em;
 }
 
 .command-title {
   margin: 0;
-  font-size: clamp(1.6rem, 2vw, 2.3rem);
-  line-height: 1.05;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-tight);
 }
 
 .status-chip,
@@ -347,7 +360,7 @@ input:focus-visible {
   border-radius: var(--radius-pill);
   background: var(--surface-elevated);
   box-shadow: 0 10px 24px rgba(36, 46, 61, 0.06);
-  font-size: 0.92rem;
+  font-size: var(--font-size-body);
   white-space: nowrap;
 }
 
@@ -496,6 +509,19 @@ input:focus-visible {
 .dialog-surface-title h3,
 .row-title {
   margin: 0;
+  font-size: var(--font-size-talk-title);
+  line-height: var(--line-height-tight);
+}
+
+.hero-copy h2,
+.surface-panel h2 {
+  font-size: var(--font-size-page-title);
+  line-height: var(--line-height-tight);
+}
+
+.surface-panel h3 {
+  font-size: var(--font-size-section-title);
+  line-height: var(--line-height-tight);
 }
 
 .details-surface-header p,
@@ -503,6 +529,7 @@ input:focus-visible {
 .row-meta {
   margin: 0;
   color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
 }
 
 .dialog-surface-title {
@@ -585,7 +612,7 @@ input:focus-visible {
   background: var(--surface-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
-  font-size: 0.92rem;
+  font-size: var(--font-size-supporting);
 }
 
 .status-label.tone-success {
@@ -637,15 +664,15 @@ input:focus-visible {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  font-size: 0.74rem;
+  font-size: var(--font-size-supporting);
   color: var(--text-muted);
 }
 
 .lede {
   margin: 0;
   max-width: 52ch;
-  font-size: 1.05rem;
-  line-height: 1.6;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
 }
 
 .hero-actions {
@@ -657,7 +684,7 @@ input:focus-visible {
 .field {
   display: grid;
   gap: 8px;
-  font-size: 0.94rem;
+  font-size: var(--font-size-supporting);
 }
 
 .field input {
@@ -729,15 +756,15 @@ input:focus-visible {
 }
 
 .pdf-preview-diagnostics-grid span {
-  font-size: 0.74rem;
+  font-size: var(--font-size-supporting);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .pdf-preview-diagnostics-grid strong {
-  font-size: 0.96rem;
-  font-weight: 600;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
   color: #0f172a;
   word-break: break-word;
 }
@@ -768,7 +795,7 @@ input:focus-visible {
 }
 
 .pdf-preview-page-caption {
-  font-size: 0.82rem;
+  font-size: var(--font-size-supporting);
   color: var(--text-secondary);
 }
 
@@ -830,6 +857,7 @@ input:focus-visible {
 
 .surface-panel-header p {
   margin: 0;
+  font-size: var(--font-size-supporting);
 }
 
 .event-list {
@@ -858,7 +886,7 @@ input:focus-visible {
 }
 
 .stat-value {
-  font-size: 0.98rem;
+  font-size: var(--font-size-body);
 }
 
 .placeholder-canvas {
@@ -903,7 +931,7 @@ input:focus-visible {
 
 .canvas-block span {
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-relaxed);
 }
 
 .empty-state {
