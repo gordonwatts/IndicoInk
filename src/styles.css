@@ -751,6 +751,7 @@ input:focus-visible {
   border-radius: 18px;
   background: var(--surface-panel-muted);
   border: 1px solid rgba(58, 67, 81, 0.08);
+  touch-action: none;
 }
 
 .pdf-preview-pages {
@@ -763,6 +764,7 @@ input:focus-visible {
   display: grid;
   gap: 8px;
   margin: 0;
+  user-select: none;
 }
 
 .pdf-preview-page-caption {
@@ -779,11 +781,15 @@ input:focus-visible {
   background: #ffffff;
   box-shadow: 0 10px 24px rgba(36, 46, 61, 0.12);
   touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .pdf-preview-sheet > canvas,
 .pdf-preview-sheet > svg {
   grid-area: 1 / 1;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .pdf-preview-canvas {

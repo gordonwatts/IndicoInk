@@ -266,6 +266,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
 
         if (eventKind === 'pointerdown') {
           if (interactionMode === 'draw' && pagePoint) {
+            event.preventDefault();
             const strokeId = createStrokeId();
             activeInkActionRef.current = {
               kind: 'draw',
@@ -296,6 +297,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           }
 
           if (interactionMode === 'erase' && pagePoint && pageSize) {
+            event.preventDefault();
             activeInkActionRef.current = {
               kind: 'erase',
               pointerId: event.pointerId,
@@ -340,6 +342,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             activeInkActionRef.current.pageIndex === pageIndex &&
             pagePoint
           ) {
+            event.preventDefault();
             const currentStrokeId = activeInkActionRef.current.strokeId;
             updateStrokePage(pageIndex, (currentStrokes) =>
               currentStrokes.map((stroke) =>
@@ -356,6 +359,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             pagePoint &&
             pageSize
           ) {
+            event.preventDefault();
             updateStrokePage(pageIndex, (currentStrokes) =>
               currentStrokes.filter(
                 (stroke) => !strokeHitsPoint(stroke, pagePoint, pageSize),
@@ -667,6 +671,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                   <div
                     className="pdf-preview-sheet"
                     data-rendered-tool={pointerDiagnostics.renderedTool}
+                    draggable={false}
                     style={{ cursor: pointerDiagnostics.cursor }}
                     onPointerEnter={handlePagePointerEvent(
                       index,
@@ -689,6 +694,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
                         pageCanvasRefs.current[index] = element;
                       }}
                       className="pdf-preview-canvas"
+                      draggable={false}
                     />
                     <svg
                       aria-hidden="true"

@@ -54,6 +54,7 @@ describe('pointerTools', () => {
 
   it('latches contact tools and clears them on release', () => {
     expect(latchPointerTool(null, 'pointerdown', 'mouse')).toBe('mouse');
+    expect(latchPointerTool(null, 'pointerdown', 'touch')).toBe('touch');
     expect(latchPointerTool('mouse', 'pointermove', 'mouse')).toBe('mouse');
     expect(latchPointerTool('mouse', 'pointerup', 'mouse')).toBeNull();
     expect(latchPointerTool('eraser', 'pointercancel', 'eraser')).toBeNull();

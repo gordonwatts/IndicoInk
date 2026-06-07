@@ -54,9 +54,7 @@ export const latchPointerTool = (
   }
 
   if (eventKind === 'pointerdown') {
-    return resolvedTool === 'touch' || resolvedTool === 'unknown'
-      ? previousLatchedTool
-      : resolvedTool;
+    return resolvedTool === 'unknown' ? previousLatchedTool : resolvedTool;
   }
 
   return previousLatchedTool;
