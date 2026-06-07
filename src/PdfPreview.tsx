@@ -18,9 +18,11 @@ import {
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
   createStrokeSegmentList,
+  getStrokeWidth,
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
+import { getPdfWorkerSrc } from './pdfjs';
 import { IconButton, SegmentedControl, StatusLabel } from './ui';
 
 type PdfPreviewState =
@@ -182,6 +184,11 @@ const getPagePoint = (
 
 const createStrokeId = () =>
   `stroke-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+
+const formatPageSizeLabel = (pageSize: { width: number; height: number }) =>
+  pageSize.width > 0 && pageSize.height > 0
+    ? `${Math.round(pageSize.width)} x ${Math.round(pageSize.height)} px`
+    : 'pending';
 
 export function PdfPreview({ filePath }: { filePath: string | null }) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
@@ -687,6 +694,28 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             : 'pan',
         )
       : pointerDiagnostics.cursor;
+  const pressureWidthLabel = `${getStrokeWidth(pointerDiagnostics.pressure).toFixed(1)} px`;
+  const pdfWorkerSrc = getPdfWorkerSrc();
+  const rendererLocation = window.location.href;
+  const renderedPageCount =
+    state.kind === 'loading' || state.kind === 'ready'
+      ? state.pageStatuses.filter((pageStatus) => pageStatus === 'ready').length
+      : 0;
+  const pageDiagnostics =
+    state.kind === 'loading' || state.kind === 'ready'
+      ? {
+          pageCount: state.pageCount,
+          renderedPageCount,
+          firstPageStatus: state.pageStatuses[0] ?? 'pending',
+          lastPageStatus:
+            state.pageStatuses[state.pageStatuses.length - 1] ?? 'pending',
+          firstPageSize: state.pageSizes[0] ?? { width: 0, height: 0 },
+          lastPageSize: state.pageSizes[state.pageSizes.length - 1] ?? {
+            width: 0,
+            height: 0,
+          },
+        }
+      : null;
 
   return (
     <section className="pdf-preview" aria-label="PDF preview">
@@ -791,6 +820,10 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             <strong>{pointerDiagnostics.pressure.toFixed(3)}</strong>
           </div>
           <div>
+            <span>Width</span>
+            <strong>{pressureWidthLabel}</strong>
+          </div>
+          <div>
             <span>Primary</span>
             <strong>{pointerDiagnostics.isPrimary ? 'yes' : 'no'}</strong>
           </div>
@@ -805,6 +838,70 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           <div>
             <span>Mode</span>
             <strong>{pointerModeLabel}</strong>
+          </div>
+        </div>
+        <div className="pdf-preview-pressure-meter" aria-hidden="true">
+          <span className="pdf-preview-pressure-meter-label">
+            Pressure preview
+          </span>
+          <div className="pdf-preview-pressure-track">
+            <div
+              className="pdf-preview-pressure-fill"
+              style={{
+                width: `${Math.max(0, Math.min(pointerDiagnostics.pressure, 1)) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+        <div className="pdf-preview-render-diagnostics">
+          <span className="pdf-preview-render-diagnostics-label">
+            PDF render diagnostics
+          </span>
+          <div className="pdf-preview-render-diagnostics-grid">
+            <div>
+              <span>Worker</span>
+              <strong>{getFileName(pdfWorkerSrc)}</strong>
+            </div>
+            <div>
+              <span>Renderer</span>
+              <strong>{rendererLocation}</strong>
+            </div>
+            <div>
+              <span>File</span>
+              <strong>{filePath ? getFileName(filePath) : 'none'}</strong>
+            </div>
+            <div>
+              <span>Page count</span>
+              <strong>{pageDiagnostics?.pageCount ?? 0}</strong>
+            </div>
+            <div>
+              <span>Rendered</span>
+              <strong>
+                {pageDiagnostics
+                  ? `${pageDiagnostics.renderedPageCount}/${pageDiagnostics.pageCount}`
+                  : '0/0'}
+              </strong>
+            </div>
+            <div>
+              <span>First page</span>
+              <strong>
+                {pageDiagnostics
+                  ? `${pageDiagnostics.firstPageStatus} / ${formatPageSizeLabel(pageDiagnostics.firstPageSize)}`
+                  : 'idle'}
+              </strong>
+            </div>
+            <div>
+              <span>Last page</span>
+              <strong>
+                {pageDiagnostics
+                  ? `${pageDiagnostics.lastPageStatus} / ${formatPageSizeLabel(pageDiagnostics.lastPageSize)}`
+                  : 'idle'}
+              </strong>
+            </div>
+            <div>
+              <span>Render label</span>
+              <strong>{state.kind === 'idle' ? 'idle' : state.label}</strong>
+            </div>
           </div>
         </div>
       </div>
