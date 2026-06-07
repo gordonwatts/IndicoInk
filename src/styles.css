@@ -796,6 +796,7 @@ input:focus-visible {
 
 .pdf-preview-stage {
   min-height: 320px;
+  max-height: min(72vh, 780px);
   display: grid;
   place-items: center;
   padding: 18px;
