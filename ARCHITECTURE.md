@@ -34,4 +34,4 @@
 - Dev launches now support an isolated `userData` directory via `INDICOINK_ISOLATED_USER_DATA=1`, while GPU-disabled startup remains opt-in via `INDICOINK_DISABLE_GPU=1`.
 - The PDF preview diagnostics now expose worker source, renderer URL, base URI, page status, page sizing, and render-completion counts so blank or gray-page failures can be separated from pointer and ink issues.
 - On the target Windows pen device, mouse uses the crosshair cursor path, pen tip resolves to the in-page pen marker, and hardware eraser contact resolves to the in-page eraser marker even when the native stylus cursor does not visibly change.
-- Pen pressure is already reflected in the rendered stroke-width path and the pressure meter, but the target-device acceptance for that behavior still depends on a direct pen test before the section can be closed.
+- Pen pressure is reflected in the rendered stroke-width path and the pressure meter, and section 3 is accepted after the target-device pen, eraser, touch, mouse, and cursor checks passed.
