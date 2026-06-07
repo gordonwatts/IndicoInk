@@ -65,6 +65,13 @@ type PointerMarker = {
   tool: PointerTool;
 };
 
+type PointerInteractionResolution = {
+  sample: PointerSample;
+  toolState: ReturnType<typeof createPointerToolState>;
+  interactionMode: PointerInteractionMode;
+  renderedTool: PointerTool;
+};
+
 type ActiveInkAction =
   | {
       kind: 'draw';
@@ -211,12 +218,16 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   );
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
+  const pointerDiagnosticsFrameRef = React.useRef<number | null>(null);
+  const pendingPointerDiagnosticsRef = React.useRef<PointerDiagnostics | null>(
+    null,
+  );
 
   const resolvePointerInteraction = React.useCallback(
     (
       eventKind: PointerEventKind,
       event: React.PointerEvent<HTMLDivElement>,
-    ) => {
+    ): PointerInteractionResolution => {
       const sample = toPointerSample(event);
       const toolState = createPointerToolState(
         sample,
@@ -251,16 +262,61 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     [manualTool, mouseMode],
   );
 
+  const flushPointerDiagnostics = React.useCallback(() => {
+    if (pointerDiagnosticsFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
+      pointerDiagnosticsFrameRef.current = null;
+    }
+
+    const pending = pendingPointerDiagnosticsRef.current;
+    if (pending) {
+      pendingPointerDiagnosticsRef.current = null;
+      setPointerDiagnostics(pending);
+    }
+  }, []);
+
+  const schedulePointerDiagnostics = React.useCallback(
+    (nextPointerDiagnostics: PointerDiagnostics) => {
+      pendingPointerDiagnosticsRef.current = nextPointerDiagnostics;
+
+      if (pointerDiagnosticsFrameRef.current !== null) {
+        return;
+      }
+
+      pointerDiagnosticsFrameRef.current = window.requestAnimationFrame(() => {
+        pointerDiagnosticsFrameRef.current = null;
+        const pending = pendingPointerDiagnosticsRef.current;
+        if (!pending) {
+          return;
+        }
+
+        pendingPointerDiagnosticsRef.current = null;
+        setPointerDiagnostics(pending);
+      });
+    },
+    [],
+  );
+
+  React.useEffect(
+    () => () => {
+      if (pointerDiagnosticsFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
+        pointerDiagnosticsFrameRef.current = null;
+      }
+    },
+    [],
+  );
+
   const updatePointerDiagnostics = React.useCallback(
     (
       eventKind: PointerEventKind,
       event: React.PointerEvent<HTMLDivElement>,
+      resolution: PointerInteractionResolution,
     ) => {
-      const { sample, toolState, interactionMode, renderedTool } =
-        resolvePointerInteraction(eventKind, event);
+      const { sample, toolState, interactionMode, renderedTool } = resolution;
 
       latchedToolRef.current = toolState.latchedTool;
-      setPointerDiagnostics({
+      const nextPointerDiagnostics: PointerDiagnostics = {
         eventKind,
         pointerId: event.pointerId,
         pointerType: sample.pointerType,
@@ -274,9 +330,21 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         interactionMode,
         cursor: getPointerCursorForInteraction(renderedTool, interactionMode),
         overlayClass: getPointerOverlayClass(renderedTool),
-      });
+      };
+
+      if (
+        eventKind === 'pointerdown' ||
+        eventKind === 'pointerup' ||
+        eventKind === 'pointercancel'
+      ) {
+        flushPointerDiagnostics();
+        setPointerDiagnostics(nextPointerDiagnostics);
+        return;
+      }
+
+      schedulePointerDiagnostics(nextPointerDiagnostics);
     },
-    [resolvePointerInteraction],
+    [flushPointerDiagnostics, schedulePointerDiagnostics],
   );
 
   const handlePointerEvent = React.useCallback(
@@ -286,15 +354,17 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           event.currentTarget.setPointerCapture(event.pointerId);
         }
 
-        updatePointerDiagnostics(eventKind, event);
+        const resolution = resolvePointerInteraction(eventKind, event);
+        updatePointerDiagnostics(eventKind, event, resolution);
 
         if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
         }
+        return resolution;
       },
-    [updatePointerDiagnostics],
+    [resolvePointerInteraction, updatePointerDiagnostics],
   );
 
   const updateStrokePage = React.useCallback(
@@ -357,16 +427,13 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             ? state.pageSizes[pageIndex]
             : undefined;
 
-        handlePointerEvent(eventKind)(event);
+        const resolution = handlePointerEvent(eventKind)(event);
 
         const pagePoint =
           pageSize && pageSize.width > 0 && pageSize.height > 0
             ? getPagePoint(event, pageSize)
             : null;
-        const { interactionMode, renderedTool } = resolvePointerInteraction(
-          eventKind,
-          event,
-        );
+        const { interactionMode, renderedTool } = resolution;
         const shouldShowMarker =
           pagePoint !== null &&
           (interactionMode === 'draw' || interactionMode === 'erase');
@@ -672,6 +739,9 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
 
     return () => {
       cancelled = true;
+      if (pointerDiagnosticsFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
+      }
       void loadingTask?.destroy?.();
     };
   }, [filePath]);
