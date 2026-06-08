@@ -1,6 +1,9 @@
 import type { AppInfo } from './shared/appInfo';
 import type { PdfSelection } from './openPdf';
-import type { LibraryEventSummary } from './shared/library';
+import type {
+  LibraryEventSummary,
+  OpenLibraryEventResult,
+} from './shared/library';
 import type {
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
@@ -20,6 +23,11 @@ declare global {
       ) => Promise<PdfWorkspaceSaveResult>;
       listLibraryEvents: () => Promise<LibraryEventSummary[]>;
       deleteLibraryEvent: (conferenceId: string) => Promise<void>;
+      openLibraryEvent: (
+        eventUrl: string,
+        apiKey?: string,
+      ) => Promise<OpenLibraryEventResult>;
+      saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
     };
   }
 }

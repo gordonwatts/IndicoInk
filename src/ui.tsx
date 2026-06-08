@@ -131,18 +131,21 @@ export function PrimaryButton({
   onClick,
   title,
   className = '',
+  disabled = false,
 }: {
   children: React.ReactNode;
   icon?: IconName;
   onClick?: () => void;
   title?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       className={`primary-button${className ? ` ${className}` : ''}`}
       type="button"
       title={title ?? (typeof children === 'string' ? children : undefined)}
+      disabled={disabled}
       onClick={onClick}
     >
       {icon ? <Icon name={icon} /> : null}
@@ -336,7 +339,11 @@ export function DialogSurface({
         </div>
       </div>
       <div className="dialog-surface-actions">
-        <button className="secondary-button" type="button" onClick={onSecondary}>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onSecondary}
+        >
           {secondaryLabel}
         </button>
         <button className="primary-button" type="button" onClick={onPrimary}>

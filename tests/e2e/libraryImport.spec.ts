@@ -34,9 +34,7 @@ test('imports a fixture event and shows it after restart', async () => {
     }),
   ).toBeVisible();
   await expect(harness.page.getByText('6 annotated slides')).toBeVisible();
-  await expect(
-    harness.page.getByText('Cached for offline use'),
-  ).toBeVisible();
+  await expect(harness.page.getByText('Cached for offline use')).toBeVisible();
 
   await row.click();
 

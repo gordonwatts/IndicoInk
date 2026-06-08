@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   conferenceFixtures,
+  type ConferenceFixture,
   countConferenceSessions,
   countConferenceTalks,
   validateConferenceFixture,
@@ -38,7 +39,9 @@ describe('conference fixtures', () => {
     );
     expect(conferenceFixtures.small.days).toHaveLength(1);
     expect(conferenceFixtures.small.days[0]?.sessions).toHaveLength(2);
-    expect(conferenceFixtures.small.days[0]?.sessions[0]?.talks).toHaveLength(2);
+    expect(conferenceFixtures.small.days[0]?.sessions[0]?.talks).toHaveLength(
+      2,
+    );
 
     expect(conferenceFixtures.large.sourceUrl).toBe(
       'https://symposium.indico.example.org/event/indicoink-2026',
@@ -51,7 +54,7 @@ describe('conference fixtures', () => {
   it('rejects malformed fixture data', () => {
     const invalidFixture = JSON.parse(
       JSON.stringify(conferenceFixtures.small),
-    ) as any;
+    ) as ConferenceFixture;
 
     invalidFixture.days[0]!.sessions[0]!.talks = [
       {
@@ -64,8 +67,8 @@ describe('conference fixtures', () => {
       },
     ];
 
-    expect(() =>
-      validateConferenceFixture(invalidFixture),
-    ).toThrow(/Duplicate contribution ID/);
+    expect(() => validateConferenceFixture(invalidFixture)).toThrow(
+      /Duplicate contribution ID/,
+    );
   });
 });

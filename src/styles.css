@@ -281,7 +281,8 @@ input:focus-visible {
 
 .row.is-selected {
   background: var(--surface-panel-strong);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-accent) 24%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--surface-accent) 24%, transparent);
 }
 
 .icon-button.is-active {
@@ -611,7 +612,8 @@ input:focus-visible {
 
 .row-list.is-selected {
   background: color-mix(in srgb, var(--surface-panel-strong) 72%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--surface-accent) 18%, transparent);
 }
 
 .row-main {
@@ -1098,10 +1100,15 @@ input:focus-visible {
   gap: 10px;
   padding: 10px 14px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-panel-strong) 84%, var(--surface-panel-muted));
+  background: color-mix(
+    in srgb,
+    var(--surface-panel-strong) 84%,
+    var(--surface-panel-muted)
+  );
   color: var(--text-primary);
   border: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--surface-accent) 10%, transparent);
+  box-shadow: 0 10px 24px
+    color-mix(in srgb, var(--surface-accent) 10%, transparent);
 }
 
 .canvas-block {

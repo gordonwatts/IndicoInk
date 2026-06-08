@@ -1,0 +1,395 @@
+{
+  "count": 1,
+  "additionalInfo": {},
+  "ts": 1780878217,
+  "url": "https:\/\/indico.in2p3.fr\/export\/event\/40025.json?detail=sessions&pretty=yes",
+  "results": [
+    {
+      "_type": "Conference",
+      "id": "40025",
+      "title": "DIRAC Project meeting",
+      "description": "<div>Indico<\/div>\r\n<div>\u00a0<\/div>\r\n<div>https:\/\/indico.in2p3.fr\/event\/40025<\/div>\r\n<div>\u00a0<\/div>\r\n<div>Etherpad<\/div>\r\n<div>\u00a0<\/div>\r\n<div>https:\/\/etherpad.in2p3.fr\/p\/DIRAC%40IN2P3260707<\/div>\r\n<div>\u00a0<\/div>\r\n<div>\r\n<p>Web and application link:<br>Principal link: https:\/\/rendez-vous.renater.fr\/lobby_private\/DIRACIN2P3_id_845838d57916691eba83502ceb51608895c1154b5bedfd7d12d2ac2ad3c20f91__0nuweho-2hpi_d72c82-2019f2-11f342<br>Password: 324536<\/p>\r\n<p><br>Phone access:\u00a0<br>Conference code: 6427187365<br>Tel: 09 88 83 00 10<br>From mobile: tel:0988830010,,6427187365#<\/p>\r\n<p><br>Access from a SIP video conferencing equipment:<br>Conference code: 6427187365<br>Direct access:sip:6427187365@194.57.7.21<br>Video menu:sip:0@194.57.7.21<br>Room connector documentation:https:\/\/services.renater.fr\/rendez-vous\/rsip_pp\/index<br>Screen Sharing link (all audio muted):https:\/\/rendez-vous.renater.fr\/lobby_private\/DIRACIN2P3_id_845838d57916691eba83502ceb51608895c1154b5bedfd7d12d2ac2ad3c20f91__0nuweho-2hpi_d72c82-2019f2-11f342#config.startSilent=true<\/p>\r\n<p><br>Phone access and room connector link accesses are valid until \u00a005\/26\/2027<\/p>\r\n<\/div>",
+      "startDate": {
+        "date": "2026-07-07",
+        "time": "14:00:00",
+        "tz": "Europe\/Paris"
+      },
+      "timezone": "Europe\/Paris",
+      "endDate": {
+        "date": "2026-07-07",
+        "time": "16:20:00",
+        "tz": "Europe\/Paris"
+      },
+      "room": "",
+      "location": "",
+      "address": "",
+      "type": "meeting",
+      "references": [],
+      "_fossil": "conferenceMetadataWithSessions",
+      "categoryId": 737,
+      "category": "DIRAC",
+      "note": {},
+      "roomFullname": "",
+      "url": "https:\/\/indico.in2p3.fr\/event\/40025\/",
+      "creationDate": {
+        "date": "2026-05-26",
+        "time": "16:04:08.987901",
+        "tz": "Europe\/Paris"
+      },
+      "creator": {
+        "_type": "Avatar",
+        "_fossil": "conferenceChairMetadata",
+        "first_name": "Vanessa",
+        "last_name": "Hamar",
+        "fullName": "Hamar, Vanessa",
+        "id": "4305",
+        "affiliation": "CC-IN2P3 \/ CNRS",
+        "emailHash": "fe74a9bce2bb8ace85cf17500e288950"
+      },
+      "hasAnyProtection": false,
+      "roomMapURL": "",
+      "folders": [],
+      "chairs": [
+        {
+          "_type": "ConferenceChair",
+          "_fossil": "conferenceChairMetadata",
+          "first_name": "Vanessa",
+          "last_name": "Hamar",
+          "fullName": "Hamar, Vanessa",
+          "id": "17784",
+          "affiliation": "CC-IN2P3 \/ CNRS",
+          "emailHash": "fe74a9bce2bb8ace85cf17500e288950",
+          "db_id": 17784,
+          "person_id": 193527
+        }
+      ],
+      "material": [],
+      "keywords": [],
+      "organizer": "",
+      "language": null,
+      "label": null,
+      "visibility": {
+        "id": "",
+        "name": "Everywhere"
+      },
+      "contributions": [
+        {
+          "_type": "Contribution",
+          "_fossil": "contributionMetadataWithSubContribs",
+          "id": "27",
+          "db_id": 174307,
+          "friendly_id": 27,
+          "title": "Consortium news",
+          "startDate": {
+            "date": "2026-07-07",
+            "time": "15:25:00",
+            "tz": "Europe\/Paris"
+          },
+          "endDate": {
+            "date": "2026-07-07",
+            "time": "15:35:00",
+            "tz": "Europe\/Paris"
+          },
+          "duration": 10,
+          "roomFullname": "",
+          "room": "",
+          "note": {},
+          "location": "",
+          "type": null,
+          "description": "",
+          "folders": [],
+          "url": "https:\/\/indico.in2p3.fr\/event\/40025\/contributions\/174307\/",
+          "material": [],
+          "speakers": [
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Andrei",
+              "last_name": "Tsaregorodtsev",
+              "fullName": "Tsaregorodtsev, Andrei",
+              "id": "207433",
+              "affiliation": "CPPM-CNRS",
+              "emailHash": "c48a05dbf21568f1dcf72809bcbaaa67",
+              "db_id": 207433,
+              "person_id": 193528
+            }
+          ],
+          "primaryauthors": [],
+          "coauthors": [],
+          "keywords": [],
+          "track": null,
+          "session": null,
+          "references": [],
+          "board_number": "",
+          "code": "",
+          "subContributions": []
+        },
+        {
+          "_type": "Contribution",
+          "_fossil": "contributionMetadataWithSubContribs",
+          "id": "20",
+          "db_id": 174308,
+          "friendly_id": 20,
+          "title": "Projets",
+          "startDate": {
+            "date": "2026-07-07",
+            "time": "14:40:00",
+            "tz": "Europe\/Paris"
+          },
+          "endDate": {
+            "date": "2026-07-07",
+            "time": "15:20:00",
+            "tz": "Europe\/Paris"
+          },
+          "duration": 40,
+          "roomFullname": "",
+          "room": "",
+          "note": {},
+          "location": "",
+          "type": null,
+          "description": "",
+          "folders": [],
+          "url": "https:\/\/indico.in2p3.fr\/event\/40025\/contributions\/174308\/",
+          "material": [],
+          "speakers": [
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Andrei",
+              "last_name": "Tsaregorodtsev",
+              "fullName": "Tsaregorodtsev, Andrei",
+              "id": "207438",
+              "affiliation": "Aix Marseille Univ, CNRS\/IN2P3, CPPM, Marseille, France",
+              "emailHash": "abfcc508622af21078d4ac47c92ceff6",
+              "db_id": 207438,
+              "person_id": 193533
+            },
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Axel",
+              "last_name": "BONNET",
+              "fullName": "BONNET, Axel",
+              "id": "207435",
+              "affiliation": "{CNRS}UMR5220",
+              "emailHash": "7ea3de3e1c2638336c4e3bf8208a36b4",
+              "db_id": 207435,
+              "person_id": 193530
+            },
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Bertrand",
+              "last_name": "Rigaud",
+              "fullName": "Rigaud, Bertrand",
+              "id": "207439",
+              "affiliation": "CC-IN2P3",
+              "emailHash": "f37157e6fd3128c62b3b8a57e0abc7c8",
+              "db_id": 207439,
+              "person_id": 193534
+            },
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Luisa",
+              "last_name": "Arrabito",
+              "fullName": "Arrabito, Luisa",
+              "id": "207434",
+              "affiliation": "LUPM",
+              "emailHash": "e716418209886a2c6221ebbe3510d139",
+              "db_id": 207434,
+              "person_id": 193529
+            },
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Natthan",
+              "last_name": "Pigoux",
+              "fullName": "Pigoux, Natthan",
+              "id": "207436",
+              "affiliation": "LUPM",
+              "emailHash": "83fe463f33a22f30b84900eaca08c44a",
+              "db_id": 207436,
+              "person_id": 193531
+            },
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Sorina",
+              "last_name": "POP",
+              "fullName": "POP, Sorina",
+              "id": "207437",
+              "affiliation": "CNRS",
+              "emailHash": "66e0077937198e193085fd5986271908",
+              "db_id": 207437,
+              "person_id": 193532
+            }
+          ],
+          "primaryauthors": [],
+          "coauthors": [],
+          "keywords": [],
+          "track": null,
+          "session": null,
+          "references": [],
+          "board_number": "",
+          "code": "",
+          "subContributions": []
+        },
+        {
+          "_type": "Contribution",
+          "_fossil": "contributionMetadataWithSubContribs",
+          "id": "4",
+          "db_id": 174309,
+          "friendly_id": 4,
+          "title": "Publications \/ Conf\u00e9rences",
+          "startDate": {
+            "date": "2026-07-07",
+            "time": "15:20:00",
+            "tz": "Europe\/Paris"
+          },
+          "endDate": {
+            "date": "2026-07-07",
+            "time": "15:25:00",
+            "tz": "Europe\/Paris"
+          },
+          "duration": 5,
+          "roomFullname": "",
+          "room": "",
+          "note": {},
+          "location": "",
+          "type": null,
+          "description": "<b>Publications<\/b>\r\n\r\n\r\n<b>Conferences<\/b>",
+          "folders": [],
+          "url": "https:\/\/indico.in2p3.fr\/event\/40025\/contributions\/174309\/",
+          "material": [],
+          "speakers": [
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Andrei",
+              "last_name": "Tsaregorodtsev",
+              "fullName": "Tsaregorodtsev, Andrei",
+              "id": "207440",
+              "affiliation": "Aix Marseille Univ, CNRS\/IN2P3, CPPM, Marseille, France",
+              "emailHash": "abfcc508622af21078d4ac47c92ceff6",
+              "db_id": 207440,
+              "person_id": 193533
+            }
+          ],
+          "primaryauthors": [],
+          "coauthors": [],
+          "keywords": [],
+          "track": null,
+          "session": null,
+          "references": [],
+          "board_number": "",
+          "code": "",
+          "subContributions": []
+        },
+        {
+          "_type": "Contribution",
+          "_fossil": "contributionMetadataWithSubContribs",
+          "id": "28",
+          "db_id": 174310,
+          "friendly_id": 28,
+          "title": "AOB",
+          "startDate": {
+            "date": "2026-07-07",
+            "time": "15:35:00",
+            "tz": "Europe\/Paris"
+          },
+          "endDate": {
+            "date": "2026-07-07",
+            "time": "15:45:00",
+            "tz": "Europe\/Paris"
+          },
+          "duration": 10,
+          "roomFullname": "",
+          "room": "",
+          "note": {},
+          "location": "",
+          "type": null,
+          "description": "",
+          "folders": [],
+          "url": "https:\/\/indico.in2p3.fr\/event\/40025\/contributions\/174310\/",
+          "material": [],
+          "speakers": [],
+          "primaryauthors": [],
+          "coauthors": [],
+          "keywords": [],
+          "track": null,
+          "session": null,
+          "references": [],
+          "board_number": "",
+          "code": "",
+          "subContributions": []
+        },
+        {
+          "_type": "Contribution",
+          "_fossil": "contributionMetadataWithSubContribs",
+          "id": "0",
+          "db_id": 174311,
+          "friendly_id": 0,
+          "title": "Etat du projet",
+          "startDate": {
+            "date": "2026-07-07",
+            "time": "14:00:00",
+            "tz": "Europe\/Paris"
+          },
+          "endDate": {
+            "date": "2026-07-07",
+            "time": "14:40:00",
+            "tz": "Europe\/Paris"
+          },
+          "duration": 40,
+          "roomFullname": "",
+          "room": "",
+          "note": {},
+          "location": "",
+          "type": null,
+          "description": "<ul>\r\n  <li> Tour de table <\/li>\r\n<\/ul>",
+          "folders": [],
+          "url": "https:\/\/indico.in2p3.fr\/event\/40025\/contributions\/174311\/",
+          "material": [],
+          "speakers": [
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Andrei",
+              "last_name": "Tsaregorodtsev",
+              "fullName": "Tsaregorodtsev, Andrei",
+              "id": "207442",
+              "affiliation": "Aix Marseille Univ, CNRS\/IN2P3, CPPM, Marseille, France",
+              "emailHash": "abfcc508622af21078d4ac47c92ceff6",
+              "db_id": 207442,
+              "person_id": 193533
+            },
+            {
+              "_type": "ContributionParticipation",
+              "_fossil": "contributionParticipationMetadata",
+              "first_name": "Vanessa",
+              "last_name": "Hamar",
+              "fullName": "Hamar, Vanessa",
+              "id": "207441",
+              "affiliation": "CC-IN2P3 \/ CNRS",
+              "emailHash": "fe74a9bce2bb8ace85cf17500e288950",
+              "db_id": 207441,
+              "person_id": 193527
+            }
+          ],
+          "primaryauthors": [],
+          "coauthors": [],
+          "keywords": [],
+          "track": null,
+          "session": null,
+          "references": [],
+          "board_number": "",
+          "code": "",
+          "subContributions": []
+        }
+      ],
+      "sessions": []
+    }
+  ],
+  "_type": "HTTPAPIResult"
+}

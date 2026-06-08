@@ -133,4 +133,3 @@ export const countAnnotatedSlides = (slides: ReadonlyArray<Slide>) =>
 
 export const countAnnotations = (annotations: ReadonlyArray<Annotation>) =>
   annotations.length;
-

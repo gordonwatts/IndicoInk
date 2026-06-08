@@ -12,7 +12,10 @@ import { createSlideId } from './persistenceModels';
 import { PersistenceStore } from './persistenceStore';
 
 const createTempDbPath = (name: string) =>
-  join(mkdtempSync(join(tmpdir(), 'indicoink-persistence-')), `${name}.sqlite3`);
+  join(
+    mkdtempSync(join(tmpdir(), 'indicoink-persistence-')),
+    `${name}.sqlite3`,
+  );
 
 describe('persistence store', () => {
   it('creates a fresh schema and supports repository CRUD and transactions', async () => {
@@ -109,9 +112,9 @@ describe('persistence store', () => {
       updatedAt: 1700000000000,
     });
 
-    await expect(store.listTalksByConference('conference-1')).resolves.toHaveLength(
-      1,
-    );
+    await expect(
+      store.listTalksByConference('conference-1'),
+    ).resolves.toHaveLength(1);
     await expect(store.listDecksByTalk('talk-1')).resolves.toHaveLength(1);
     await expect(store.listSlidesByDeck('deck-1')).resolves.toHaveLength(1);
     await expect(

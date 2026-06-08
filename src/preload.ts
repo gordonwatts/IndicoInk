@@ -6,7 +6,10 @@ import type {
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
-import type { LibraryEventSummary } from './shared/library';
+import type {
+  LibraryEventSummary,
+  OpenLibraryEventResult,
+} from './shared/library';
 
 const getAppInfo = async (): Promise<AppInfo> =>
   ipcRenderer.invoke('app:get-info');
@@ -33,6 +36,17 @@ const listLibraryEvents = async (): Promise<LibraryEventSummary[]> =>
 const deleteLibraryEvent = async (conferenceId: string): Promise<void> =>
   ipcRenderer.invoke('library:delete-event', conferenceId);
 
+const openLibraryEvent = async (
+  eventUrl: string,
+  apiKey?: string,
+): Promise<OpenLibraryEventResult> =>
+  ipcRenderer.invoke('library:open-event', eventUrl, apiKey);
+
+const saveIndicoApiKey = async (
+  origin: string,
+  apiKey: string,
+): Promise<void> => ipcRenderer.invoke('indico:save-api-key', origin, apiKey);
+
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
   openPdf,
@@ -41,6 +55,8 @@ contextBridge.exposeInMainWorld('indicoInk', {
   savePdfWorkspaceState,
   listLibraryEvents,
   deleteLibraryEvent,
+  openLibraryEvent,
+  saveIndicoApiKey,
 });
 
 export type IndicoInkApi = {
@@ -55,4 +71,9 @@ export type IndicoInkApi = {
   ) => Promise<PdfWorkspaceSaveResult>;
   listLibraryEvents: () => Promise<LibraryEventSummary[]>;
   deleteLibraryEvent: (conferenceId: string) => Promise<void>;
+  openLibraryEvent: (
+    eventUrl: string,
+    apiKey?: string,
+  ) => Promise<OpenLibraryEventResult>;
+  saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
 };

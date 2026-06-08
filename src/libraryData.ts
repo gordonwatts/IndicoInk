@@ -66,7 +66,15 @@ const toUtcTimestamp = (dayLabel: string, time: string) => {
   }
 
   const { hours, minutes } = parseTime(time);
-  return Date.UTC(Number(yearText), month, Number(dayText), hours, minutes, 0, 0);
+  return Date.UTC(
+    Number(yearText),
+    month,
+    Number(dayText),
+    hours,
+    minutes,
+    0,
+    0,
+  );
 };
 
 const formatLastOpened = (lastOpenedAt: number | null, now: number) => {
@@ -92,10 +100,7 @@ const formatLastOpened = (lastOpenedAt: number | null, now: number) => {
   return `Opened ${ageDays} day${ageDays === 1 ? '' : 's'} ago`;
 };
 
-const getAnnotationCount = async (
-  store: PersistenceStore,
-  talkId: string,
-) => {
+const getAnnotationCount = async (store: PersistenceStore, talkId: string) => {
   const count = await store.countAnnotatedSlidesByTalk(talkId);
   return count < minimumVisibleAnnotationCount ? 0 : count;
 };
@@ -110,11 +115,15 @@ export const buildLibraryEventSummaries = async (
     conferences.map(async (conference) => {
       const talks = await store.listTalksByConference(conference.id);
       const annotationCount = (
-        await Promise.all(talks.map((talk) => getAnnotationCount(store, talk.id)))
+        await Promise.all(
+          talks.map((talk) => getAnnotationCount(store, talk.id)),
+        )
       ).reduce((total, count) => total + count, 0);
       const deckCount = (
         await Promise.all(
-          talks.map(async (talk) => (await store.listDecksByTalk(talk.id)).length),
+          talks.map(
+            async (talk) => (await store.listDecksByTalk(talk.id)).length,
+          ),
         )
       ).reduce((total, count) => total + count, 0);
 
@@ -128,8 +137,7 @@ export const buildLibraryEventSummaries = async (
         annotationSummary: `${annotationCount} annotated slide${
           annotationCount === 1 ? '' : 's'
         }`,
-        cacheStatus:
-          deckCount > 0 ? 'Cached for offline use' : 'Online only',
+        cacheStatus: deckCount > 0 ? 'Cached for offline use' : 'Online only',
       } satisfies LibraryEventSummary;
     }),
   );
@@ -188,9 +196,7 @@ export const importConferenceFixture = async (
               material.kind === 'pdf',
           );
           const selectedMaterial =
-            getSelectedDeck(talk.materials) ??
-            pdfMaterials[0] ??
-            null;
+            getSelectedDeck(talk.materials) ?? pdfMaterials[0] ?? null;
 
           for (const material of pdfMaterials) {
             deckCount += 1;
@@ -250,12 +256,16 @@ export const importConferenceFixture = async (
       fixture.days
         .flatMap((day) => day.sessions)
         .flatMap((session) => session.talks)
-        .flatMap((talk) => talk.materials.filter((material) => material.kind === 'pdf'))
+        .flatMap((talk) =>
+          talk.materials.filter((material) => material.kind === 'pdf'),
+        )
         .find((material) => material.selected) ??
       fixture.days
         .flatMap((day) => day.sessions)
         .flatMap((session) => session.talks)
-        .flatMap((talk) => talk.materials.filter((material) => material.kind === 'pdf'))[0] ??
+        .flatMap((talk) =>
+          talk.materials.filter((material) => material.kind === 'pdf'),
+        )[0] ??
       null;
 
     if (firstSelectedDeck) {
@@ -274,7 +284,10 @@ export const importConferenceFixture = async (
         );
 
       if (selectedTalk) {
-        const talkId = createTalkId(conferenceId, selectedTalk.talk.contributionId);
+        const talkId = createTalkId(
+          conferenceId,
+          selectedTalk.talk.contributionId,
+        );
         const deckId = createDeckId(talkId, firstSelectedDeck.sourceUrl);
         const slideId = createSlideId(deckId, 1);
         await transactionStore.upsertViewState({

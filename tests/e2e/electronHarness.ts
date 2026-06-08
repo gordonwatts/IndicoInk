@@ -123,21 +123,20 @@ export const launchElectronHarness = async (
   });
 
   await waitFor(() => existsSync(startupLogPath), 30_000);
-  await waitFor(
-    () => {
-      if (exitCode !== null) {
-        const startupLog = existsSync(startupLogPath)
-          ? readFileSync(startupLogPath, 'utf8')
-          : 'startup.log missing';
-        throw new Error(
-          `Electron exited before the ready-to-show marker with code ${exitCode}.\n${startupLog}`,
-        );
-      }
+  await waitFor(() => {
+    if (exitCode !== null) {
+      const startupLog = existsSync(startupLogPath)
+        ? readFileSync(startupLogPath, 'utf8')
+        : 'startup.log missing';
+      throw new Error(
+        `Electron exited before the ready-to-show marker with code ${exitCode}.\n${startupLog}`,
+      );
+    }
 
-      return readFileSync(startupLogPath, 'utf8').includes('window:ready-to-show');
-    },
-    30_000,
-  );
+    return readFileSync(startupLogPath, 'utf8').includes(
+      'window:ready-to-show',
+    );
+  }, 30_000);
 
   await waitForCdpEndpoint();
   const browser = await chromium.connectOverCDP(

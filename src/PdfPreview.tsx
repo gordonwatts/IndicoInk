@@ -239,8 +239,9 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   );
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
   const persistenceHydratedRef = React.useRef(false);
-  const pendingWorkspaceRestoreRef =
-    React.useRef<PdfWorkspaceSnapshot | null>(null);
+  const pendingWorkspaceRestoreRef = React.useRef<PdfWorkspaceSnapshot | null>(
+    null,
+  );
   const currentSlideNumberRef = React.useRef(1);
 
   const resolvePointerInteraction = React.useCallback(
@@ -443,7 +444,11 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0;
 
   const schedulePersistenceSave = React.useCallback(() => {
-    if (!filePath || state.kind !== 'ready' || !persistenceHydratedRef.current) {
+    if (
+      !filePath ||
+      state.kind !== 'ready' ||
+      !persistenceHydratedRef.current
+    ) {
       return;
     }
 
@@ -496,7 +501,11 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   }, [currentPageCount, filePath, state.kind, strokesByPage]);
 
   React.useEffect(() => {
-    if (!filePath || state.kind !== 'ready' || !persistenceHydratedRef.current) {
+    if (
+      !filePath ||
+      state.kind !== 'ready' ||
+      !persistenceHydratedRef.current
+    ) {
       return;
     }
 
@@ -504,7 +513,11 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   }, [filePath, schedulePersistenceSave, state.kind, strokesByPage]);
 
   const handleStageScroll = React.useCallback(() => {
-    if (!filePath || state.kind !== 'ready' || !persistenceHydratedRef.current) {
+    if (
+      !filePath ||
+      state.kind !== 'ready' ||
+      !persistenceHydratedRef.current
+    ) {
       return;
     }
 
@@ -789,9 +802,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           kind: 'loading',
           label: `Loading saved workspace for ${getFileName(filePath)}`,
         });
-        const savedWorkspace = await window.indicoInk.loadPdfWorkspaceState(
-          filePath,
-        );
+        const savedWorkspace =
+          await window.indicoInk.loadPdfWorkspaceState(filePath);
         if (cancelled) {
           return;
         }

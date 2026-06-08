@@ -25,11 +25,46 @@ describe('App', () => {
       }),
       listLibraryEvents: vi.fn().mockResolvedValue([]),
       deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
+      openLibraryEvent: vi.fn().mockResolvedValue({
+        kind: 'opened',
+        result: {
+          conferenceId: 'conference-opened',
+          title: 'Opened Indico Event',
+          talkCount: 5,
+          deckCount: 0,
+          savedAt: Date.now(),
+        },
+      }),
+      saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
     };
   });
 
   it('renders the empty library view with URL validation', async () => {
     const user = userEvent.setup();
+    const openedEvent = {
+      id: 'conference-opened',
+      sourceUrl: 'https://indico.example.org/event/example-2026',
+      title: 'Opened Indico Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([openedEvent]);
+    window.indicoInk.openLibraryEvent = vi.fn().mockResolvedValue({
+      kind: 'opened',
+      result: {
+        conferenceId: openedEvent.id,
+        title: openedEvent.title,
+        talkCount: 5,
+        deckCount: 0,
+        savedAt: Date.now(),
+      },
+    });
 
     render(<App />);
 
@@ -79,9 +114,7 @@ describe('App', () => {
       'http://example.com/not-an-indico-event',
     );
 
-    expect(
-      screen.getByText('Use an https:// Indico event URL.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Use an https:// Indico event URL.')).toBeTruthy();
 
     await user.clear(
       screen.getByRole('textbox', {
@@ -95,9 +128,71 @@ describe('App', () => {
       'https://indico.example.org/event/example-2026',
     );
 
+    expect(screen.queryByText('Use an https:// Indico event URL.')).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open event',
+      }),
+    );
+
+    expect(window.indicoInk.openLibraryEvent).toHaveBeenCalledWith(
+      'https://indico.example.org/event/example-2026',
+    );
     expect(
-      screen.queryByText('Use an https:// Indico event URL.'),
-    ).toBeNull();
+      await screen.findByRole('heading', {
+        name: 'Event agenda',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', {
+        name: 'Opened Indico Event',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('prompts for an API key when the event requires private access', async () => {
+    const user = userEvent.setup();
+    const privateEvent = {
+      id: 'conference-private-opened',
+      sourceUrl: 'https://indico.private.example.org/event/private-2026',
+      title: 'Private Indico Event',
+      dates: 'June 12, 2026',
+      host: 'indico.private.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([privateEvent]);
+    window.indicoInk.openLibraryEvent = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: 'api-key-required',
+        origin: 'https://indico.private.example.org',
+        message: 'This Indico event requires an API key.',
+      })
+      .mockResolvedValueOnce({
+        kind: 'opened',
+        result: {
+          conferenceId: privateEvent.id,
+          title: privateEvent.title,
+          talkCount: 3,
+          deckCount: 0,
+          savedAt: Date.now(),
+        },
+      });
+
+    render(<App />);
+
+    await user.type(
+      screen.getByRole('textbox', {
+        name: 'Event URL',
+      }),
+      'https://indico.private.example.org/event/private-2026',
+    );
 
     await user.click(
       screen.getByRole('button', {
@@ -106,8 +201,34 @@ describe('App', () => {
     );
 
     expect(
-      screen.getByRole('heading', {
+      await screen.findByRole('heading', {
+        name: 'Private event',
+      }),
+    ).toBeTruthy();
+
+    await user.type(screen.getByLabelText('API key'), 'secret-api-key');
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Save key',
+      }),
+    );
+
+    expect(window.indicoInk.saveIndicoApiKey).toHaveBeenCalledWith(
+      'https://indico.private.example.org',
+      'secret-api-key',
+    );
+    expect(window.indicoInk.openLibraryEvent).toHaveBeenLastCalledWith(
+      'https://indico.private.example.org/event/private-2026',
+      'secret-api-key',
+    );
+    expect(
+      await screen.findByRole('heading', {
         name: 'Event agenda',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', {
+        name: 'Private Indico Event',
       }),
     ).toBeTruthy();
   });
@@ -241,9 +362,7 @@ describe('App', () => {
       }),
     );
 
-    expect(
-      await screen.findByText('No saved events yet'),
-    ).toBeTruthy();
+    expect(await screen.findByText('No saved events yet')).toBeTruthy();
     expect(window.indicoInk.deleteLibraryEvent).toHaveBeenCalledWith(
       libraryEvent.id,
     );

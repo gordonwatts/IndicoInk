@@ -28,9 +28,7 @@ declare module 'sql.js' {
     Database: new (data?: Uint8Array | ArrayBuffer) => SqlJsDatabase;
   }
 
-  export default function initSqlJs(
-    config?: SqlJsConfig,
-  ): Promise<SqlJsStatic>;
+  export default function initSqlJs(config?: SqlJsConfig): Promise<SqlJsStatic>;
 }
 
 declare module 'sql.js/dist/sql-wasm.wasm?url' {

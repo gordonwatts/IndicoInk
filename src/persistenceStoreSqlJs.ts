@@ -25,7 +25,6 @@ import {
   createTalkId,
   createViewStateId,
 } from './persistenceModels';
-import type { InkStroke } from './strokeTools';
 
 type SqlJsDatabase = {
   exec(sql: string): Array<{
@@ -62,7 +61,8 @@ const getFileName = (value: string) => {
 
 const toBoolean = (value: unknown) => value === 1 || value === true;
 
-const serializePoints = (points: NormalizedPagePoint[]) => JSON.stringify(points);
+const serializePoints = (points: NormalizedPagePoint[]) =>
+  JSON.stringify(points);
 
 const deserializePoints = (value: string): NormalizedPagePoint[] =>
   JSON.parse(value) as NormalizedPagePoint[];
@@ -190,7 +190,9 @@ const rowToTalk = (row: Record<string, unknown>): Talk => ({
       ? null
       : Number(row.starts_at),
   endsAt:
-    row.ends_at === null || row.ends_at === undefined ? null : Number(row.ends_at),
+    row.ends_at === null || row.ends_at === undefined
+      ? null
+      : Number(row.ends_at),
   room: String(row.room),
   bookmarked: toBoolean(row.bookmarked),
   createdAt: Number(row.created_at),
@@ -426,7 +428,9 @@ export class PersistenceStore {
     this.db = null;
   }
 
-  async transaction<T>(work: (store: PersistenceStore) => T | Promise<T>): Promise<T> {
+  async transaction<T>(
+    work: (store: PersistenceStore) => T | Promise<T>,
+  ): Promise<T> {
     const db = await this.getDb();
     this.transactionDepth += 1;
     db.exec('BEGIN TRANSACTION');
@@ -546,7 +550,10 @@ export class PersistenceStore {
 
   async getTalk(id: string): Promise<Talk | null> {
     const db = await this.getDb();
-    const row = getStatementValue(db.prepare('SELECT * FROM talks WHERE id = ?'), id);
+    const row = getStatementValue(
+      db.prepare('SELECT * FROM talks WHERE id = ?'),
+      id,
+    );
     return row ? rowToTalk(row as Record<string, unknown>) : null;
   }
 
@@ -615,7 +622,10 @@ export class PersistenceStore {
 
   async getDeck(id: string): Promise<Deck | null> {
     const db = await this.getDb();
-    const row = getStatementValue(db.prepare('SELECT * FROM decks WHERE id = ?'), id);
+    const row = getStatementValue(
+      db.prepare('SELECT * FROM decks WHERE id = ?'),
+      id,
+    );
     return row ? rowToDeck(row as Record<string, unknown>) : null;
   }
 
@@ -629,11 +639,9 @@ export class PersistenceStore {
 
   async setSelectedDeck(id: string, selected: boolean) {
     const db = await this.getDb();
-    db.prepare('UPDATE decks SET selected = ?, updated_at = ? WHERE id = ?').run([
-      selected ? 1 : 0,
-      this.now(),
-      id,
-    ]);
+    db.prepare(
+      'UPDATE decks SET selected = ?, updated_at = ? WHERE id = ?',
+    ).run([selected ? 1 : 0, this.now(), id]);
     this.markDirty();
     await this.flushIfNeeded();
   }
@@ -673,7 +681,10 @@ export class PersistenceStore {
 
   async getSlide(id: string): Promise<Slide | null> {
     const db = await this.getDb();
-    const row = getStatementValue(db.prepare('SELECT * FROM slides WHERE id = ?'), id);
+    const row = getStatementValue(
+      db.prepare('SELECT * FROM slides WHERE id = ?'),
+      id,
+    );
     return row ? rowToSlide(row as Record<string, unknown>) : null;
   }
 
@@ -687,11 +698,9 @@ export class PersistenceStore {
 
   async setSlideAnnotated(id: string, annotated: boolean) {
     const db = await this.getDb();
-    db.prepare('UPDATE slides SET annotated = ?, updated_at = ? WHERE id = ?').run([
-      annotated ? 1 : 0,
-      this.now(),
-      id,
-    ]);
+    db.prepare(
+      'UPDATE slides SET annotated = ?, updated_at = ? WHERE id = ?',
+    ).run([annotated ? 1 : 0, this.now(), id]);
     this.markDirty();
     await this.flushIfNeeded();
   }
@@ -701,7 +710,11 @@ export class PersistenceStore {
     const payloadJson =
       'points' in annotation
         ? serializePoints(annotation.points)
-        : JSON.stringify({ x: annotation.x, y: annotation.y, text: annotation.text });
+        : JSON.stringify({
+            x: annotation.x,
+            y: annotation.y,
+            text: annotation.text,
+          });
 
     db.prepare(
       `
@@ -749,7 +762,9 @@ export class PersistenceStore {
   async listAnnotationsBySlide(slideId: string): Promise<Annotation[]> {
     const db = await this.getDb();
     const rows = db
-      .prepare('SELECT * FROM annotations WHERE slide_id = ? ORDER BY created_at, id')
+      .prepare(
+        'SELECT * FROM annotations WHERE slide_id = ? ORDER BY created_at, id',
+      )
       .all(slideId) as Record<string, unknown>[];
     return rows.map((row) => rowToAnnotation(row));
   }
@@ -824,7 +839,9 @@ export class PersistenceStore {
     await this.flushIfNeeded();
   }
 
-  async loadLocalPdfWorkspace(sourceUrl: string): Promise<PdfWorkspaceSnapshot | null> {
+  async loadLocalPdfWorkspace(
+    sourceUrl: string,
+  ): Promise<PdfWorkspaceSnapshot | null> {
     const conferenceId = createConferenceId(sourceUrl);
     const talkId = createTalkId(conferenceId, sourceUrl);
     const deckId = createDeckId(talkId, sourceUrl);
@@ -850,7 +867,9 @@ export class PersistenceStore {
       pageCount: slides.length,
       strokesByPage: slides.map((slide) =>
         (annotationsBySlide.get(slide.id) ?? [])
-          .filter((annotation): annotation is PenStroke => 'points' in annotation)
+          .filter(
+            (annotation): annotation is PenStroke => 'points' in annotation,
+          )
           .map((annotation) => ({
             id: annotation.id,
             pageNumber: slide.slideNumber,

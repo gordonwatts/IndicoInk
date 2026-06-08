@@ -781,7 +781,9 @@ export const validateConferenceFixture = (fixture: ConferenceFixture) => {
   }
 
   if (!fixture.days.length) {
-    throw new Error(`Conference ${fixture.title} must include at least one day.`);
+    throw new Error(
+      `Conference ${fixture.title} must include at least one day.`,
+    );
   }
 
   const contributionIds = new Set<string>();
@@ -811,7 +813,9 @@ export const validateConferenceFixture = (fixture: ConferenceFixture) => {
       }
 
       if (!session.talks.length) {
-        throw new Error(`Session ${session.title} must include at least one talk.`);
+        throw new Error(
+          `Session ${session.title} must include at least one talk.`,
+        );
       }
 
       for (const talk of session.talks) {
@@ -842,7 +846,9 @@ export const validateConferenceFixture = (fixture: ConferenceFixture) => {
           (material): material is Extract<MaterialFixture, { kind: 'pdf' }> =>
             material.kind === 'pdf',
         );
-        const selectedMaterials = pdfMaterials.filter((material) => material.selected);
+        const selectedMaterials = pdfMaterials.filter(
+          (material) => material.selected,
+        );
         if (selectedMaterials.length > 1) {
           throw new Error(
             `Talk ${talk.contributionId} must not mark more than one PDF as selected.`,
@@ -913,6 +919,10 @@ export const countConferenceSessions = (fixture: ConferenceFixture) =>
 export const countConferenceTalks = (fixture: ConferenceFixture) =>
   fixture.days.reduce(
     (total, day) =>
-      total + day.sessions.reduce((sessionTotal, session) => sessionTotal + session.talks.length, 0),
+      total +
+      day.sessions.reduce(
+        (sessionTotal, session) => sessionTotal + session.talks.length,
+        0,
+      ),
     0,
   );

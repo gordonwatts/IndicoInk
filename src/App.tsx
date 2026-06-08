@@ -129,7 +129,11 @@ function EventSummaryRow({
             event.stopPropagation();
           }}
         >
-          <IconButton label={`Delete ${event.title}`} icon="trash" onClick={onDelete} />
+          <IconButton
+            label={`Delete ${event.title}`}
+            icon="trash"
+            onClick={onDelete}
+          />
         </div>
       }
     />
@@ -253,6 +257,17 @@ export function App() {
   const [destination, setDestination] = React.useState<Destination>('library');
   const [eventUrl, setEventUrl] = React.useState('');
   const [eventUrlTouched, setEventUrlTouched] = React.useState(false);
+  const [openEventFeedback, setOpenEventFeedback] = React.useState<{
+    tone: 'neutral' | 'success' | 'warning' | 'error';
+    message: string;
+  } | null>(null);
+  const [isOpeningEvent, setIsOpeningEvent] = React.useState(false);
+  const [apiKeyDialogOrigin, setApiKeyDialogOrigin] = React.useState<
+    string | null
+  >(null);
+  const [apiKeyValue, setApiKeyValue] = React.useState('');
+  const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
+  const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
   const [libraryEvents, setLibraryEvents] = React.useState<EventSummary[]>([]);
   const [selectedEventId, setSelectedEventId] = React.useState<string | null>(
@@ -282,14 +297,104 @@ export function App() {
   const activeEvent =
     libraryEvents.find((event) => event.id === selectedEventId) ?? defaultEvent;
   const eventUrlError = eventUrlTouched ? validateEventUrl(eventUrl) : null;
-  const handleOpenEvent = () => {
+  const handleOpenEvent = async () => {
     setEventUrlTouched(true);
-
-    if (validateEventUrl(eventUrl)) {
+    const validationError = validateEventUrl(eventUrl);
+    if (validationError) {
+      setOpenEventFeedback({
+        tone: 'error',
+        message: validationError,
+      });
       return;
     }
 
-    setDestination('agenda');
+    setIsOpeningEvent(true);
+    setOpenEventFeedback({
+      tone: 'neutral',
+      message: 'Opening event and saving the agenda locally...',
+    });
+
+    try {
+      const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
+      if (openedEvent.kind === 'api-key-required') {
+        setApiKeyDialogOrigin(openedEvent.origin);
+        setApiKeyValue('');
+        setApiKeyError(openedEvent.message);
+        setOpenEventFeedback({
+          tone: 'warning',
+          message: openedEvent.message,
+        });
+        return;
+      }
+
+      await refreshLibraryEvents();
+      setSelectedEventId(openedEvent.result.conferenceId);
+      setDestination('agenda');
+      setApiKeyDialogOrigin(null);
+      setApiKeyValue('');
+      setApiKeyError(null);
+      setOpenEventFeedback({
+        tone: 'success',
+        message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
+      });
+    } catch (error) {
+      setOpenEventFeedback({
+        tone: 'error',
+        message:
+          error instanceof Error ? error.message : 'Failed to open the event.',
+      });
+    } finally {
+      setIsOpeningEvent(false);
+    }
+  };
+  const handleSaveApiKey = async () => {
+    if (!apiKeyDialogOrigin) {
+      return;
+    }
+
+    const trimmedApiKey = apiKeyValue.trim();
+    if (!trimmedApiKey) {
+      setApiKeyError('Enter an API key.');
+      return;
+    }
+
+    setIsSavingApiKey(true);
+    setApiKeyError(null);
+
+    try {
+      await window.indicoInk.saveIndicoApiKey(
+        apiKeyDialogOrigin,
+        trimmedApiKey,
+      );
+      const reopenedEvent = await window.indicoInk.openLibraryEvent(
+        eventUrl,
+        trimmedApiKey,
+      );
+      if (reopenedEvent.kind === 'api-key-required') {
+        setApiKeyError(reopenedEvent.message);
+        setOpenEventFeedback({
+          tone: 'warning',
+          message: reopenedEvent.message,
+        });
+        return;
+      }
+
+      await refreshLibraryEvents();
+      setSelectedEventId(reopenedEvent.result.conferenceId);
+      setDestination('agenda');
+      setApiKeyDialogOrigin(null);
+      setApiKeyValue('');
+      setOpenEventFeedback({
+        tone: 'success',
+        message: `Opened ${reopenedEvent.result.title} with ${reopenedEvent.result.talkCount} talks.`,
+      });
+    } catch (error) {
+      setApiKeyError(
+        error instanceof Error ? error.message : 'Failed to save the API key.',
+      );
+    } finally {
+      setIsSavingApiKey(false);
+    }
   };
   const openLibraryEvent = (event: EventSummary) => {
     setSelectedEventId(event.id);
@@ -405,8 +510,8 @@ export function App() {
                     Open an Indico event or return to one already on disk.
                   </h2>
                   <p className="lede">
-                    Paste a conference URL, keep invalid input visible, and
-                    open the event from one prominent touch target.
+                    Paste a conference URL, keep invalid input visible, and open
+                    the event from one prominent touch target.
                   </p>
                 </div>
                 <div className="hero-actions">
@@ -444,12 +549,32 @@ export function App() {
                       />
                     </div>
                   ) : null}
+                  {openEventFeedback ? (
+                    <div
+                      className="field-help"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      <StatusLabel
+                        label={openEventFeedback.message}
+                        tone={openEventFeedback.tone}
+                        icon={
+                          openEventFeedback.tone === 'error'
+                            ? 'info'
+                            : openEventFeedback.tone === 'success'
+                              ? 'check'
+                              : 'event'
+                        }
+                      />
+                    </div>
+                  ) : null}
                   <PrimaryButton
                     icon="event"
                     className="large"
+                    disabled={isOpeningEvent}
                     onClick={handleOpenEvent}
                   >
-                    Open event
+                    {isOpeningEvent ? 'Opening…' : 'Open event'}
                   </PrimaryButton>
                 </div>
               </div>
@@ -621,6 +746,59 @@ export function App() {
                 secondaryLabel="Cancel"
                 onPrimary={() => void confirmDeleteLibraryEvent()}
                 onSecondary={() => setDeleteTarget(null)}
+              />
+            </div>
+          ) : null}
+
+          {apiKeyDialogOrigin ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title="Private event"
+                body={
+                  <div className="dialog-copy">
+                    <p>
+                      This event at <strong>{apiKeyDialogOrigin}</strong> needs
+                      an API key before it can be opened.
+                    </p>
+                    <label className="field">
+                      <span>API key</span>
+                      <input
+                        autoFocus
+                        value={apiKeyValue}
+                        onChange={(event) => {
+                          setApiKeyValue(event.target.value);
+                          setApiKeyError(null);
+                        }}
+                        type="password"
+                        autoComplete="off"
+                        placeholder="Paste API key"
+                        aria-label="API key"
+                        aria-invalid={apiKeyError ? 'true' : undefined}
+                      />
+                    </label>
+                    {apiKeyError ? (
+                      <div className="field-error">
+                        <StatusLabel
+                          label={apiKeyError}
+                          tone="error"
+                          icon="info"
+                        />
+                      </div>
+                    ) : (
+                      <div className="field-help">
+                        Saved locally using Electron safeStorage.
+                      </div>
+                    )}
+                  </div>
+                }
+                primaryLabel={isSavingApiKey ? 'Saving...' : 'Save key'}
+                secondaryLabel="Cancel"
+                onPrimary={() => void handleSaveApiKey()}
+                onSecondary={() => {
+                  setApiKeyDialogOrigin(null);
+                  setApiKeyValue('');
+                  setApiKeyError(null);
+                }}
               />
             </div>
           ) : null}

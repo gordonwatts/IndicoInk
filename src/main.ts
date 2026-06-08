@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,6 +9,9 @@ import {
   buildLibraryEventSummaries,
   importConferenceFixtureByName,
 } from './libraryData';
+import { importIndicoEvent } from './indicoImport';
+import { IndicoHttpError } from './indicoHttp';
+import { IndicoCredentialStore } from './indicoCredentials';
 import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
@@ -20,9 +23,12 @@ import {
 } from './runtimeModes';
 import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
+import { parseIndicoEventUrl } from './indicoEvent';
+import type { OpenLibraryEventResult } from './shared/library';
 
 let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
+let credentialStore: IndicoCredentialStore | null = null;
 const importFixtureName = getImportFixtureName(process.argv);
 
 if (shouldDisableGpu()) {
@@ -53,9 +59,17 @@ const getPersistenceStore = () =>
     join(app.getPath('userData'), 'indicoink-persistence.sqlite3'),
   ));
 
+const getCredentialStore = () =>
+  credentialStore ??
+  (credentialStore = new IndicoCredentialStore(
+    join(app.getPath('userData'), 'indicoink-credentials.json'),
+    safeStorage,
+  ));
+
 function getImportFixtureName(argv: string[]) {
   const argument = argv.find(
-    (value) => value === '--import-fixture' || value.startsWith('--import-fixture='),
+    (value) =>
+      value === '--import-fixture' || value.startsWith('--import-fixture='),
   );
 
   if (!argument) {
@@ -95,9 +109,15 @@ const createWindow = () => {
   });
 
   if (hasPackagedRenderer) {
-    void mainWindow.loadURL(pathToFileURL(packagedRendererPath).toString()).catch((error) => {
-      appendStartupLogEntry(app.getPath('userData'), 'window:load-file', error);
-    });
+    void mainWindow
+      .loadURL(pathToFileURL(packagedRendererPath).toString())
+      .catch((error) => {
+        appendStartupLogEntry(
+          app.getPath('userData'),
+          'window:load-file',
+          error,
+        );
+      });
   } else {
     const loadUrl = devServerUrl || 'http://localhost:5173';
     void mainWindow.loadURL(loadUrl).catch((error) => {
@@ -195,8 +215,58 @@ ipcMain.handle('library:delete-event', async (_event, conferenceId: string) => {
   await getPersistenceStore().deleteConference(conferenceId);
 });
 
-ipcMain.handle('persistence:load-pdf-workspace', async (_event, sourceUrl: string) =>
-  getPersistenceStore().loadLocalPdfWorkspace(sourceUrl),
+ipcMain.handle(
+  'library:open-event',
+  async (
+    _event,
+    eventUrl: string,
+    apiKey?: string,
+  ): Promise<OpenLibraryEventResult> => {
+    const identity = parseIndicoEventUrl(eventUrl);
+    if (!identity) {
+      throw new Error('The provided URL is not a valid Indico event.');
+    }
+
+    const storedApiKey =
+      apiKey ?? (await getCredentialStore().getApiKey(identity.origin));
+
+    try {
+      const fetchOptions = storedApiKey ? { apiKey: storedApiKey } : undefined;
+      const result = await importIndicoEvent(getPersistenceStore(), eventUrl, {
+        ...(fetchOptions ?? {}),
+      });
+      return {
+        kind: 'opened',
+        result,
+      };
+    } catch (error) {
+      if (
+        error instanceof IndicoHttpError &&
+        [401, 403].includes(error.statusCode)
+      ) {
+        return {
+          kind: 'api-key-required',
+          origin: identity.origin,
+          message: 'This Indico event requires an API key.',
+        };
+      }
+
+      throw error;
+    }
+  },
+);
+
+ipcMain.handle(
+  'indico:save-api-key',
+  async (_event, origin: string, apiKey: string) => {
+    await getCredentialStore().saveApiKey(origin, apiKey);
+  },
+);
+
+ipcMain.handle(
+  'persistence:load-pdf-workspace',
+  async (_event, sourceUrl: string) =>
+    getPersistenceStore().loadLocalPdfWorkspace(sourceUrl),
 );
 
 ipcMain.handle(
@@ -230,7 +300,11 @@ app.whenReady().then(() => {
         app.exit(0);
       })
       .catch((error) => {
-        appendStartupLogEntry(app.getPath('userData'), 'fixture-import:error', error);
+        appendStartupLogEntry(
+          app.getPath('userData'),
+          'fixture-import:error',
+          error,
+        );
         app.exit(1);
       });
     return;
