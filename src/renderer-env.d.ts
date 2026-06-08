@@ -30,6 +30,7 @@ declare global {
         apiKey?: string,
       ) => Promise<OpenLibraryEventResult>;
       saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
+      setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
     };
   }
 }

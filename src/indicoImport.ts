@@ -1,5 +1,5 @@
 import type { PersistenceStore } from './persistenceStore';
-import { createTalkId } from './persistenceModels';
+import { createDeckId, createTalkId } from './persistenceModels';
 import type { ImportedConferenceResult } from './shared/library';
 import { parseIndicoEventUrl } from './indicoEvent';
 import { fetchIndicoJson, type FetchIndicoJsonOptions } from './indicoHttp';
@@ -32,6 +32,7 @@ export const importIndicoEvent = async (
     identity,
   );
   const now = Date.now();
+  let deckCount = 0;
 
   await store.transaction(async (transactionStore) => {
     await transactionStore.upsertConference({
@@ -58,6 +59,31 @@ export const importIndicoEvent = async (
         createdAt: now,
         updatedAt: now,
       });
+
+      const pdfMaterials = talk.materials.filter(
+        (material) => material.kind === 'pdf',
+      );
+      const selectedMaterial =
+        pdfMaterials.find((material) => material.selected) ??
+        pdfMaterials[0] ??
+        null;
+
+      for (const material of pdfMaterials) {
+        deckCount += 1;
+        await transactionStore.upsertDeck({
+          id: createDeckId(talkId, material.url),
+          conferenceId: identity.conferenceId,
+          talkId,
+          sourceUrl: material.url,
+          displayName: material.title,
+          mimeType: material.mimeType,
+          selected: selectedMaterial
+            ? material.url === selectedMaterial.url
+            : false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     }
   });
 
@@ -65,7 +91,7 @@ export const importIndicoEvent = async (
     conferenceId: identity.conferenceId,
     title: mapped.conference.title,
     talkCount: mapped.talks.length,
-    deckCount: 0,
+    deckCount,
     savedAt: now,
   };
 };

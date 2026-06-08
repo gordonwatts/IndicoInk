@@ -81,4 +81,44 @@ describe('mapIndicoExportEnvelope', () => {
       'https://indico.example.org/materials/slides.pdf',
     );
   });
+
+  it('reads PDF attachments from contribution folders', () => {
+    const mapped = mapIndicoExportEnvelope(
+      {
+        results: [
+          {
+            id: '45230',
+            title: 'Folder attachment event',
+            startDate: { date: '2020-09-03', time: '08:30:00' },
+            endDate: { date: '2020-09-03', time: '10:00:00' },
+            contributions: [
+              {
+                id: '3',
+                title: 'PDF lives in folder attachments',
+                startDate: { date: '2020-09-03', time: '08:40:00' },
+                endDate: { date: '2020-09-03', time: '08:50:00' },
+                folders: [
+                  {
+                    attachments: [
+                      {
+                        title: 'Deck',
+                        download_url:
+                          'https://indico.example.org/event/45230/contributions/3/attachments/1/Deck.pdf',
+                        content_type: 'application/pdf',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      identity,
+    );
+
+    expect(mapped.talks[0]?.materials).toHaveLength(1);
+    expect(mapped.talks[0]?.materials[0]?.kind).toBe('pdf');
+    expect(mapped.talks[0]?.materials[0]?.url).toContain('/Deck.pdf');
+  });
 });

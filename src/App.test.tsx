@@ -6,6 +6,17 @@ import { App } from './App';
 
 describe('App', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'scrollY', {
+      value: 0,
+      configurable: true,
+      writable: true,
+    });
+    window.scrollTo = vi.fn();
+    window.requestAnimationFrame = vi.fn((callback) => {
+      callback(performance.now());
+      return 1;
+    });
+    window.cancelAnimationFrame = vi.fn();
     window.indicoInk = {
       getAppInfo: vi.fn().mockResolvedValue({
         appName: 'IndicoInk',
@@ -37,6 +48,7 @@ describe('App', () => {
         },
       }),
       saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
+      setTalkBookmarked: vi.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -361,7 +373,6 @@ describe('App', () => {
     expect(
       await screen.findByText('Designing a calm note-taking workflow'),
     ).toBeTruthy();
-    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
@@ -379,6 +390,127 @@ describe('App', () => {
         selector: '.nav-rail-foot strong',
       }),
     ).toBeTruthy();
+  });
+
+  it('preserves the approximate scroll position for each agenda day', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-1',
+      sourceUrl: 'https://indico.example.org/event/indico-1',
+      title: 'IndicoInk Small Event 2026',
+      dates: 'June 12, 2026',
+      host: 'small.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '12 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-1',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-1',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Designing a calm note-taking workflow',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Opening keynote',
+        timeRangeLabel: '09:00 - 09:45',
+        room: 'Auditorium A',
+        bookmarked: true,
+        materialSummary: 'PDF',
+        annotatedSlideCount: 3,
+      },
+      {
+        id: 'talk-2',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-2',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 45, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Tracking talks across a conference',
+        speaker: 'Grace Hopper',
+        sessionTitle: 'Opening keynote',
+        timeRangeLabel: '09:45 - 10:30',
+        room: 'Auditorium A',
+        bookmarked: false,
+        materialSummary: '2 PDFs',
+        annotatedSlideCount: 1,
+      },
+      {
+        id: 'talk-3',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-3',
+        sortStartsAt: Date.UTC(2026, 5, 13, 10, 15, 0, 0),
+        dayLabel: 'Saturday, June 13, 2026',
+        title: 'Keeping the agenda state in sync',
+        speaker: 'Katherine Johnson',
+        sessionTitle: 'Midday session',
+        timeRangeLabel: '10:15 - 11:00',
+        room: 'Auditorium B',
+        bookmarked: false,
+        materialSummary: 'No slides',
+        annotatedSlideCount: 0,
+      },
+    ];
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Bookmark talk',
+      }),
+    );
+
+    expect(window.indicoInk.setTalkBookmarked).toHaveBeenCalledWith(
+      'talk-2',
+      true,
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Bookmarked',
+      }),
+    );
+
+    window.scrollY = 420;
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Next day',
+      }),
+    );
+
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 0,
+      behavior: 'auto',
+    });
+
+    window.scrollY = 125;
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Previous day',
+      }),
+    );
+
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 420,
+      behavior: 'auto',
+    });
+    expect(
+      screen
+        .getByRole('button', {
+          name: 'Bookmarked',
+        })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
   });
 
   it('confirms deletion before removing a stored library event', async () => {

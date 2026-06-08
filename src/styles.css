@@ -1056,6 +1056,21 @@ input:focus-visible {
   gap: 16px;
 }
 
+.agenda-event-header {
+  display: grid;
+  gap: 4px;
+}
+
+.agenda-event-header h3 {
+  margin: 0;
+  font-size: var(--font-size-page-title);
+  line-height: var(--line-height-tight);
+}
+
+.agenda-event-header span {
+  color: var(--text-secondary);
+}
+
 .agenda-milestone-note {
   display: flex;
   flex-wrap: wrap;

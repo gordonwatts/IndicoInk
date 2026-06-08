@@ -1,4 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  session,
+} from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -219,6 +226,13 @@ ipcMain.handle(
     buildAgendaTalkSummaries(getPersistenceStore(), conferenceId),
 );
 
+ipcMain.handle(
+  'agenda:set-talk-bookmarked',
+  async (_event, talkId: string, bookmarked: boolean) => {
+    await getPersistenceStore().setTalkBookmarked(talkId, bookmarked);
+  },
+);
+
 ipcMain.handle('library:delete-event', async (_event, conferenceId: string) => {
   await getPersistenceStore().deleteConference(conferenceId);
 });
@@ -239,8 +253,12 @@ ipcMain.handle(
       apiKey ?? (await getCredentialStore().getApiKey(identity.origin));
 
     try {
+      const fetchImpl = session.defaultSession.fetch.bind(
+        session.defaultSession,
+      );
       const fetchOptions = storedApiKey ? { apiKey: storedApiKey } : undefined;
       const result = await importIndicoEvent(getPersistenceStore(), eventUrl, {
+        fetchImpl,
         ...(fetchOptions ?? {}),
       });
       return {

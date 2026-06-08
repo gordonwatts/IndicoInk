@@ -53,6 +53,11 @@ const saveIndicoApiKey = async (
   apiKey: string,
 ): Promise<void> => ipcRenderer.invoke('indico:save-api-key', origin, apiKey);
 
+const setTalkBookmarked = async (
+  talkId: string,
+  bookmarked: boolean,
+): Promise<void> => ipcRenderer.invoke('agenda:set-talk-bookmarked', talkId, bookmarked);
+
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
   openPdf,
@@ -64,6 +69,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   deleteLibraryEvent,
   openLibraryEvent,
   saveIndicoApiKey,
+  setTalkBookmarked,
 });
 
 export type IndicoInkApi = {
@@ -84,4 +90,5 @@ export type IndicoInkApi = {
     apiKey?: string,
   ) => Promise<OpenLibraryEventResult>;
   saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
+  setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
 };

@@ -23,9 +23,15 @@ type IndicoMaterialValue = {
   filename?: string;
   name?: string;
   url?: string;
+  download_url?: string;
   mimetype?: string;
+  content_type?: string;
   type?: string;
   selected?: boolean;
+};
+
+type IndicoFolderValue = {
+  attachments?: IndicoMaterialValue[];
 };
 
 type IndicoContributionValue = {
@@ -47,6 +53,7 @@ type IndicoContributionValue = {
   primaryauthors?: IndicoPersonValue[];
   coauthors?: IndicoPersonValue[];
   material?: IndicoMaterialValue[];
+  folders?: IndicoFolderValue[];
   subContributions?: IndicoContributionValue[];
   url?: string;
 };
@@ -62,6 +69,7 @@ type IndicoSessionValue = {
   url?: string;
   contributions?: IndicoContributionValue[];
   material?: IndicoMaterialValue[];
+  folders?: IndicoFolderValue[];
 };
 
 type IndicoEventValue = {
@@ -241,13 +249,24 @@ const getMaterialTitle = (
   `Material ${fallbackIndex + 1}`;
 
 const getMaterialUrl = (material: IndicoMaterialValue) =>
-  getString(material.url);
+  getString(material.url) || getString(material.download_url);
 
 const getMaterialMimeType = (material: IndicoMaterialValue) =>
   getString(material.mimetype) ||
+  getString(material.content_type) ||
   (getString(material.type) === 'pdf'
     ? 'application/pdf'
     : 'application/octet-stream');
+
+const collectMaterials = (
+  material: IndicoMaterialValue[] | undefined,
+  folders: IndicoFolderValue[] | undefined,
+) => [
+  ...asArray<IndicoMaterialValue>(material),
+  ...asArray<IndicoFolderValue>(folders).flatMap((folder) =>
+    asArray<IndicoMaterialValue>(folder.attachments),
+  ),
+];
 
 const createMaterialId = (
   contributionId: string,
@@ -361,7 +380,7 @@ const mapContribution = (
   const speakers = speakerEntities
     .map((speaker) => speaker.name)
     .filter(Boolean);
-  const materials = asArray<IndicoMaterialValue>(contribution.material)
+  const materials = collectMaterials(contribution.material, contribution.folders)
     .map((material, materialIndex) =>
       mapMaterial(contributionId, material, materialIndex),
     )
@@ -392,7 +411,7 @@ const mapSessionTalk = (
   index: number,
 ) => {
   const contributionId = getNumberLike(session.id) || `session-${index + 1}`;
-  const materials = asArray<IndicoMaterialValue>(session.material)
+  const materials = collectMaterials(session.material, session.folders)
     .map((material, materialIndex) =>
       mapMaterial(contributionId, material, materialIndex),
     )
