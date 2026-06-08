@@ -276,6 +276,390 @@ function talkMatchesSearchQuery(talk: AgendaTalkSummary, query: string) {
     .every((part) => searchText.includes(part));
 }
 
+type AgendaSessionBlock = {
+  key: string;
+  title: string;
+  room: string;
+  dayLabel: string;
+  startMinutes: number;
+  endMinutes: number;
+  startLabel: string;
+  endLabel: string;
+  talks: AgendaTalkSummary[];
+  columnIndex: number;
+};
+
+const agendaCanvasRowHeight = 98;
+const agendaCanvasColumnWidth = 368;
+const agendaTimeGutterWidth = 88;
+const agendaCanvasTrackPadding = 12;
+const agendaCanvasTalkMinHeight = 112;
+
+function parseAgendaTimeRange(timeRangeLabel: string) {
+  const matches = [...timeRangeLabel.matchAll(/(\d{1,2}):(\d{2})/g)];
+  const startMinutes = matches[0]
+    ? Number(matches[0][1]) * 60 + Number(matches[0][2])
+    : null;
+  const endMinutes = matches[1]
+    ? Number(matches[1][1]) * 60 + Number(matches[1][2])
+    : null;
+
+  return {
+    startMinutes,
+    endMinutes,
+  };
+}
+
+function formatAgendaClockFromMinutes(minutes: number) {
+  const normalizedMinutes = ((minutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalizedMinutes / 60);
+  const mins = normalizedMinutes % 60;
+  const suffixHours = hours.toString().padStart(2, '0');
+  const suffixMinutes = mins.toString().padStart(2, '0');
+  return `${suffixHours}:${suffixMinutes}`;
+}
+
+function getAgendaTalkStartMinutes(talk: AgendaTalkSummary) {
+  if (talk.sortStartsAt !== null) {
+    const startsAt = new Date(talk.sortStartsAt);
+    return startsAt.getUTCHours() * 60 + startsAt.getUTCMinutes();
+  }
+
+  return parseAgendaTimeRange(talk.timeRangeLabel).startMinutes;
+}
+
+function getAgendaTalkEndMinutes(talk: AgendaTalkSummary) {
+  const parsedRange = parseAgendaTimeRange(talk.timeRangeLabel);
+  if (parsedRange.endMinutes !== null) {
+    return parsedRange.endMinutes;
+  }
+
+  const startMinutes =
+    parsedRange.startMinutes ?? getAgendaTalkStartMinutes(talk) ?? 0;
+  return startMinutes + 30;
+}
+
+function getAgendaTalkDurationMinutes(talk: AgendaTalkSummary) {
+  const startMinutes = getAgendaTalkStartMinutes(talk) ?? 0;
+  const endMinutes = getAgendaTalkEndMinutes(talk);
+  return Math.max(15, endMinutes - startMinutes);
+}
+
+function buildAgendaSessionBlocks(talks: AgendaTalkSummary[]) {
+  const groupedTalks = new Map<string, AgendaTalkSummary[]>();
+
+  talks.forEach((talk) => {
+    const key = `${talk.dayLabel}::${talk.sessionTitle}::${talk.room}`;
+    const bucket = groupedTalks.get(key) ?? [];
+    bucket.push(talk);
+    groupedTalks.set(key, bucket);
+  });
+
+  const blocks = [...groupedTalks.entries()]
+    .map(([key, sessionTalks]) => {
+      const orderedTalks = [...sessionTalks].sort((left, right) => {
+        const leftStart = getAgendaTalkStartMinutes(left) ?? Number.MAX_SAFE_INTEGER;
+        const rightStart =
+          getAgendaTalkStartMinutes(right) ?? Number.MAX_SAFE_INTEGER;
+
+        if (leftStart !== rightStart) {
+          return leftStart - rightStart;
+        }
+
+        return left.title.localeCompare(right.title);
+      });
+
+      const startMinutes =
+        orderedTalks
+          .map((talk) => getAgendaTalkStartMinutes(talk))
+          .filter((value): value is number => value !== null)
+          .sort((left, right) => left - right)[0] ?? 0;
+
+      const endMinutes =
+        orderedTalks
+          .map((talk) => getAgendaTalkEndMinutes(talk))
+          .filter((value): value is number => value !== null)
+          .sort((left, right) => right - left)[0] ?? startMinutes + 30;
+
+      const firstTalk = orderedTalks[0] ?? null;
+
+      return {
+        key,
+        title: firstTalk?.sessionTitle ?? 'Session',
+        room: firstTalk?.room ?? 'Room unavailable',
+        dayLabel: firstTalk?.dayLabel ?? 'Unknown day',
+        startMinutes,
+        endMinutes,
+        startLabel: formatAgendaClockFromMinutes(startMinutes),
+        endLabel: formatAgendaClockFromMinutes(endMinutes),
+        talks: orderedTalks,
+        columnIndex: 0,
+      } satisfies AgendaSessionBlock;
+    })
+    .sort((left, right) => {
+      if (left.startMinutes !== right.startMinutes) {
+        return left.startMinutes - right.startMinutes;
+      }
+
+      return left.title.localeCompare(right.title);
+    });
+
+  const activeColumns: Array<{ endMinutes: number; columnIndex: number }> = [];
+  const positionedBlocks = blocks.map((block) => {
+    activeColumns.sort((left, right) => left.endMinutes - right.endMinutes);
+
+    for (let index = activeColumns.length - 1; index >= 0; index -= 1) {
+      if (activeColumns[index]?.endMinutes <= block.startMinutes) {
+        activeColumns.splice(index, 1);
+      }
+    }
+
+    const usedColumns = new Set(activeColumns.map((entry) => entry.columnIndex));
+    let columnIndex = 0;
+    while (usedColumns.has(columnIndex)) {
+      columnIndex += 1;
+    }
+
+    activeColumns.push({
+      endMinutes: block.endMinutes,
+      columnIndex,
+    });
+
+    return {
+      ...block,
+      columnIndex,
+    };
+  });
+
+  const columnCount =
+    positionedBlocks.reduce((maxColumns, block) => {
+      const blockColumns = block.columnIndex + 1;
+      return Math.max(maxColumns, blockColumns);
+    }, 1) || 1;
+
+  const earliestStart =
+    positionedBlocks
+      .map((block) => block.startMinutes)
+      .sort((left, right) => left - right)[0] ?? 8 * 60;
+  const latestEnd =
+    positionedBlocks
+      .map((block) => block.endMinutes)
+      .sort((left, right) => right - left)[0] ?? earliestStart + 180;
+  const timeStart = Math.floor(earliestStart / 30) * 30;
+  const timeEnd = Math.ceil(latestEnd / 30) * 30;
+  const timeMarkers: number[] = [];
+
+  for (let minute = timeStart; minute <= timeEnd; minute += 30) {
+    timeMarkers.push(minute);
+  }
+
+  return {
+    blocks: positionedBlocks,
+    columnCount,
+    timeMarkers,
+  };
+}
+
+function AgendaDayCanvas({
+  selectedAgendaDay,
+  agendaFilter,
+  visibleAgendaTalks,
+  selectedAgendaTalk,
+  onSelectTalk,
+  onToggleBookmark,
+}: {
+  selectedAgendaDay: string | null;
+  agendaFilter: GalleryFilter;
+  visibleAgendaTalks: AgendaTalkSummary[];
+  selectedAgendaTalk: AgendaTalkSummary | null;
+  onSelectTalk: (talk: AgendaTalkSummary) => void;
+  onToggleBookmark: (talk: AgendaTalkSummary) => void;
+}) {
+  const canvas = React.useMemo(
+    () => buildAgendaSessionBlocks(visibleAgendaTalks),
+    [visibleAgendaTalks],
+  );
+
+  const filterLabel =
+    agendaFilter === 'all'
+      ? 'All talks'
+      : agendaFilter === 'bookmarked'
+        ? 'Bookmarked'
+        : agendaFilter === 'annotated'
+          ? 'Annotated'
+          : 'Slides available';
+
+  return (
+    <div className="agenda-canvas-shell">
+      <div className="agenda-list-meta">
+        <StatusLabel
+          label={`${visibleAgendaTalks.length} talk${visibleAgendaTalks.length === 1 ? '' : 's'} shown`}
+          icon="agenda"
+        />
+        <StatusLabel
+          label={selectedAgendaDay ?? 'All days'}
+          tone="neutral"
+          icon="event"
+        />
+        <StatusLabel label={filterLabel} tone="neutral" icon="check" />
+        <StatusLabel
+          label={`Columns: ${canvas.columnCount}`}
+          tone="neutral"
+          icon="info"
+        />
+      </div>
+
+      <div className="agenda-canvas-scroll" aria-label="Agenda day canvas">
+        <div
+          className="agenda-canvas-grid"
+          style={{
+            gridTemplateColumns: `${agendaTimeGutterWidth}px repeat(${canvas.columnCount}, ${agendaCanvasColumnWidth}px)`,
+          }}
+        >
+          <div className="agenda-time-gutter" aria-hidden="true">
+            <div className="agenda-time-gutter-header">
+              <span>Time</span>
+              <small>(UTC)</small>
+            </div>
+            {canvas.timeMarkers.map((minute) => (
+              <div key={minute} className="agenda-time-marker">
+                <span>{formatAgendaClockFromMinutes(minute)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div
+            className="agenda-session-strip"
+            style={{
+              gridTemplateColumns: `repeat(${canvas.columnCount}, ${agendaCanvasColumnWidth}px)`,
+            }}
+          >
+            {canvas.blocks.map((block) => (
+              <section
+                key={block.key}
+                className="agenda-session-block"
+                style={{
+                  gridColumn: `${block.columnIndex + 1}`,
+                  minHeight: `${Math.max(
+                    3,
+                    Math.ceil((block.endMinutes - block.startMinutes) / 30),
+                  ) * agendaCanvasRowHeight + 72}px`,
+                }}
+                aria-label={`${block.title} session on ${block.dayLabel}`}
+              >
+                <div className="agenda-session-block-header">
+                  <div className="agenda-session-block-heading">
+                    <h4>{block.title}</h4>
+                    <p>
+                      {block.startLabel} - {block.endLabel}
+                    </p>
+                  </div>
+                  <StatusLabel label={block.room} tone="neutral" icon="info" />
+                </div>
+                <div
+                  className="agenda-session-track"
+                  style={{
+                    minHeight: `${Math.max(
+                      agendaCanvasTrackPadding * 2,
+                      Math.round(
+                        ((block.endMinutes - block.startMinutes) / 30) *
+                          agendaCanvasRowHeight,
+                      ) + agendaCanvasTrackPadding * 2,
+                    )}px`,
+                  }}
+                >
+                  {block.talks.map((talk) => (
+                    <div
+                      key={talk.id}
+                      className="agenda-talk-placement"
+                      style={{
+                        top: `${agendaCanvasTrackPadding + Math.max(0, Math.round((((getAgendaTalkStartMinutes(talk) ?? block.startMinutes) - block.startMinutes) / 30) * agendaCanvasRowHeight))}px`,
+                        height: `${Math.max(
+                          agendaCanvasTalkMinHeight,
+                          Math.round(
+                            (getAgendaTalkDurationMinutes(talk) / 30) *
+                              agendaCanvasRowHeight,
+                          ),
+                        )}px`,
+                      }}
+                    >
+                      <article
+                        className={`agenda-talk-card${talk.id === selectedAgendaTalk?.id ? ' is-selected' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Show details for ${talk.title}`}
+                        aria-current={
+                          talk.id === selectedAgendaTalk?.id ? 'true' : undefined
+                        }
+                        onClick={() => onSelectTalk(talk)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            onSelectTalk(talk);
+                          }
+                        }}
+                      >
+                        <div className="agenda-talk-card-topline">
+                          <span className="agenda-talk-card-time">
+                            {talk.timeRangeLabel}
+                          </span>
+                          <div
+                            className="agenda-talk-card-bookmark"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                            }}
+                          >
+                            <IconButton
+                              label={
+                                talk.bookmarked
+                                  ? 'Remove bookmark'
+                                  : 'Bookmark talk'
+                              }
+                              icon="bookmark"
+                              pressed={talk.bookmarked}
+                              title={
+                                talk.bookmarked
+                                  ? 'Remove bookmark'
+                                  : 'Bookmark talk'
+                              }
+                              onClick={() => {
+                                void onToggleBookmark(talk);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="agenda-talk-card-title">{talk.title}</div>
+                        <div className="agenda-talk-card-speaker">
+                          {talk.speaker}
+                          {talk.room !== 'Room unavailable'
+                            ? ` - ${talk.room}`
+                            : ''}
+                        </div>
+                        <div className="agenda-talk-card-meta">
+                          <StatusLabel
+                            label={talk.materialSummary}
+                            tone="neutral"
+                            icon="open"
+                          />
+                          <StatusLabel
+                            label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                            tone="warning"
+                            icon="annotated"
+                          />
+                        </div>
+                      </article>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ComponentGallery() {
   const [galleryFilter, setGalleryFilter] =
     React.useState<GalleryFilter>('all');
@@ -984,8 +1368,8 @@ export function App() {
           {destination === 'agenda' && (
             <section className="page-stack">
               <DetailsSurface
-                title="Agenda list milestone"
-                subtitle="Temporary single-column list built from stored agenda data. The final V1 agenda is the two-dimensional day canvas."
+                title="Day canvas"
+                subtitle="One conference day at a time, with time pinned on the left and sessions spread horizontally."
               >
                 {selectedAgendaEvent ? (
                   <div className="agenda-milestone">
@@ -1081,97 +1465,19 @@ export function App() {
                             />
                           </div>
 
-                          <div className="agenda-list-meta">
-                            <StatusLabel
-                              label={`${visibleAgendaTalks.length} talk${visibleAgendaTalks.length === 1 ? '' : 's'} shown`}
-                              icon="agenda"
-                            />
-                            <StatusLabel
-                              label={selectedAgendaDay ?? 'All days'}
-                              tone="neutral"
-                              icon="event"
-                            />
-                            <StatusLabel
-                              label={
-                                agendaFilter === 'all'
-                                  ? 'All talks'
-                                  : agendaFilter === 'bookmarked'
-                                    ? 'Bookmarked'
-                                    : agendaFilter === 'annotated'
-                                      ? 'Annotated'
-                                      : 'Slides available'
-                              }
-                              tone="neutral"
-                              icon="check"
-                            />
-                          </div>
-
                           {visibleAgendaTalks.length ? (
-                            <div className="agenda-list">
-                              {visibleAgendaTalks.map((talk) => (
-                                <Row
-                                  key={talk.id}
-                                  variant="list"
-                                  title={talk.title}
-                                  selected={talk.id === selectedAgendaTalk?.id}
-                                  onClick={() => {
-                                    setSelectedAgendaTalkId(talk.id);
-                                  }}
-                                  ariaLabel={`Show details for ${talk.title}`}
-                                  meta={
-                                    <>
-                                      {talk.timeRangeLabel} - {talk.speaker}
-                                      {talk.room !== 'Room unavailable'
-                                        ? ` - ${talk.room}`
-                                        : ''}
-                                    </>
-                                  }
-                                  detail={
-                                    <div className="row-pills">
-                                      <StatusLabel
-                                        label={talk.materialSummary}
-                                        tone="neutral"
-                                        icon="open"
-                                      />
-                                      <StatusLabel
-                                        label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                                        tone="warning"
-                                        icon="annotated"
-                                      />
-                                    </div>
-                                  }
-                                  action={
-                                    <div
-                                      className="row-action"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                      }}
-                                    >
-                                      <IconButton
-                                        label={
-                                          talk.bookmarked
-                                            ? 'Remove bookmark'
-                                            : 'Bookmark talk'
-                                        }
-                                        icon="bookmark"
-                                        pressed={talk.bookmarked}
-                                        title={
-                                          talk.bookmarked
-                                            ? 'Remove bookmark'
-                                            : 'Bookmark talk'
-                                        }
-                                        onClick={() => {
-                                          void toggleAgendaTalkBookmark(
-                                            talk.id,
-                                            !talk.bookmarked,
-                                          );
-                                        }}
-                                      />
-                                    </div>
-                                  }
-                                />
-                              ))}
-                            </div>
+                            <AgendaDayCanvas
+                              selectedAgendaDay={selectedAgendaDay}
+                              agendaFilter={agendaFilter}
+                              visibleAgendaTalks={visibleAgendaTalks}
+                              selectedAgendaTalk={selectedAgendaTalk}
+                              onSelectTalk={(talk) => {
+                                setSelectedAgendaTalkId(talk.id);
+                              }}
+                              onToggleBookmark={(talk) => {
+                                void handleAgendaTalkBookmarkToggle(talk);
+                              }}
+                            />
                           ) : (
                             <div className="empty-state agenda-empty-state">
                               <Icon name="agenda" />
@@ -1205,7 +1511,7 @@ export function App() {
                                 <Icon name="agenda" />
                                 <strong>No talk selected</strong>
                                 <span>
-                                  Choose a row in the agenda list to open its
+                                  Choose a row in the agenda canvas to open its
                                   metadata.
                                 </span>
                               </div>
