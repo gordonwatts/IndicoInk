@@ -1,5 +1,11 @@
 import React from 'react';
 
+import {
+  agendaCanvasColumnWidth as layoutAgendaCanvasColumnWidth,
+  agendaTimeGutterWidth as layoutAgendaTimeGutterWidth,
+  buildAgendaCanvasLayout,
+  formatAgendaClockFromMinutes as layoutFormatAgendaClockFromMinutes,
+} from './agendaCanvasLayout';
 import type { AppInfo } from './shared/appInfo';
 import type { AgendaTalkSummary } from './shared/agenda';
 import type { LibraryEventSummary } from './shared/library';
@@ -143,111 +149,6 @@ function EventSummaryRow({
   );
 }
 
-function AgendaTalkDetailSurface({
-  event,
-  talk,
-  onToggleBookmark,
-  onOpenSlides,
-}: {
-  event: EventSummary;
-  talk: AgendaTalkSummary;
-  onToggleBookmark: (talk: AgendaTalkSummary) => void;
-  onOpenSlides: (talk: AgendaTalkSummary) => void;
-}) {
-  const selectedPdfMaterial =
-    talk.materials.find(
-      (material) => material.mimeType === 'application/pdf' && material.selected,
-    ) ??
-    talk.materials.find((material) => material.mimeType === 'application/pdf') ??
-    null;
-
-  return (
-    <DetailsSurface
-      title={talk.title}
-      subtitle={`${talk.timeRangeLabel} - ${talk.speaker}`}
-    >
-      <div className="agenda-talk-detail">
-        <div className="agenda-talk-detail-topline">
-          <StatusLabel label={talk.dayLabel} tone="neutral" icon="event" />
-          <StatusLabel label={talk.sessionTitle} tone="neutral" icon="agenda" />
-          <StatusLabel
-            label={talk.room}
-            tone="neutral"
-            icon="info"
-          />
-        </div>
-
-        <div className="agenda-talk-detail-actions">
-          <PrimaryButton
-            icon="open"
-            disabled={!selectedPdfMaterial}
-            onClick={() => onOpenSlides(talk)}
-          >
-            Open slides
-          </PrimaryButton>
-          <IconButton
-            label={talk.bookmarked ? 'Remove bookmark' : 'Bookmark talk'}
-            icon="bookmark"
-            pressed={talk.bookmarked}
-            onClick={() => onToggleBookmark(talk)}
-          />
-        </div>
-
-        <div className="agenda-talk-detail-facts">
-          <div className="agenda-talk-detail-fact">
-            <span>Contribution</span>
-            <strong>{talk.contributionId}</strong>
-          </div>
-          <div className="agenda-talk-detail-fact">
-            <span>Event</span>
-            <strong>{event.title}</strong>
-          </div>
-          <div className="agenda-talk-detail-fact">
-            <span>Slides</span>
-            <strong>{talk.materialSummary}</strong>
-          </div>
-          <div className="agenda-talk-detail-fact">
-            <span>Annotated slides</span>
-            <strong>
-              {talk.annotatedSlideCount} annotated slide
-              {talk.annotatedSlideCount === 1 ? '' : 's'}
-            </strong>
-          </div>
-        </div>
-
-        <div className="agenda-talk-materials">
-          <div className="surface-panel-header">
-            <h3>Materials</h3>
-            <p>Stored deck metadata for this talk.</p>
-          </div>
-          {talk.materials.length ? (
-            <div className="agenda-talk-material-list">
-              {talk.materials.map((material) => (
-                <div key={material.id} className="agenda-talk-material-row">
-                  <StatusLabel
-                    label={material.title}
-                    tone={material.mimeType === 'application/pdf' ? 'success' : 'neutral'}
-                    icon={material.mimeType === 'application/pdf' ? 'open' : 'info'}
-                  />
-                  {material.selected ? (
-                    <StatusLabel label="Default" tone="warning" icon="check" />
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state agenda-detail-empty-state">
-              <Icon name="info" />
-              <strong>No stored materials</strong>
-              <span>This talk did not import any deck metadata yet.</span>
-            </div>
-          )}
-        </div>
-      </div>
-    </DetailsSurface>
-  );
-}
-
 function getAgendaTalkSearchText(talk: AgendaTalkSummary) {
   return [
     talk.title,
@@ -276,291 +177,25 @@ function talkMatchesSearchQuery(talk: AgendaTalkSummary, query: string) {
     .every((part) => searchText.includes(part));
 }
 
-type AgendaSessionBlock = {
-  key: string;
-  title: string;
-  room: string;
-  dayLabel: string;
-  startMinutes: number;
-  endMinutes: number;
-  startLabel: string;
-  endLabel: string;
-  talks: AgendaTalkSummary[];
-  talkPlacements: Array<{
-    talk: AgendaTalkSummary;
-    topPx: number;
-    heightPx: number;
-  }>;
-  trackHeightPx: number;
-  columnIndex: number;
-};
-
-const agendaCanvasRowHeight = 98;
-const agendaCanvasColumnWidth = 368;
-const agendaTimeGutterWidth = 88;
-const agendaCanvasTrackPadding = 12;
-const agendaCanvasTalkMinHeight = 112;
-const agendaCanvasTalkGap = 12;
-
-function estimateAgendaTalkCardHeight(talk: AgendaTalkSummary) {
-  const titleLineCount = Math.min(
-    3,
-    Math.max(1, Math.ceil(talk.title.length / 26)),
-  );
-  const speakerLineCount = talk.speaker.length > 34 ? 2 : 1;
-  const summaryLineCount = talk.materialSummary.length > 16 ? 2 : 1;
-  const annotationLineCount = talk.annotatedSlideCount > 0 ? 1 : 1;
-
-  return Math.max(
-    agendaCanvasTalkMinHeight,
-    84 +
-      (titleLineCount - 1) * 22 +
-      (speakerLineCount - 1) * 18 +
-      (summaryLineCount - 1) * 16 +
-      (annotationLineCount - 1) * 14,
-  );
-}
-
-function parseAgendaTimeRange(timeRangeLabel: string) {
-  const matches = [...timeRangeLabel.matchAll(/(\d{1,2}):(\d{2})/g)];
-  const startMinutes = matches[0]
-    ? Number(matches[0][1]) * 60 + Number(matches[0][2])
-    : null;
-  const endMinutes = matches[1]
-    ? Number(matches[1][1]) * 60 + Number(matches[1][2])
-    : null;
-
-  return {
-    startMinutes,
-    endMinutes,
-  };
-}
-
-function formatAgendaClockFromMinutes(minutes: number) {
-  const normalizedMinutes = ((minutes % 1440) + 1440) % 1440;
-  const hours = Math.floor(normalizedMinutes / 60);
-  const mins = normalizedMinutes % 60;
-  const suffixHours = hours.toString().padStart(2, '0');
-  const suffixMinutes = mins.toString().padStart(2, '0');
-  return `${suffixHours}:${suffixMinutes}`;
-}
-
-function getAgendaTalkStartMinutes(talk: AgendaTalkSummary) {
-  if (talk.sortStartsAt !== null) {
-    const startsAt = new Date(talk.sortStartsAt);
-    return startsAt.getUTCHours() * 60 + startsAt.getUTCMinutes();
-  }
-
-  return parseAgendaTimeRange(talk.timeRangeLabel).startMinutes;
-}
-
-function getAgendaTalkEndMinutes(talk: AgendaTalkSummary) {
-  const parsedRange = parseAgendaTimeRange(talk.timeRangeLabel);
-  if (parsedRange.endMinutes !== null) {
-    return parsedRange.endMinutes;
-  }
-
-  const startMinutes =
-    parsedRange.startMinutes ?? getAgendaTalkStartMinutes(talk) ?? 0;
-  return startMinutes + 30;
-}
-
-function getAgendaTalkDurationMinutes(talk: AgendaTalkSummary) {
-  const startMinutes = getAgendaTalkStartMinutes(talk) ?? 0;
-  const endMinutes = getAgendaTalkEndMinutes(talk);
-  return Math.max(15, endMinutes - startMinutes);
-}
-
-function buildAgendaSessionBlocks(talks: AgendaTalkSummary[]) {
-  const groupedTalks = new Map<string, AgendaTalkSummary[]>();
-
-  talks.forEach((talk) => {
-    const key = `${talk.dayLabel}::${talk.sessionTitle}::${talk.room}`;
-    const bucket = groupedTalks.get(key) ?? [];
-    bucket.push(talk);
-    groupedTalks.set(key, bucket);
-  });
-
-  const blocks = [...groupedTalks.entries()]
-    .map(([key, sessionTalks]) => {
-      const orderedTalks = [...sessionTalks].sort((left, right) => {
-        const leftStart = getAgendaTalkStartMinutes(left) ?? Number.MAX_SAFE_INTEGER;
-        const rightStart =
-          getAgendaTalkStartMinutes(right) ?? Number.MAX_SAFE_INTEGER;
-
-        if (leftStart !== rightStart) {
-          return leftStart - rightStart;
-        }
-
-        return left.title.localeCompare(right.title);
-      });
-
-      const startMinutes =
-        orderedTalks
-          .map((talk) => getAgendaTalkStartMinutes(talk))
-          .filter((value): value is number => value !== null)
-          .sort((left, right) => left - right)[0] ?? 0;
-
-      const endMinutes =
-        orderedTalks
-          .map((talk) => getAgendaTalkEndMinutes(talk))
-          .filter((value): value is number => value !== null)
-          .sort((left, right) => right - left)[0] ?? startMinutes + 30;
-
-      const firstTalk = orderedTalks[0] ?? null;
-      const talkPlacements: Array<{
-        talk: AgendaTalkSummary;
-        topPx: number;
-        heightPx: number;
-      }> = [];
-      let nextAvailableTop = agendaCanvasTrackPadding;
-
-      orderedTalks.forEach((talk) => {
-        const talkStartMinutes = getAgendaTalkStartMinutes(talk) ?? startMinutes;
-        const relativeTop =
-          agendaCanvasTrackPadding +
-          Math.max(
-            0,
-            Math.round(
-              ((talkStartMinutes - startMinutes) / 30) * agendaCanvasRowHeight,
-            ),
-          );
-        const durationHeightPx = Math.round(
-          (getAgendaTalkDurationMinutes(talk) / 30) * agendaCanvasRowHeight,
-        );
-        const heightPx = Math.max(
-          estimateAgendaTalkCardHeight(talk),
-          durationHeightPx,
-        );
-        const topPx = Math.max(relativeTop, nextAvailableTop);
-
-        talkPlacements.push({
-          talk,
-          topPx,
-          heightPx,
-        });
-
-        nextAvailableTop = topPx + heightPx + agendaCanvasTalkGap;
-      });
-
-      const trackHeightPx =
-        Math.max(
-          nextAvailableTop,
-          agendaCanvasTrackPadding +
-            Math.round(((endMinutes - startMinutes) / 30) * agendaCanvasRowHeight) +
-            agendaCanvasTalkMinHeight,
-        ) + agendaCanvasTrackPadding;
-
-      return {
-        key,
-        title: firstTalk?.sessionTitle ?? 'Session',
-        room: firstTalk?.room ?? 'Room unavailable',
-        dayLabel: firstTalk?.dayLabel ?? 'Unknown day',
-        startMinutes,
-        endMinutes,
-        startLabel: formatAgendaClockFromMinutes(startMinutes),
-        endLabel: formatAgendaClockFromMinutes(endMinutes),
-        talks: orderedTalks,
-        talkPlacements,
-        trackHeightPx,
-        columnIndex: 0,
-      } satisfies AgendaSessionBlock;
-    })
-    .sort((left, right) => {
-      if (left.startMinutes !== right.startMinutes) {
-        return left.startMinutes - right.startMinutes;
-      }
-
-      return left.title.localeCompare(right.title);
-    });
-
-  const activeColumns: Array<{ endMinutes: number; columnIndex: number }> = [];
-  const positionedBlocks = blocks.map((block) => {
-    activeColumns.sort((left, right) => left.endMinutes - right.endMinutes);
-
-    for (let index = activeColumns.length - 1; index >= 0; index -= 1) {
-      if (activeColumns[index]?.endMinutes <= block.startMinutes) {
-        activeColumns.splice(index, 1);
-      }
-    }
-
-    const usedColumns = new Set(activeColumns.map((entry) => entry.columnIndex));
-    let columnIndex = 0;
-    while (usedColumns.has(columnIndex)) {
-      columnIndex += 1;
-    }
-
-    activeColumns.push({
-      endMinutes: block.endMinutes,
-      columnIndex,
-    });
-
-    return {
-      ...block,
-      columnIndex,
-    };
-  });
-
-  const columnCount =
-    positionedBlocks.reduce((maxColumns, block) => {
-      const blockColumns = block.columnIndex + 1;
-      return Math.max(maxColumns, blockColumns);
-    }, 1) || 1;
-
-  const earliestStart =
-    positionedBlocks
-      .map((block) => block.startMinutes)
-      .sort((left, right) => left - right)[0] ?? 8 * 60;
-  const latestEnd =
-    positionedBlocks
-      .map((block) => block.endMinutes)
-      .sort((left, right) => right - left)[0] ?? earliestStart + 180;
-  const latestRenderedEnd =
-    positionedBlocks.reduce((maxEndMinutes, block) => {
-      const renderedDurationMinutes = Math.max(
-        30,
-        Math.ceil(
-          Math.max(0, block.trackHeightPx - agendaCanvasTrackPadding * 2) /
-            agendaCanvasRowHeight,
-        ) * 30,
-      );
-      return Math.max(
-        maxEndMinutes,
-        block.startMinutes + renderedDurationMinutes,
-      );
-    }, latestEnd);
-  const timeStart = Math.floor(earliestStart / 30) * 30;
-  const timeEnd = Math.ceil(latestRenderedEnd / 30) * 30;
-  const timeMarkers: number[] = [];
-
-  for (let minute = timeStart; minute <= timeEnd; minute += 30) {
-    timeMarkers.push(minute);
-  }
-
-  return {
-    blocks: positionedBlocks,
-    columnCount,
-    timeMarkers,
-  };
-}
-
-function AgendaDayCanvas({
+function AgendaTimelineCanvas({
   selectedAgendaDay,
   agendaFilter,
   visibleAgendaTalks,
-  selectedAgendaTalk,
-  onSelectTalk,
+  selectedAgendaTalkId,
+  scrollContainerRef,
+  onOpenTalk,
   onToggleBookmark,
 }: {
   selectedAgendaDay: string | null;
   agendaFilter: GalleryFilter;
   visibleAgendaTalks: AgendaTalkSummary[];
-  selectedAgendaTalk: AgendaTalkSummary | null;
-  onSelectTalk: (talk: AgendaTalkSummary) => void;
+  selectedAgendaTalkId: string | null;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  onOpenTalk: (talk: AgendaTalkSummary) => void;
   onToggleBookmark: (talk: AgendaTalkSummary) => void;
 }) {
-  const canvas = React.useMemo(
-    () => buildAgendaSessionBlocks(visibleAgendaTalks),
+  const layout = React.useMemo(
+    () => buildAgendaCanvasLayout(visibleAgendaTalks),
     [visibleAgendaTalks],
   );
 
@@ -587,47 +222,62 @@ function AgendaDayCanvas({
         />
         <StatusLabel label={filterLabel} tone="neutral" icon="check" />
         <StatusLabel
-          label={`Columns: ${canvas.columnCount}`}
+          label={`Columns: ${layout.columnCount}`}
           tone="neutral"
           icon="info"
         />
       </div>
 
-      <div className="agenda-canvas-scroll" aria-label="Agenda day canvas">
+      <div
+        className="agenda-canvas-scroll"
+        aria-label="Agenda day canvas"
+        ref={scrollContainerRef}
+      >
         <div
-          className="agenda-canvas-grid"
+          className="agenda-canvas-grid agenda-canvas-grid--absolute"
           style={{
-            gridTemplateColumns: `${agendaTimeGutterWidth}px repeat(${canvas.columnCount}, ${agendaCanvasColumnWidth}px)`,
+            width: `${layoutAgendaTimeGutterWidth + layout.columnCount * layoutAgendaCanvasColumnWidth}px`,
+            height: `${layout.canvasHeightPx}px`,
           }}
         >
-          <div className="agenda-time-gutter" aria-hidden="true">
+          <div
+            className="agenda-time-gutter agenda-time-gutter--absolute"
+            aria-hidden="true"
+            style={{
+              height: `${layout.canvasHeightPx}px`,
+            }}
+          >
             <div className="agenda-time-gutter-header">
               <span>Time</span>
               <small>(UTC)</small>
             </div>
-            {canvas.timeMarkers.map((minute) => (
-              <div key={minute} className="agenda-time-marker">
-                <span>{formatAgendaClockFromMinutes(minute)}</span>
-              </div>
-            ))}
+            {layout.timeMarkers.map((minute) => {
+              const markerIndex = layout.timeMarkers.indexOf(minute);
+              const markerTop = layout.timeMarkerTopPx[markerIndex] ?? 0;
+
+              return (
+                <div
+                  key={minute}
+                  className="agenda-time-marker agenda-time-marker--absolute"
+                  style={{
+                    top: `${Math.max(0, markerTop)}px`,
+                  }}
+                >
+                  <span>{layoutFormatAgendaClockFromMinutes(minute)}</span>
+                </div>
+              );
+            })}
           </div>
 
-          <div
-            className="agenda-session-strip"
-            style={{
-              gridTemplateColumns: `repeat(${canvas.columnCount}, ${agendaCanvasColumnWidth}px)`,
-            }}
-          >
-            {canvas.blocks.map((block) => (
+          {layout.columns.map((block) => {
+            return (
               <section
                 key={block.key}
-                className="agenda-session-block"
+                className="agenda-session-block agenda-session-block--absolute"
                 style={{
-                  gridColumn: `${block.columnIndex + 1}`,
-                  minHeight: `${Math.max(
-                    3,
-                    Math.ceil((block.endMinutes - block.startMinutes) / 30),
-                  ) * agendaCanvasRowHeight + 72}px`,
+                  left: `${layoutAgendaTimeGutterWidth + block.columnIndex * layoutAgendaCanvasColumnWidth}px`,
+                  width: `${layoutAgendaCanvasColumnWidth}px`,
+                  height: `${layout.canvasHeightPx}px`,
                 }}
                 aria-label={`${block.title} session on ${block.dayLabel}`}
               >
@@ -643,7 +293,7 @@ function AgendaDayCanvas({
                 <div
                   className="agenda-session-track"
                   style={{
-                    minHeight: `${block.trackHeightPx}px`,
+                    height: `${layout.canvasHeightPx}px`,
                   }}
                 >
                   {block.talkPlacements.map(({ talk, topPx, heightPx }) => (
@@ -656,18 +306,20 @@ function AgendaDayCanvas({
                       }}
                     >
                       <article
-                        className={`agenda-talk-card${talk.id === selectedAgendaTalk?.id ? ' is-selected' : ''}`}
+                        className={`agenda-talk-card${talk.id === selectedAgendaTalkId ? ' is-selected' : ''}`}
                         role="button"
                         tabIndex={0}
-                        aria-label={`Show details for ${talk.title}`}
+                        aria-label={`Open slides for ${talk.title}`}
                         aria-current={
-                          talk.id === selectedAgendaTalk?.id ? 'true' : undefined
+                          talk.id === selectedAgendaTalkId ? 'true' : undefined
                         }
-                        onClick={() => onSelectTalk(talk)}
+                        onClick={() => {
+                          onOpenTalk(talk);
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();
-                            onSelectTalk(talk);
+                            onOpenTalk(talk);
                           }
                         }}
                       >
@@ -700,7 +352,9 @@ function AgendaDayCanvas({
                             />
                           </div>
                         </div>
-                        <div className="agenda-talk-card-title">{talk.title}</div>
+                        <div className="agenda-talk-card-title">
+                          {talk.title}
+                        </div>
                         <div className="agenda-talk-card-speaker">
                           {talk.speaker}
                           {talk.room !== 'Room unavailable'
@@ -724,8 +378,8 @@ function AgendaDayCanvas({
                   ))}
                 </div>
               </section>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -877,13 +531,13 @@ export function App() {
     string | null
   >(null);
   const [agendaSearchQuery, setAgendaSearchQuery] = React.useState('');
-  const [agendaFilter, setAgendaFilter] =
-    React.useState<GalleryFilter>('all');
+  const [agendaFilter, setAgendaFilter] = React.useState<GalleryFilter>('all');
   const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
     null,
   );
   const agendaScrollPositionsRef = React.useRef<Record<string, number>>({});
   const agendaScrollFrameRef = React.useRef<number | null>(null);
+  const agendaCanvasScrollRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     void window.indicoInk.getAppInfo().then(setInfo);
@@ -906,14 +560,14 @@ export function App() {
   const activeEvent =
     libraryEvents.find((event) => event.id === selectedEventId) ?? defaultEvent;
   const selectedAgendaEvent = selectedEventId
-    ? libraryEvents.find((event) => event.id === selectedEventId) ?? null
+    ? (libraryEvents.find((event) => event.id === selectedEventId) ?? null)
     : null;
   const agendaDayLabels = Array.from(
     new Set(agendaTalks.map((talk) => talk.dayLabel)),
   );
   const selectedAgendaDay = agendaDayLabels.includes(agendaDayLabel ?? '')
     ? agendaDayLabel
-    : agendaDayLabels[0] ?? null;
+    : (agendaDayLabels[0] ?? null);
   const visibleAgendaTalks = agendaTalks.filter((talk) => {
     const matchesDay =
       selectedAgendaDay === null || talk.dayLabel === selectedAgendaDay;
@@ -954,7 +608,9 @@ export function App() {
         (material) =>
           material.mimeType === 'application/pdf' && material.selected,
       ) ??
-      talk.materials.find((material) => material.mimeType === 'application/pdf') ??
+      talk.materials.find(
+        (material) => material.mimeType === 'application/pdf',
+      ) ??
       null;
 
     if (!selectedPdfMaterial) {
@@ -1079,7 +735,10 @@ export function App() {
     setSelectedEventId(event.id);
     setDestination('agenda');
   };
-  const toggleAgendaTalkBookmark = async (talkId: string, bookmarked: boolean) => {
+  const toggleAgendaTalkBookmark = async (
+    talkId: string,
+    bookmarked: boolean,
+  ) => {
     await window.indicoInk.setTalkBookmarked(talkId, bookmarked);
     setAgendaTalks((currentTalks) =>
       currentTalks.map((talk) =>
@@ -1206,6 +865,10 @@ export function App() {
 
     const scrollKey = `${selectedEventId}:${selectedAgendaDay ?? '__all__'}`;
     const targetScrollTop = agendaScrollPositionsRef.current[scrollKey] ?? 0;
+    const scrollContainer = agendaCanvasScrollRef.current;
+    if (!scrollContainer) {
+      return undefined;
+    }
     const scheduleScrollRestoration =
       window.requestAnimationFrame ??
       ((callback: FrameRequestCallback) =>
@@ -1218,19 +881,25 @@ export function App() {
     }
 
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
-      window.scrollTo({ top: targetScrollTop, behavior: 'auto' });
+      if (typeof scrollContainer.scrollTo === 'function') {
+        scrollContainer.scrollTo({ top: targetScrollTop, behavior: 'auto' });
+      } else {
+        scrollContainer.scrollTop = targetScrollTop;
+      }
       agendaScrollFrameRef.current = null;
     });
 
     const captureScrollPosition = () => {
-      agendaScrollPositionsRef.current[scrollKey] = window.scrollY;
+      agendaScrollPositionsRef.current[scrollKey] = scrollContainer.scrollTop;
     };
 
     captureScrollPosition();
-    window.addEventListener('scroll', captureScrollPosition, { passive: true });
+    scrollContainer.addEventListener('scroll', captureScrollPosition, {
+      passive: true,
+    });
 
     return () => {
-      window.removeEventListener('scroll', captureScrollPosition);
+      scrollContainer.removeEventListener('scroll', captureScrollPosition);
       captureScrollPosition();
 
       if (agendaScrollFrameRef.current !== null) {
@@ -1280,11 +949,11 @@ export function App() {
                 ? 'Event agenda'
                 : destination === 'search'
                   ? 'Search talks'
-                : destination === 'bookmarks'
-                  ? 'Bookmarks'
-                  : destination === 'annotated'
-                    ? 'Annotated talks'
-                    : 'Settings'
+                  : destination === 'bookmarks'
+                    ? 'Bookmarks'
+                    : destination === 'annotated'
+                      ? 'Annotated talks'
+                      : 'Settings'
           }
           status={
             eventFocused ? (
@@ -1488,108 +1157,81 @@ export function App() {
                       </div>
                     ) : agendaTalks.length ? (
                       <div className="agenda-shell">
-                        <div className="agenda-shell-main">
-                          <div className="agenda-controls">
-                            <div className="agenda-day-strip">
-                              <IconButton
-                                label="Previous day"
-                                icon="back"
-                                disabled={!canMoveToPreviousDay}
-                                onClick={() => {
-                                  if (canMoveToPreviousDay) {
-                                    setAgendaDayLabel(
-                                      agendaDayLabels[
-                                        selectedAgendaDayIndex - 1
-                                      ] ?? null,
-                                    );
-                                  }
-                                }}
-                              />
-                              <SegmentedControl
-                                options={agendaDayLabels.map((label) => ({
-                                  label,
-                                  value: label,
-                                }))}
-                                value={
-                                  selectedAgendaDay ?? agendaDayLabels[0] ?? ''
+                        <div className="agenda-controls">
+                          <div className="agenda-day-strip">
+                            <IconButton
+                              label="Previous day"
+                              icon="back"
+                              disabled={!canMoveToPreviousDay}
+                              onClick={() => {
+                                if (canMoveToPreviousDay) {
+                                  setAgendaDayLabel(
+                                    agendaDayLabels[
+                                      selectedAgendaDayIndex - 1
+                                    ] ?? null,
+                                  );
                                 }
-                                onChange={setAgendaDayLabel}
-                              />
-                              <IconButton
-                                label="Next day"
-                                icon="chevron"
-                                disabled={!canMoveToNextDay}
-                                onClick={() => {
-                                  if (canMoveToNextDay) {
-                                    setAgendaDayLabel(
-                                      agendaDayLabels[
-                                        selectedAgendaDayIndex + 1
-                                      ] ?? null,
-                                    );
-                                  }
-                                }}
-                              />
-                            </div>
+                              }}
+                            />
                             <SegmentedControl
-                              options={filterOptions}
-                              value={agendaFilter}
-                              onChange={setAgendaFilter}
+                              options={agendaDayLabels.map((label) => ({
+                                label,
+                                value: label,
+                              }))}
+                              value={
+                                selectedAgendaDay ?? agendaDayLabels[0] ?? ''
+                              }
+                              onChange={setAgendaDayLabel}
+                            />
+                            <IconButton
+                              label="Next day"
+                              icon="chevron"
+                              disabled={!canMoveToNextDay}
+                              onClick={() => {
+                                if (canMoveToNextDay) {
+                                  setAgendaDayLabel(
+                                    agendaDayLabels[
+                                      selectedAgendaDayIndex + 1
+                                    ] ?? null,
+                                  );
+                                }
+                              }}
                             />
                           </div>
-
-                          {visibleAgendaTalks.length ? (
-                            <AgendaDayCanvas
-                              selectedAgendaDay={selectedAgendaDay}
-                              agendaFilter={agendaFilter}
-                              visibleAgendaTalks={visibleAgendaTalks}
-                              selectedAgendaTalk={selectedAgendaTalk}
-                              onSelectTalk={(talk) => {
-                                setSelectedAgendaTalkId(talk.id);
-                              }}
-                              onToggleBookmark={(talk) => {
-                                void handleAgendaTalkBookmarkToggle(talk);
-                              }}
-                            />
-                          ) : (
-                            <div className="empty-state agenda-empty-state">
-                              <Icon name="agenda" />
-                              <strong>No talks match this view</strong>
-                              <span>
-                                Try a different day or filter to keep browsing
-                                the stored agenda data.
-                              </span>
-                            </div>
-                          )}
+                          <SegmentedControl
+                            options={filterOptions}
+                            value={agendaFilter}
+                            onChange={setAgendaFilter}
+                          />
                         </div>
 
-                        <aside className="agenda-talk-detail-panel">
-                          {selectedAgendaTalk ? (
-                            <AgendaTalkDetailSurface
-                              event={selectedAgendaEvent ?? activeEvent}
-                              talk={selectedAgendaTalk}
-                              onToggleBookmark={(talk) => {
-                                void handleAgendaTalkBookmarkToggle(talk);
-                              }}
-                              onOpenSlides={(talk) => {
-                                void openAgendaTalkSlides(talk);
-                              }}
-                            />
-                          ) : (
-                            <DetailsSurface
-                              title="Talk details"
-                              subtitle="Select a talk to inspect materials and open slides."
-                            >
-                              <div className="empty-state agenda-detail-empty-state">
-                                <Icon name="agenda" />
-                                <strong>No talk selected</strong>
-                                <span>
-                                  Choose a row in the agenda canvas to open its
-                                  metadata.
-                                </span>
-                              </div>
-                            </DetailsSurface>
-                          )}
-                        </aside>
+                        {visibleAgendaTalks.length ? (
+                          <AgendaTimelineCanvas
+                            selectedAgendaDay={selectedAgendaDay}
+                            agendaFilter={agendaFilter}
+                            visibleAgendaTalks={visibleAgendaTalks}
+                            selectedAgendaTalkId={
+                              selectedAgendaTalk?.id ?? null
+                            }
+                            scrollContainerRef={agendaCanvasScrollRef}
+                            onOpenTalk={(talk) => {
+                              setSelectedAgendaTalkId(talk.id);
+                              void openAgendaTalkSlides(talk);
+                            }}
+                            onToggleBookmark={(talk) => {
+                              void handleAgendaTalkBookmarkToggle(talk);
+                            }}
+                          />
+                        ) : (
+                          <div className="empty-state agenda-empty-state">
+                            <Icon name="agenda" />
+                            <strong>No talks match this view</strong>
+                            <span>
+                              Try a different day or filter to keep browsing the
+                              stored agenda data.
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="empty-state agenda-empty-state">
@@ -1682,9 +1324,7 @@ export function App() {
                   <div className="empty-state">
                     <Icon name="bookmark" />
                     <strong>No bookmarked talks yet</strong>
-                    <span>
-                      Bookmark a talk from the agenda to pin it here.
-                    </span>
+                    <span>Bookmark a talk from the agenda to pin it here.</span>
                   </div>
                 )}
               </DetailsSurface>
@@ -1789,7 +1429,9 @@ export function App() {
                       <span>Search talks</span>
                       <input
                         value={agendaSearchQuery}
-                        onChange={(event) => setAgendaSearchQuery(event.target.value)}
+                        onChange={(event) =>
+                          setAgendaSearchQuery(event.target.value)
+                        }
                         type="search"
                         autoComplete="off"
                         placeholder="Try title, speaker, session, or contribution ID"

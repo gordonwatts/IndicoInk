@@ -1106,20 +1106,11 @@ input:focus-visible {
 
 .agenda-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.agenda-shell-main {
-  min-width: 0;
-  display: grid;
   gap: 12px;
 }
 
 .agenda-talk-detail-panel {
-  position: sticky;
-  top: 20px;
+  display: none;
 }
 
 .agenda-talk-detail {
@@ -1197,6 +1188,7 @@ input:focus-visible {
 }
 
 .agenda-canvas-scroll {
+  position: relative;
   overflow: auto;
   max-height: clamp(520px, 64vh, 760px);
   padding-bottom: 8px;
@@ -1204,19 +1196,21 @@ input:focus-visible {
 }
 
 .agenda-canvas-grid {
-  display: grid;
-  gap: 0 16px;
-  align-items: start;
+  position: relative;
   min-width: max-content;
+  display: block;
+}
+
+.agenda-canvas-grid--absolute {
+  display: block;
 }
 
 .agenda-time-gutter {
   position: sticky;
   left: 0;
   z-index: 2;
-  display: grid;
-  gap: 10px;
-  align-content: start;
+  display: block;
+  width: 88px;
   padding: 8px 8px 8px 0;
   background: linear-gradient(
     90deg,
@@ -1224,6 +1218,10 @@ input:focus-visible {
     color-mix(in srgb, var(--surface-panel) 92%, transparent) 86%,
     transparent 100%
   );
+}
+
+.agenda-time-gutter--absolute {
+  pointer-events: none;
 }
 
 .agenda-time-gutter-header {
@@ -1248,7 +1246,9 @@ input:focus-visible {
 }
 
 .agenda-time-marker {
-  min-height: 86px;
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
@@ -1258,9 +1258,12 @@ input:focus-visible {
   line-height: var(--line-height-tight);
 }
 
+.agenda-time-marker--absolute {
+  min-height: 0;
+}
+
 .agenda-time-marker span {
-  position: sticky;
-  left: 0;
+  position: static;
   padding-top: 6px;
 }
 
@@ -1272,13 +1275,25 @@ input:focus-visible {
 }
 
 .agenda-session-block {
+  position: absolute;
+  top: 0;
   display: grid;
   gap: 12px;
   padding: 16px;
   border-radius: 22px;
-  background: color-mix(in srgb, var(--surface-panel) 92%, var(--surface-panel-muted));
+  background: color-mix(
+    in srgb,
+    var(--surface-panel) 92%,
+    var(--surface-panel-muted)
+  );
   border: 1px solid var(--border-subtle);
   box-shadow: 0 14px 34px rgba(34, 45, 63, 0.08);
+}
+
+.agenda-session-block--absolute {
+  display: block;
+  overflow: visible;
+  padding: 0;
 }
 
 .agenda-session-block-header {
@@ -1286,6 +1301,14 @@ input:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.agenda-session-block--absolute .agenda-session-block-header {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 2;
 }
 
 .agenda-session-block-heading {
@@ -1309,14 +1332,18 @@ input:focus-visible {
 .agenda-session-track {
   position: relative;
   border-radius: 18px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-panel) 92%, transparent) 0%,
-      color-mix(in srgb, var(--surface-panel-muted) 84%, transparent) 100%
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-panel) 92%, transparent) 0%,
+    color-mix(in srgb, var(--surface-panel-muted) 84%, transparent) 100%
+  );
   border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
   overflow: visible;
+}
+
+.agenda-session-block--absolute .agenda-session-track {
+  position: absolute;
+  inset: 0;
 }
 
 .agenda-talk-placement {
@@ -1616,22 +1643,7 @@ input:focus-visible {
   }
 
   .agenda-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .agenda-canvas-grid {
-    grid-template-columns: 72px max-content;
-  }
-
-  .agenda-talk-detail-panel {
-    position: fixed;
-    left: 16px;
-    right: 16px;
-    bottom: 16px;
-    top: auto;
-    z-index: 25;
-    max-height: min(68vh, 760px);
-    overflow: auto;
+    gap: 10px;
   }
 
   .pdf-preview-diagnostics-grid,

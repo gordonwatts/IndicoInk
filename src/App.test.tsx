@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,6 +17,15 @@ describe('App', () => {
       return 1;
     });
     window.cancelAnimationFrame = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      value: vi.fn(function scrollTo(
+        this: HTMLElement,
+        options?: ScrollToOptions,
+      ) {
+        this.scrollTop = options?.top ?? 0;
+      }),
+      configurable: true,
+    });
     window.indicoInk = {
       getAppInfo: vi.fn().mockResolvedValue({
         appName: 'IndicoInk',
@@ -98,10 +107,9 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
-        'button',
-        { name: 'Annotated' },
-      ),
+      within(
+        screen.getByRole('navigation', { name: 'Destinations' }),
+      ).getByRole('button', { name: 'Annotated' }),
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
@@ -392,10 +400,9 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Bookmarked' })).toBeTruthy();
     expect(
-      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
-        'button',
-        { name: 'Annotated' },
-      ),
+      within(
+        screen.getByRole('navigation', { name: 'Destinations' }),
+      ).getByRole('button', { name: 'Annotated' }),
     ).toBeTruthy();
     expect(
       screen.getByText('Annotated', { selector: '.segmented-control-option' }),
@@ -404,35 +411,26 @@ describe('App', () => {
       screen.getByRole('button', { name: 'Slides available' }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('heading', {
-        name: 'Designing a calm note-taking workflow',
+      screen.getByRole('button', {
+        name: 'Open slides for Designing a calm note-taking workflow',
       }),
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Open slides' })).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Show details for Tracking talks across a conference',
+        name: 'Open slides for Tracking talks across a conference',
       }),
     );
-
-    expect(
-      screen.getByRole('heading', {
-        name: 'Tracking talks across a conference',
-      }),
-    ).toBeTruthy();
-
-    await user.click(screen.getByRole('button', { name: 'Open slides' }));
 
     expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
       'https://indico.example.org/materials/deck-2a.pdf',
     );
 
-    await user.click(
-      screen.getAllByRole('button', {
-        name: 'Bookmark talk',
-      })[0],
-    );
+    const firstBookmarkButton = screen.getAllByRole('button', {
+      name: 'Bookmark talk',
+    })[0];
+    expect(firstBookmarkButton).toBeTruthy();
+    await user.click(firstBookmarkButton!);
 
     await user.click(
       screen.getByRole('button', {
@@ -445,15 +443,12 @@ describe('App', () => {
         name: 'Bookmarked talks',
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByText('Tracking talks across a conference'),
-    ).toBeTruthy();
+    expect(screen.getByText('Tracking talks across a conference')).toBeTruthy();
 
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
-        'button',
-        { name: 'Annotated' },
-      ),
+      within(
+        screen.getByRole('navigation', { name: 'Destinations' }),
+      ).getByRole('button', { name: 'Annotated' }),
     );
 
     expect(
@@ -467,10 +462,9 @@ describe('App', () => {
     ).toBeTruthy();
 
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
-        'button',
-        { name: 'Search' },
-      ),
+      within(
+        screen.getByRole('navigation', { name: 'Destinations' }),
+      ).getByRole('button', { name: 'Search' }),
     );
 
     expect(
@@ -487,9 +481,7 @@ describe('App', () => {
       'Grace',
     );
 
-    expect(
-      screen.getByText('Tracking talks across a conference'),
-    ).toBeTruthy();
+    expect(screen.getByText('Tracking talks across a conference')).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
@@ -503,8 +495,8 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('heading', {
-        name: 'Tracking talks across a conference',
+      screen.getByRole('button', {
+        name: 'Open slides for Tracking talks across a conference',
       }),
     ).toBeTruthy();
 
@@ -647,7 +639,13 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    window.scrollY = 420;
+    const agendaScroller = screen.getByLabelText('Agenda day canvas');
+    Object.defineProperty(agendaScroller, 'scrollTop', {
+      value: 420,
+      configurable: true,
+      writable: true,
+    });
+    fireEvent.scroll(agendaScroller);
     await user.click(
       screen.getByRole('button', {
         name: 'Next day',
@@ -660,7 +658,7 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    expect(window.scrollTo).toHaveBeenLastCalledWith({
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({
       top: 0,
       behavior: 'auto',
     });
@@ -689,7 +687,12 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    window.scrollY = 125;
+    Object.defineProperty(agendaScroller, 'scrollTop', {
+      value: 125,
+      configurable: true,
+      writable: true,
+    });
+    fireEvent.scroll(agendaScroller);
     await user.click(
       screen.getByRole('button', {
         name: 'Previous day',
@@ -702,7 +705,7 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    expect(window.scrollTo).toHaveBeenLastCalledWith({
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({
       top: 420,
       behavior: 'auto',
     });
