@@ -1,6 +1,7 @@
 import React from 'react';
 
 import type { AppInfo } from './shared/appInfo';
+import type { LibraryEventSummary } from './shared/library';
 import {
   CommandBar,
   DetailsSurface,
@@ -22,14 +23,7 @@ type Destination =
   | 'annotated'
   | 'settings';
 
-type EventSummary = {
-  title: string;
-  dates: string;
-  host: string;
-  lastOpened: string;
-  annotationSummary: string;
-  cacheStatus: string;
-};
+type EventSummary = LibraryEventSummary;
 
 const destinations: Array<{
   id: Destination;
@@ -49,7 +43,9 @@ const destinations: Array<{
   { id: 'settings', label: 'Settings', shortLabel: 'Set', icon: 'settings' },
 ];
 
-const currentEvent: EventSummary = {
+const defaultEvent: EventSummary = {
+  id: 'conference-indicoink-design-summit-2026',
+  sourceUrl: 'https://indico.example.org/event/indicoink-design-summit',
   title: 'IndicoInk Design Summit 2026',
   dates: 'June 12-14, 2026',
   host: 'indico.example.org',
@@ -57,8 +53,6 @@ const currentEvent: EventSummary = {
   annotationSummary: '12 annotated slides',
   cacheStatus: 'Cached for offline use',
 };
-
-const recentEvents: EventSummary[] = [];
 
 const filterOptions = [
   { label: 'All', value: 'all' as const },
@@ -94,9 +88,23 @@ const validateEventUrl = (value: string) => {
   return null;
 };
 
-function EventSummaryRow({ event }: { event: EventSummary }) {
+function EventSummaryRow({
+  event,
+  selected,
+  onOpen,
+  onDelete,
+}: {
+  event: EventSummary;
+  selected: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
   return (
     <Row
+      variant="list"
+      selected={selected}
+      onClick={onOpen}
+      ariaLabel={`Open ${event.title}`}
       title={event.title}
       meta={
         <>
@@ -114,7 +122,16 @@ function EventSummaryRow({ event }: { event: EventSummary }) {
           <StatusLabel label={event.cacheStatus} tone="neutral" icon="check" />
         </div>
       }
-      action={<PrimaryButton title={`Open ${event.title}`}>Open</PrimaryButton>}
+      action={
+        <div
+          className="event-row-actions"
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          <IconButton label={`Delete ${event.title}`} icon="trash" onClick={onDelete} />
+        </div>
+      }
     />
   );
 }
@@ -237,15 +254,33 @@ export function App() {
   const [eventUrl, setEventUrl] = React.useState('');
   const [eventUrlTouched, setEventUrlTouched] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
+  const [libraryEvents, setLibraryEvents] = React.useState<EventSummary[]>([]);
+  const [selectedEventId, setSelectedEventId] = React.useState<string | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
+    null,
+  );
 
   React.useEffect(() => {
     void window.indicoInk.getAppInfo().then(setInfo);
   }, []);
 
+  const refreshLibraryEvents = React.useCallback(async () => {
+    const events = await window.indicoInk.listLibraryEvents();
+    setLibraryEvents(events);
+  }, []);
+
+  React.useEffect(() => {
+    void refreshLibraryEvents();
+  }, [refreshLibraryEvents]);
+
   const eventFocused =
     destination === 'agenda' ||
     destination === 'bookmarks' ||
     destination === 'annotated';
+  const activeEvent =
+    libraryEvents.find((event) => event.id === selectedEventId) ?? defaultEvent;
   const eventUrlError = eventUrlTouched ? validateEventUrl(eventUrl) : null;
   const handleOpenEvent = () => {
     setEventUrlTouched(true);
@@ -255,6 +290,28 @@ export function App() {
     }
 
     setDestination('agenda');
+  };
+  const openLibraryEvent = (event: EventSummary) => {
+    setSelectedEventId(event.id);
+    setDestination('agenda');
+  };
+  const requestDeleteLibraryEvent = (event: EventSummary) => {
+    setDeleteTarget(event);
+  };
+  const confirmDeleteLibraryEvent = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    const deletingSelected = selectedEventId === deleteTarget.id;
+    await window.indicoInk.deleteLibraryEvent(deleteTarget.id);
+    setDeleteTarget(null);
+    await refreshLibraryEvents();
+
+    if (deletingSelected) {
+      setSelectedEventId(null);
+      setDestination('library');
+    }
   };
 
   return (
@@ -283,13 +340,13 @@ export function App() {
 
         <div className="nav-rail-foot">
           <span className="nav-foot-label">Current event</span>
-          <strong>{currentEvent.title}</strong>
+          <strong>{activeEvent.title}</strong>
         </div>
       </aside>
 
       <section className="workspace">
         <CommandBar
-          kicker={destination === 'library' ? 'Library' : currentEvent.title}
+          kicker={destination === 'library' ? 'Library' : activeEvent.title}
           title={
             destination === 'library'
               ? 'Open a conference event'
@@ -402,10 +459,16 @@ export function App() {
                   <h3>Recently opened</h3>
                   <p>Most recent event first.</p>
                 </div>
-                {recentEvents.length ? (
+                {libraryEvents.length ? (
                   <div className="event-list">
-                    {recentEvents.map((event) => (
-                      <EventSummaryRow key={event.title} event={event} />
+                    {libraryEvents.map((event) => (
+                      <EventSummaryRow
+                        key={event.id}
+                        event={event}
+                        selected={event.id === selectedEventId}
+                        onOpen={() => openLibraryEvent(event)}
+                        onDelete={() => requestDeleteLibraryEvent(event)}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -426,18 +489,18 @@ export function App() {
             <section className="page-stack">
               <div className="overview-grid">
                 <DetailsSurface
-                  title={currentEvent.title}
-                  subtitle={currentEvent.dates}
+                  title={activeEvent.title}
+                  subtitle={activeEvent.dates}
                 >
                   <div className="event-details">
-                    <StatusLabel label={currentEvent.host} icon="info" />
+                    <StatusLabel label={activeEvent.host} icon="info" />
                     <StatusLabel
-                      label={currentEvent.cacheStatus}
+                      label={activeEvent.cacheStatus}
                       tone="success"
                       icon="check"
                     />
                     <StatusLabel
-                      label={currentEvent.annotationSummary}
+                      label={activeEvent.annotationSummary}
                       tone="warning"
                       icon="annotated"
                     />
@@ -488,7 +551,7 @@ export function App() {
               >
                 <div className="empty-state">
                   <Icon name="annotated" />
-                  <strong>{currentEvent.annotationSummary}</strong>
+                  <strong>{activeEvent.annotationSummary}</strong>
                   <span>
                     Annotated talks will be surfaced here once slide notes
                     exist.
@@ -529,9 +592,9 @@ export function App() {
                   subtitle="Event ownership persists while moving between agenda-related views."
                 >
                   <div className="event-context">
-                    <strong>{currentEvent.title}</strong>
-                    <span>{currentEvent.dates}</span>
-                    <span>{currentEvent.host}</span>
+                    <strong>{activeEvent.title}</strong>
+                    <span>{activeEvent.dates}</span>
+                    <span>{activeEvent.host}</span>
                   </div>
                 </DetailsSurface>
               </div>
@@ -539,6 +602,28 @@ export function App() {
               <ComponentGallery />
             </section>
           )}
+
+          {deleteTarget ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title="Delete event"
+                body={
+                  <>
+                    <p>
+                      Cached slides and annotations for{' '}
+                      <strong>{deleteTarget.title}</strong> will be deleted from
+                      this computer.
+                    </p>
+                    <p>{deleteTarget.sourceUrl}</p>
+                  </>
+                }
+                primaryLabel="Delete event"
+                secondaryLabel="Cancel"
+                onPrimary={() => void confirmDeleteLibraryEvent()}
+                onSecondary={() => setDeleteTarget(null)}
+              />
+            </div>
+          ) : null}
         </main>
       </section>
     </div>

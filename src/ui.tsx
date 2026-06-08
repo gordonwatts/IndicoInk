@@ -10,6 +10,7 @@ export type IconName =
   | 'search'
   | 'refresh'
   | 'export'
+  | 'trash'
   | 'undo'
   | 'redo'
   | 'event'
@@ -38,6 +39,8 @@ const iconPaths: Record<IconName, string> = {
   refresh:
     'M17.35 8.65A6.5 6.5 0 1 0 18.5 12h-2a4.5 4.5 0 1 1-.83-2.6L14 11h5V6l-1.65 1.65Z',
   export: 'M12 4.5 16 8.5h-2.75V14h-2.5V8.5H8L12 4.5Zm-6 11h12v2H6v-2Z',
+  trash:
+    'M9.5 4.75h5l.75 1.25H19v2H5v-2h3.75l.75-1.25Zm-1 4.5h7l-.55 9.5A1.5 1.5 0 0 1 13.96 20h-3.92a1.5 1.5 0 0 1-1.49-1.25l-.55-9.5Zm2 2v5h1.5v-5h-1.5Zm3 0v5h1.5v-5h-1.5Z',
   undo: 'M10.2 7.3H15a4.8 4.8 0 1 1 0 9.6H7.4l2.2 2.2-1.4 1.4-4.6-4.6 4.6-4.6 1.4 1.4-2.2 2.2H15a2.8 2.8 0 1 0 0-5.6h-4.8v-2Z',
   redo: 'M13.8 7.3H9a4.8 4.8 0 1 0 0 9.6h7.6l-2.2 2.2 1.4 1.4 4.6-4.6-4.6-4.6-1.4 1.4 2.2 2.2H9a2.8 2.8 0 1 1 0-5.6h4.8v-2Z',
   event:
@@ -181,14 +184,41 @@ export function Row({
   meta,
   detail,
   action,
+  onClick,
+  selected = false,
+  variant = 'surface',
+  ariaLabel,
 }: {
   title: string;
   meta?: React.ReactNode;
   detail?: React.ReactNode;
   action?: React.ReactNode;
+  onClick?: () => void;
+  selected?: boolean;
+  variant?: 'surface' | 'list';
+  ariaLabel?: string;
 }) {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (!onClick) {
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
-    <article className="row">
+    <article
+      className={`row row-${variant}${selected ? ' is-selected' : ''}${onClick ? ' is-interactive' : ''}`}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={ariaLabel}
+      aria-current={selected ? 'true' : undefined}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+    >
       <div className="row-main">
         <div className="row-title">{title}</div>
         {meta ? <div className="row-meta">{meta}</div> : null}
@@ -275,11 +305,15 @@ export function DialogSurface({
   body,
   primaryLabel,
   secondaryLabel,
+  onPrimary,
+  onSecondary,
 }: {
   title: string;
   body: React.ReactNode;
   primaryLabel: string;
   secondaryLabel: string;
+  onPrimary?: () => void;
+  onSecondary?: () => void;
 }) {
   const titleId = React.useId();
   const bodyId = React.useId();
@@ -297,13 +331,15 @@ export function DialogSurface({
           <Icon name="dialog" />
           <h3 id={titleId}>{title}</h3>
         </div>
-        <p id={bodyId}>{body}</p>
+        <div id={bodyId} className="dialog-surface-body">
+          {body}
+        </div>
       </div>
       <div className="dialog-surface-actions">
-        <button className="secondary-button" type="button">
+        <button className="secondary-button" type="button" onClick={onSecondary}>
           {secondaryLabel}
         </button>
-        <button className="primary-button" type="button">
+        <button className="primary-button" type="button" onClick={onPrimary}>
           {primaryLabel}
         </button>
       </div>

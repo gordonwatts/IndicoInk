@@ -1,5 +1,6 @@
 import type { AppInfo } from './shared/appInfo';
 import type { PdfSelection } from './openPdf';
+import type { LibraryEventSummary } from './shared/library';
 import type {
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
@@ -17,6 +18,8 @@ declare global {
       savePdfWorkspaceState: (
         snapshot: PdfWorkspaceSnapshot,
       ) => Promise<PdfWorkspaceSaveResult>;
+      listLibraryEvents: () => Promise<LibraryEventSummary[]>;
+      deleteLibraryEvent: (conferenceId: string) => Promise<void>;
     };
   }
 }

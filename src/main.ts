@@ -2,9 +2,15 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
+import {
+  buildLibraryEventSummaries,
+  importConferenceFixtureByName,
+} from './libraryData';
 import { openPdfSelection } from './openPdf';
+import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import {
@@ -17,6 +23,7 @@ import type { AppInfo } from './shared/appInfo';
 
 let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
+const importFixtureName = getImportFixtureName(process.argv);
 
 if (shouldDisableGpu()) {
   app.disableHardwareAcceleration();
@@ -34,7 +41,7 @@ const getMainWindowDevServerUrl = () =>
   '';
 
 const getPackagedRendererPath = () =>
-  join(app.getAppPath(), `.vite/renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+  join(__dirname, '../renderer/', MAIN_WINDOW_VITE_NAME, 'index.html');
 
 const logStartupEvent = (source: string, detail: string) => {
   appendStartupLogEntry(app.getPath('userData'), source, detail);
@@ -45,6 +52,24 @@ const getPersistenceStore = () =>
   (persistenceStore = new PersistenceStore(
     join(app.getPath('userData'), 'indicoink-persistence.sqlite3'),
   ));
+
+function getImportFixtureName(argv: string[]) {
+  const argument = argv.find(
+    (value) => value === '--import-fixture' || value.startsWith('--import-fixture='),
+  );
+
+  if (!argument) {
+    return null;
+  }
+
+  if (argument.includes('=')) {
+    const [, value] = argument.split('=', 2);
+    return value?.trim() || null;
+  }
+
+  const index = argv.indexOf(argument);
+  return argv[index + 1]?.trim() || null;
+}
 
 const createWindow = () => {
   const packagedRendererPath = getPackagedRendererPath();
@@ -70,7 +95,7 @@ const createWindow = () => {
   });
 
   if (hasPackagedRenderer) {
-    void mainWindow.loadFile(packagedRendererPath).catch((error) => {
+    void mainWindow.loadURL(pathToFileURL(packagedRendererPath).toString()).catch((error) => {
       appendStartupLogEntry(app.getPath('userData'), 'window:load-file', error);
     });
   } else {
@@ -95,6 +120,16 @@ const createWindow = () => {
       logStartupEvent(
         'window:did-fail-load',
         `${errorCode} ${errorDescription} ${validatedURL}`,
+      );
+    },
+  );
+
+  mainWindow.webContents.on(
+    'console-message',
+    (_event, level, message, line, sourceId) => {
+      logStartupEvent(
+        'window:console-message',
+        JSON.stringify({ level, message, line, sourceId }),
       );
     },
   );
@@ -152,6 +187,14 @@ ipcMain.handle(
   async (_event, filePath: string) => new Uint8Array(await readFile(filePath)),
 );
 
+ipcMain.handle('library:list-events', async () =>
+  buildLibraryEventSummaries(getPersistenceStore()),
+);
+
+ipcMain.handle('library:delete-event', async (_event, conferenceId: string) => {
+  await getPersistenceStore().deleteConference(conferenceId);
+});
+
 ipcMain.handle('persistence:load-pdf-workspace', async (_event, sourceUrl: string) =>
   getPersistenceStore().loadLocalPdfWorkspace(sourceUrl),
 );
@@ -163,6 +206,36 @@ ipcMain.handle(
 );
 
 app.whenReady().then(() => {
+  if (importFixtureName) {
+    if (!(importFixtureName in conferenceFixtures)) {
+      appendStartupLogEntry(
+        app.getPath('userData'),
+        'fixture-import:error',
+        `Unknown fixture name: ${importFixtureName}`,
+      );
+      app.exit(1);
+      return;
+    }
+
+    void importConferenceFixtureByName(
+      getPersistenceStore(),
+      importFixtureName as keyof typeof conferenceFixtures,
+    )
+      .then((result) => {
+        appendStartupLogEntry(
+          app.getPath('userData'),
+          'fixture-import:done',
+          JSON.stringify(result),
+        );
+        app.exit(0);
+      })
+      .catch((error) => {
+        appendStartupLogEntry(app.getPath('userData'), 'fixture-import:error', error);
+        app.exit(1);
+      });
+    return;
+  }
+
   if (existsSync(getPackagedRendererPath())) {
     assertLaunchArtifacts(getLaunchArtifacts(__dirname, MAIN_WINDOW_VITE_NAME));
   }

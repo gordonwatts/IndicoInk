@@ -67,6 +67,11 @@ export type LaunchElectronHarnessOptions = {
   userDataDir?: string;
 };
 
+export type ImportFixtureOptions = {
+  userDataDir: string;
+  fixtureName: 'small' | 'large';
+};
+
 export const launchElectronHarness = async (
   options: LaunchElectronHarnessOptions = {},
 ): Promise<ElectronHarness> => {
@@ -112,10 +117,25 @@ export const launchElectronHarness = async (
       windowsHide: true,
     },
   );
+  let exitCode: number | null = null;
+  child.on('exit', (code) => {
+    exitCode = code;
+  });
 
   await waitFor(() => existsSync(startupLogPath), 30_000);
   await waitFor(
-    () => readFileSync(startupLogPath, 'utf8').includes('window:ready-to-show'),
+    () => {
+      if (exitCode !== null) {
+        const startupLog = existsSync(startupLogPath)
+          ? readFileSync(startupLogPath, 'utf8')
+          : 'startup.log missing';
+        throw new Error(
+          `Electron exited before the ready-to-show marker with code ${exitCode}.\n${startupLog}`,
+        );
+      }
+
+      return readFileSync(startupLogPath, 'utf8').includes('window:ready-to-show');
+    },
     30_000,
   );
 
@@ -143,4 +163,67 @@ export const launchElectronHarness = async (
       }
     },
   };
+};
+
+export const runElectronImportFixtureCommand = async ({
+  userDataDir,
+  fixtureName,
+}: ImportFixtureOptions) => {
+  const startupLogPath = join(userDataDir, 'startup.log');
+  const child = spawn(
+    electronPath,
+    [
+      `--user-data-dir=${userDataDir}`,
+      '.vite/build/main.js',
+      `--import-fixture=${fixtureName}`,
+    ],
+    {
+      env: {
+        ...pickEnv([
+          'PATH',
+          'SystemRoot',
+          'WINDIR',
+          'TEMP',
+          'TMP',
+          'APPDATA',
+          'LOCALAPPDATA',
+          'USERPROFILE',
+          'HOME',
+          'HOMEDRIVE',
+          'HOMEPATH',
+          'PROCESSOR_ARCHITECTURE',
+          'ComSpec',
+        ]),
+        INDICOINK_ISOLATED_USER_DATA: '1',
+        INDICOINK_USER_DATA_DIR: userDataDir,
+        INDICOINK_DISABLE_GPU: '1',
+        ELECTRON_CONFIG_CACHE: electronCacheRoot,
+        electron_config_cache: electronCacheRoot,
+        ELECTRON_CACHE: electronCacheRoot,
+        ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+      },
+      stdio: 'ignore',
+      windowsHide: true,
+    },
+  );
+  const exitPromise = new Promise<void>((resolve, reject) => {
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`Fixture import command exited with code ${code}.`));
+    });
+    child.on('error', reject);
+  });
+
+  await waitFor(() => existsSync(startupLogPath), 30_000);
+  await waitFor(
+    () => readFileSync(startupLogPath, 'utf8').includes('fixture-import:done'),
+    30_000,
+  );
+
+  await exitPromise;
+  await wait(5_000);
 };

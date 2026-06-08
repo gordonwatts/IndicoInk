@@ -23,6 +23,8 @@ describe('App', () => {
         pageCount: 0,
         savedAt: Date.now(),
       }),
+      listLibraryEvents: vi.fn().mockResolvedValue([]),
+      deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -136,5 +138,114 @@ describe('App', () => {
         name: 'Event agenda',
       }),
     ).toBeTruthy();
+  });
+
+  it('opens a stored library event and preserves it when returning to Library', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-1',
+      sourceUrl: 'https://indico.example.org/event/indico-1',
+      title: 'IndicoInk Small Event 2026',
+      dates: 'June 12, 2026',
+      host: 'small.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '12 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Event agenda',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', {
+        name: libraryEvent.title,
+      }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Back',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Open a conference event',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(libraryEvent.title, {
+        selector: '.nav-rail-foot strong',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('confirms deletion before removing a stored library event', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-1',
+      sourceUrl: 'https://indico.example.org/event/indico-1',
+      title: 'IndicoInk Small Event 2026',
+      dates: 'June 12, 2026',
+      host: 'small.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '12 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([libraryEvent])
+      .mockResolvedValueOnce([]);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Delete ${libraryEvent.title}`,
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Delete event',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(libraryEvent.title, {
+        selector: '.dialog-surface strong',
+      }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Delete event',
+      }),
+    );
+
+    expect(
+      await screen.findByText('No saved events yet'),
+    ).toBeTruthy();
+    expect(window.indicoInk.deleteLibraryEvent).toHaveBeenCalledWith(
+      libraryEvent.id,
+    );
   });
 });
