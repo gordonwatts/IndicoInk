@@ -1062,6 +1062,28 @@ input:focus-visible {
   gap: 10px;
 }
 
+.agenda-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.agenda-day-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.agenda-day-strip .segmented-control {
+  flex: 1 1 320px;
+}
+
+.agenda-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .agenda-list {
   display: grid;
   gap: 10px;

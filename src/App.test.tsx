@@ -280,6 +280,7 @@ describe('App', () => {
         conferenceId: libraryEvent.id,
         contributionId: 'contribution-1',
         sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
         title: 'Designing a calm note-taking workflow',
         speaker: 'Ada Lovelace',
         sessionTitle: 'Opening keynote',
@@ -294,6 +295,7 @@ describe('App', () => {
         conferenceId: libraryEvent.id,
         contributionId: 'contribution-2',
         sortStartsAt: Date.UTC(2026, 5, 12, 9, 45, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
         title: 'Tracking talks across a conference',
         speaker: 'Grace Hopper',
         sessionTitle: 'Opening keynote',
@@ -332,6 +334,29 @@ describe('App', () => {
       screen.getByRole('heading', {
         name: libraryEvent.title,
       }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Friday, June 12, 2026',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Previous day',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Next day',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Bookmarked' })).toBeTruthy();
+    expect(
+      screen.getByText('Annotated', { selector: '.segmented-control-option' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Slides available' }),
     ).toBeTruthy();
     expect(
       await screen.findByText('Designing a calm note-taking workflow'),

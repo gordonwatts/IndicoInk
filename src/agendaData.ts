@@ -8,6 +8,14 @@ const agendaClockFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
 });
 
+const agendaDayLabelFormatter = new Intl.DateTimeFormat('en-US', {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
 const formatAgendaClock = (timestamp: number | null) => {
   if (timestamp === null) {
     return null;
@@ -36,6 +44,14 @@ const formatAgendaTimeRange = (
   }
 
   return 'Time unavailable';
+};
+
+const formatAgendaDayLabel = (timestamp: number | null) => {
+  if (timestamp === null) {
+    return 'Unknown day';
+  }
+
+  return agendaDayLabelFormatter.format(new Date(timestamp));
 };
 
 const formatMaterialSummary = (pdfDeckCount: number) => {
@@ -77,6 +93,7 @@ export const buildAgendaTalkSummaries = async (
         conferenceId: talk.conferenceId,
         contributionId: talk.contributionId,
         sortStartsAt: talk.startsAt,
+        dayLabel: formatAgendaDayLabel(talk.startsAt),
         title: talk.title,
         speaker: talk.speaker,
         sessionTitle: talk.sessionTitle,
