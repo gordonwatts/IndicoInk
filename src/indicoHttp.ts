@@ -38,6 +38,42 @@ export class IndicoResponseParseError extends Error {
   }
 }
 
+const authChallengePatterns = [
+  /api key/i,
+  /authentication required/i,
+  /auth required/i,
+  /log in/i,
+  /login/i,
+  /sign in/i,
+  /private event/i,
+  /authorization required/i,
+];
+
+const cloudflareChallengePatterns = [/just a moment/i, /cloudflare/i];
+
+export const isLikelyIndicoApiKeyError = (
+  statusCode: number,
+  responseBody: string | null,
+) => {
+  if (statusCode === 401) {
+    return true;
+  }
+
+  if (statusCode !== 403) {
+    return false;
+  }
+
+  if (responseBody === null) {
+    return true;
+  }
+
+  if (cloudflareChallengePatterns.some((pattern) => pattern.test(responseBody))) {
+    return false;
+  }
+
+  return authChallengePatterns.some((pattern) => pattern.test(responseBody));
+};
+
 export type IndicoJsonResponse = {
   ok: boolean;
   status: number;

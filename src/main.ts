@@ -13,6 +13,7 @@ import { buildAgendaTalkSummaries } from './agendaData';
 import { importIndicoEvent } from './indicoImport';
 import { IndicoHttpError } from './indicoHttp';
 import { IndicoCredentialStore } from './indicoCredentials';
+import { isLikelyIndicoApiKeyError } from './indicoHttp';
 import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
@@ -249,7 +250,7 @@ ipcMain.handle(
     } catch (error) {
       if (
         error instanceof IndicoHttpError &&
-        [401, 403].includes(error.statusCode)
+        isLikelyIndicoApiKeyError(error.statusCode, error.responseBody)
       ) {
         return {
           kind: 'api-key-required',

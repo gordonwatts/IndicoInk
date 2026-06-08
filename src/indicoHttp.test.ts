@@ -7,6 +7,7 @@ import {
   IndicoResponseParseError,
   IndicoResponseSizeError,
   IndicoTimeoutError,
+  isLikelyIndicoApiKeyError,
   type IndicoJsonResponse,
 } from './indicoHttp';
 
@@ -108,5 +109,23 @@ describe('fetchIndicoJson', () => {
     await expect(
       fetchIndicoJson(identity, { fetchImpl, maxBytes: 32 }),
     ).rejects.toBeInstanceOf(IndicoResponseSizeError);
+  });
+
+  it('only treats auth-like 403 responses as API-key prompts', () => {
+    expect(
+      isLikelyIndicoApiKeyError(
+        403,
+        '<html><title>Just a moment...</title><body>Cloudflare</body></html>',
+      ),
+    ).toBe(false);
+    expect(
+      isLikelyIndicoApiKeyError(
+        403,
+        '<html><body>API key required for this event</body></html>',
+      ),
+    ).toBe(true);
+    expect(isLikelyIndicoApiKeyError(401, '<html>anything</html>')).toBe(
+      true,
+    );
   });
 });
