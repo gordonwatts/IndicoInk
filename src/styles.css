@@ -1296,6 +1296,15 @@ input:focus-visible {
   padding: 0;
 }
 
+.agenda-session-block--shared {
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-panel) 96%, white) 0%,
+    color-mix(in srgb, var(--surface-panel-muted) 88%, white) 100%
+  );
+}
+
 .agenda-session-block-header {
   display: flex;
   align-items: flex-start;

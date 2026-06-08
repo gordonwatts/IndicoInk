@@ -19,11 +19,15 @@ export type AgendaCanvasColumnLayout = {
   talkPlacements: AgendaCanvasTalkPlacement[];
   trackHeightPx: number;
   columnIndex: number;
+  spanFullWidth: boolean;
+  blockTopPx: number;
 };
 
 export type AgendaCanvasLayout = {
   columns: AgendaCanvasColumnLayout[];
   columnCount: number;
+  columnWidthPx: number;
+  canvasWidthPx: number;
   timeMarkers: number[];
   timeMarkerTopPx: number[];
   canvasHeightPx: number;
@@ -33,6 +37,8 @@ export type AgendaCanvasLayout = {
 
 export const agendaCanvasRowHeight = 98;
 export const agendaCanvasColumnWidth = 368;
+export const agendaCanvasColumnMinWidth = 300;
+export const agendaCanvasColumnMaxWidth = 420;
 export const agendaTimeGutterWidth = 88;
 export const agendaCanvasTrackPadding = 12;
 export const agendaCanvasTalkMinHeight = 156;
@@ -95,20 +101,51 @@ export function getAgendaTalkDurationMinutes(talk: AgendaTalkSummary) {
 }
 
 export function estimateAgendaTalkCardHeight(talk: AgendaTalkSummary) {
+  return estimateAgendaTalkCardHeightForWidth(
+    talk,
+    agendaCanvasColumnWidth - agendaCanvasTrackPadding * 2,
+  );
+}
+
+export function estimateAgendaTalkCardHeightForWidth(
+  talk: AgendaTalkSummary,
+  availableWidthPx: number,
+) {
+  const usableWidth = Math.max(144, availableWidthPx - 24);
+  const approximateCharactersPerLine = Math.max(
+    18,
+    Math.floor(usableWidth / 8.3),
+  );
   const titleLineCount = Math.min(
     3,
-    Math.max(1, Math.ceil(talk.title.length / 26)),
+    Math.max(1, Math.ceil(talk.title.length / approximateCharactersPerLine)),
   );
-  const speakerLineCount = talk.speaker.length > 34 ? 2 : 1;
-  const summaryLineCount = talk.materialSummary.length > 16 ? 2 : 1;
+  const speakerLineCount =
+    talk.speaker.length > approximateCharactersPerLine * 1.15 ? 2 : 1;
+  const summaryLineCount =
+    talk.materialSummary.length > approximateCharactersPerLine * 0.8 ? 2 : 1;
 
   return Math.max(
     agendaCanvasTalkMinHeight,
-    128 +
+    122 +
       (titleLineCount - 1) * 22 +
       (speakerLineCount - 1) * 18 +
       (summaryLineCount - 1) * 16,
   );
+}
+
+const sharedAgendaBlockPattern =
+  /plenary|break|lunch|coffee|ceremony|registration|reception|poster|welcome|opening/i;
+
+function isSharedAgendaBlock(
+  title: string,
+  room: string,
+  talks: AgendaTalkSummary[],
+) {
+  const searchableText = [title, room, ...talks.map((talk) => talk.title)]
+    .join(' ')
+    .toLowerCase();
+  return sharedAgendaBlockPattern.test(searchableText);
 }
 
 function compareAgendaTalks(left: AgendaTalkSummary, right: AgendaTalkSummary) {
@@ -156,6 +193,11 @@ function buildSessionBlocks(talks: AgendaTalkSummary[]) {
           .sort((left, right) => right - left)[0] ?? startMinutes + 30;
 
       const firstTalk = orderedTalks[0] ?? null;
+      const spanFullWidth = isSharedAgendaBlock(
+        firstTalk?.sessionTitle ?? 'Session',
+        firstTalk?.room ?? '',
+        orderedTalks,
+      );
 
       return {
         key,
@@ -167,6 +209,9 @@ function buildSessionBlocks(talks: AgendaTalkSummary[]) {
         startLabel: formatAgendaClockFromMinutes(startMinutes),
         endLabel: formatAgendaClockFromMinutes(endMinutes),
         talks: orderedTalks,
+        spanFullWidth,
+        columnIndex: -1,
+        blockTopPx: 0,
       };
     })
     .sort((left, right) => {
@@ -182,11 +227,12 @@ function buildColumnPlacements(
   talks: AgendaTalkSummary[],
   globalStartMinutes: number,
   globalEndMinutes: number,
+  availableWidthPx: number,
 ) {
   const orderedTalks = [...talks].sort(compareAgendaTalks);
   const idealHeights = orderedTalks.map((talk) =>
     Math.max(
-      estimateAgendaTalkCardHeight(talk),
+      estimateAgendaTalkCardHeightForWidth(talk, availableWidthPx),
       Math.round(
         (getAgendaTalkDurationMinutes(talk) / 30) * agendaCanvasRowHeight,
       ),
@@ -302,8 +348,8 @@ function getColumnMarkerTopPx(
   const startMinutes = getAgendaTalkStartMinutes(talk) ?? minute;
   const endMinutes = getAgendaTalkEndMinutes(talk);
   const durationMinutes = Math.max(1, endMinutes - startMinutes);
-  const topPx = placement.topPx;
-  const bottomPx = placement.topPx + placement.heightPx;
+  const topPx = column.blockTopPx + placement.topPx;
+  const bottomPx = topPx + placement.heightPx;
 
   if (minute <= startMinutes) {
     const beforeTalk = column.talkPlacements
@@ -316,7 +362,7 @@ function getColumnMarkerTopPx(
     if (beforeTalk) {
       const beforeEnd = getAgendaTalkEndMinutes(beforeTalk.talk);
       const beforeDeltaMinutes = Math.max(1, startMinutes - beforeEnd);
-      const beforeBottom = beforeTalk.topPx + beforeTalk.heightPx;
+      const beforeBottom = column.blockTopPx + beforeTalk.topPx + beforeTalk.heightPx;
       return (
         beforeBottom +
         ((minute - beforeEnd) / beforeDeltaMinutes) *
@@ -342,7 +388,7 @@ function getColumnMarkerTopPx(
       const nextStart = getAgendaTalkStartMinutes(nextTalk.talk) ?? endMinutes;
       const nextDeltaMinutes = Math.max(1, nextStart - endMinutes);
       const currentBottom = bottomPx;
-      const nextTop = nextTalk.topPx;
+      const nextTop = column.blockTopPx + nextTalk.topPx;
       return (
         currentBottom +
         ((minute - endMinutes) / nextDeltaMinutes) *
@@ -445,10 +491,38 @@ function getGlobalTopForMinute(
   return timeMarkerTopPx.at(-1) ?? 0;
 }
 
+export function getResponsiveAgendaColumnWidth(
+  viewportWidthPx: number,
+  columnCount: number,
+) {
+  const usableWidthPx = Math.max(
+    0,
+    viewportWidthPx - agendaTimeGutterWidth - 16,
+  );
+  const targetVisibleColumns =
+    viewportWidthPx >= 1200 ? 3 : viewportWidthPx >= 800 ? 2 : 1.25;
+  const rawWidthPx = Math.floor(usableWidthPx / targetVisibleColumns);
+
+  if (columnCount <= 1) {
+    return Math.max(
+      agendaCanvasColumnMinWidth,
+      Math.min(Math.max(usableWidthPx, agendaCanvasColumnMinWidth), 640),
+    );
+  }
+
+  return Math.max(
+    agendaCanvasColumnMinWidth,
+    Math.min(agendaCanvasColumnMaxWidth, rawWidthPx),
+  );
+}
+
 export function buildAgendaCanvasLayout(
   talks: AgendaTalkSummary[],
+  options: { columnWidthPx?: number } = {},
 ): AgendaCanvasLayout {
   const blocks = buildSessionBlocks(talks);
+  const sessionBlocks = blocks.filter((block) => !block.spanFullWidth);
+  const sharedBlocks = blocks.filter((block) => block.spanFullWidth);
   const globalStartMinutes =
     blocks
       .map((block) => block.startMinutes)
@@ -458,19 +532,91 @@ export function buildAgendaCanvasLayout(
       .map((block) => block.endMinutes)
       .sort((left, right) => right - left)[0] ?? globalStartMinutes + 180;
 
-  const columnLayouts = blocks.map((block, columnIndex) => {
+  const positionedSessionBlocks = sessionBlocks.map((block) => {
+    return {
+      ...block,
+      spanFullWidth: false,
+    };
+  });
+
+  const activeColumns: Array<{ endMinutes: number; columnIndex: number }> = [];
+  const positionedBlocks = positionedSessionBlocks.map((block) => {
+    activeColumns.sort((left, right) => left.endMinutes - right.endMinutes);
+
+    for (let index = activeColumns.length - 1; index >= 0; index -= 1) {
+      const activeColumn = activeColumns[index];
+      if (activeColumn && activeColumn.endMinutes <= block.startMinutes) {
+        activeColumns.splice(index, 1);
+      }
+    }
+
+    const usedColumns = new Set(
+      activeColumns.map((entry) => entry.columnIndex),
+    );
+    let columnIndex = 0;
+    while (usedColumns.has(columnIndex)) {
+      columnIndex += 1;
+    }
+
+    activeColumns.push({
+      endMinutes: block.endMinutes,
+      columnIndex,
+    });
+
+    return {
+      ...block,
+      columnIndex,
+    };
+  });
+
+  const columnCount =
+    positionedBlocks.reduce((maxColumns, block) => {
+      const blockColumns = block.columnIndex + 1;
+      return Math.max(maxColumns, blockColumns);
+    }, 1) || 1;
+
+  const columnWidthPx = options.columnWidthPx ?? agendaCanvasColumnWidth;
+  const canvasWidthPx = agendaTimeGutterWidth + columnWidthPx * columnCount;
+
+  const allBlocks = [...positionedBlocks, ...sharedBlocks].sort(
+    (left, right) => {
+      if (left.startMinutes !== right.startMinutes) {
+        return left.startMinutes - right.startMinutes;
+      }
+
+      if (left.spanFullWidth !== right.spanFullWidth) {
+        return left.spanFullWidth ? 1 : -1;
+      }
+
+      return left.title.localeCompare(right.title);
+    },
+  );
+
+  const columnLayouts = allBlocks.map((block) => {
+    const blockTopPx = block.spanFullWidth
+      ? agendaCanvasHeaderHeight +
+        agendaCanvasTrackPadding +
+        Math.round(
+          ((block.startMinutes - globalStartMinutes) / 30) *
+            agendaCanvasRowHeight,
+        )
+      : 0;
     const solved = buildColumnPlacements(
       block.talks,
-      globalStartMinutes,
-      globalEndMinutes,
+      block.spanFullWidth ? block.startMinutes : globalStartMinutes,
+      block.spanFullWidth ? block.endMinutes : globalEndMinutes,
+      block.spanFullWidth
+        ? Math.max(240, canvasWidthPx - agendaTimeGutterWidth - 24)
+        : Math.max(240, columnWidthPx - 24),
     );
 
     return {
       ...block,
+      columnIndex: block.spanFullWidth ? -1 : block.columnIndex,
+      blockTopPx,
       talks: solved.orderedTalks,
       talkPlacements: solved.talkPlacements,
       trackHeightPx: solved.trackHeightPx,
-      columnIndex,
     } satisfies AgendaCanvasColumnLayout;
   });
 
@@ -508,7 +654,8 @@ export function buildAgendaCanvasLayout(
   const lastMarkerTop = timeMarkerTopPx.at(-1) ?? 0;
   const canvasHeightPx = Math.max(
     axisAlignedColumns.reduce(
-      (maxHeight, block) => Math.max(maxHeight, block.trackHeightPx),
+      (maxHeight, block) =>
+        Math.max(maxHeight, block.blockTopPx + block.trackHeightPx),
       agendaCanvasHeaderHeight + agendaCanvasTrackPadding * 2,
     ),
     lastMarkerTop + agendaCanvasTrackPadding * 2,
@@ -521,7 +668,9 @@ export function buildAgendaCanvasLayout(
 
   return {
     columns: scaledColumns,
-    columnCount: Math.max(1, scaledColumns.length),
+    columnCount: Math.max(1, columnCount),
+    columnWidthPx,
+    canvasWidthPx,
     timeMarkers,
     timeMarkerTopPx,
     canvasHeightPx,

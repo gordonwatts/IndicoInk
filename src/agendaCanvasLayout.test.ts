@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   agendaCanvasHeaderHeight,
+  agendaTimeGutterWidth,
   buildAgendaCanvasLayout,
+  getResponsiveAgendaColumnWidth,
 } from './agendaCanvasLayout';
 import type { AgendaTalkSummary } from './shared/agenda';
 
@@ -64,6 +66,37 @@ describe('agenda canvas layout', () => {
     expect(layout.timeMarkers[0]).toBe(540);
     expect(layout.timeMarkerTopPx[0]).toBeGreaterThanOrEqual(
       agendaCanvasHeaderHeight,
+    );
+  });
+
+  it('marks shared agenda blocks so they can span the full canvas', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk(
+        'shared-talk',
+        12,
+        15,
+        75,
+        'Lunch and poster previews',
+        'Lunch and poster previews',
+      ),
+      makeTalk('session-talk', 12, 15, 30, 'Parallel talk', 'Parallel session'),
+    ]);
+
+    const sharedBlock = layout.columns.find((block) =>
+      block.title.includes('Lunch'),
+    );
+    expect(sharedBlock?.spanFullWidth).toBe(true);
+    expect(sharedBlock?.columnIndex).toBe(-1);
+  });
+
+  it('widens a single-column day and tightens multi-column days responsively', () => {
+    expect(getResponsiveAgendaColumnWidth(1500, 1)).toBeGreaterThan(
+      getResponsiveAgendaColumnWidth(1500, 3),
+    );
+    expect(getResponsiveAgendaColumnWidth(1024, 3)).toBeLessThanOrEqual(420);
+    expect(getResponsiveAgendaColumnWidth(1024, 3)).toBeGreaterThanOrEqual(300);
+    expect(getResponsiveAgendaColumnWidth(700, 2)).toBeGreaterThanOrEqual(
+      agendaTimeGutterWidth / 2,
     );
   });
 });

@@ -2,13 +2,14 @@ import { expect, test } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import type { Page } from '@playwright/test';
 
 import {
   launchElectronHarness,
   runElectronImportFixtureCommand,
 } from './electronHarness';
 
-test('renders agenda canvas cards without same-column overlap', async () => {
+async function openLargeAgenda() {
   const userDataDir = mkdtempSync(resolve(tmpdir(), 'indicoink-agenda-'));
 
   await runElectronImportFixtureCommand({
@@ -18,21 +19,149 @@ test('renders agenda canvas cards without same-column overlap', async () => {
 
   const harness = await launchElectronHarness({ userDataDir });
 
+  await harness.page
+    .getByRole('button', {
+      name: 'Open IndicoInk Grand Symposium 2026',
+    })
+    .click();
+
+  await expect(
+    harness.page.getByRole('heading', {
+      name: 'Event agenda',
+    }),
+  ).toBeVisible();
+  await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
+
+  return harness;
+}
+
+async function collectAgendaMetrics(page: Page) {
+  return page.evaluate(() => {
+    const scrollContainer = document.querySelector<HTMLElement>(
+      '.agenda-canvas-scroll',
+    );
+    const gutter = document.querySelector<HTMLElement>(
+      '.agenda-time-gutter--absolute',
+    );
+    const sessionBlock = document.querySelector<HTMLElement>(
+      '.agenda-session-block--absolute:not(.agenda-session-block--shared)',
+    );
+    const sharedBlock = document.querySelector<HTMLElement>(
+      '.agenda-session-block--shared',
+    );
+
+    const scrollWidth = scrollContainer?.getBoundingClientRect().width ?? 0;
+    const gutterWidth = gutter?.getBoundingClientRect().width ?? 0;
+    const sessionWidth = sessionBlock?.getBoundingClientRect().width ?? 0;
+    const sharedWidth = sharedBlock?.getBoundingClientRect().width ?? 0;
+    const visibleSessionColumns =
+      sessionWidth > 0 ? (scrollWidth - gutterWidth) / sessionWidth : 0;
+
+    const sessions = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.agenda-session-block--absolute',
+      ),
+    ].map((session) => {
+      const sessionRect = session.getBoundingClientRect();
+      const cards = [
+        ...session.querySelectorAll<HTMLElement>('.agenda-talk-placement'),
+      ].map((card) => {
+        const rect = card.getBoundingClientRect();
+        const articleRect = card
+          .querySelector<HTMLElement>('.agenda-talk-card')
+          ?.getBoundingClientRect();
+        return {
+          title:
+            card
+              .querySelector('.agenda-talk-card-title')
+              ?.textContent?.trim() ?? 'Untitled talk',
+          top: Math.round(rect.top - sessionRect.top),
+          bottom: Math.round(rect.bottom - sessionRect.top),
+          visualBottom: Math.round(
+            (articleRect ?? rect).bottom - sessionRect.top,
+          ),
+        };
+      });
+      const overlaps = cards.flatMap((card, index) => {
+        const previous = cards[index - 1];
+        if (!previous || card.top >= previous.bottom - 1) {
+          return [];
+        }
+
+        return [
+          {
+            previous: previous.title,
+            current: card.title,
+            previousBottom: previous.bottom,
+            currentTop: card.top,
+          },
+        ];
+      });
+
+      return {
+        label: session.getAttribute('aria-label') ?? 'Unnamed session',
+        cards,
+        overlaps,
+      };
+    });
+
+    const markerTops = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.agenda-time-marker--absolute',
+      ),
+    ].map((marker) => marker.getBoundingClientRect().top);
+    const markerRegressions = markerTops.flatMap((top, index) => {
+      const previous = markerTops[index - 1];
+      if (previous === undefined || top > previous) {
+        return [];
+      }
+
+      return [{ index, previous, top }];
+    });
+
+    return {
+      scrollWidth,
+      gutterWidth,
+      sessionWidth,
+      sharedWidth,
+      visibleSessionColumns,
+      overlaps: sessions.flatMap((session) =>
+        session.overlaps.map((overlap) => ({
+          session: session.label,
+          ...overlap,
+        })),
+      ),
+      cardOverflows: sessions.flatMap((session) =>
+        session.cards.flatMap((card) => {
+          if (card.visualBottom <= card.bottom + 1) {
+            return [];
+          }
+
+          return [
+            {
+              session: session.label,
+              title: card.title,
+              bottom: card.bottom,
+              visualBottom: card.visualBottom,
+            },
+          ];
+        }),
+      ),
+      markerRegressions,
+      firstTalkMeta:
+        document
+          .querySelector('.agenda-talk-card-meta')
+          ?.textContent?.replace(/\s+/g, ' ')
+          .trim() ?? '',
+    };
+  });
+}
+
+test('renders agenda canvas cards without same-column overlap', async () => {
+  const harness = await openLargeAgenda();
+
   try {
     await harness.page.setViewportSize({ width: 1220, height: 900 });
-
-    await harness.page
-      .getByRole('button', {
-        name: 'Open IndicoInk Grand Symposium 2026',
-      })
-      .click();
-
-    await expect(
-      harness.page.getByRole('heading', {
-        name: 'Event agenda',
-      }),
-    ).toBeVisible();
-    await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
 
     await harness.page
       .getByLabel('Agenda day canvas')
@@ -44,99 +173,88 @@ test('renders agenda canvas cards without same-column overlap', async () => {
       .getByLabel('Agenda day canvas')
       .screenshot({ path: 'test-results/agenda-canvas-layout-scrolled.png' });
 
-    const layoutReport = await harness.page.evaluate(() => {
-      const sessions = [
-        ...document.querySelectorAll<HTMLElement>(
-          '.agenda-session-block--absolute',
-        ),
-      ].map((session) => {
-        const sessionRect = session.getBoundingClientRect();
-        const cards = [
-          ...session.querySelectorAll<HTMLElement>('.agenda-talk-placement'),
-        ].map((card) => {
-          const rect = card.getBoundingClientRect();
-          const articleRect = card
-            .querySelector<HTMLElement>('.agenda-talk-card')
-            ?.getBoundingClientRect();
-          return {
-            title:
-              card
-                .querySelector('.agenda-talk-card-title')
-                ?.textContent?.trim() ?? 'Untitled talk',
-            top: Math.round(rect.top - sessionRect.top),
-            bottom: Math.round(rect.bottom - sessionRect.top),
-            visualBottom: Math.round(
-              (articleRect ?? rect).bottom - sessionRect.top,
-            ),
-          };
-        });
-        const overlaps = cards.flatMap((card, index) => {
-          const previous = cards[index - 1];
-          if (!previous || card.top >= previous.bottom - 1) {
-            return [];
-          }
-
-          return [
-            {
-              previous: previous.title,
-              current: card.title,
-              previousBottom: previous.bottom,
-              currentTop: card.top,
-            },
-          ];
-        });
-
-        return {
-          label: session.getAttribute('aria-label') ?? 'Unnamed session',
-          cards,
-          overlaps,
-        };
-      });
-
-      const markerTops = [
-        ...document.querySelectorAll<HTMLElement>(
-          '.agenda-time-marker--absolute',
-        ),
-      ].map((marker) => marker.getBoundingClientRect().top);
-      const markerRegressions = markerTops.flatMap((top, index) => {
-        const previous = markerTops[index - 1];
-        if (previous === undefined || top > previous) {
-          return [];
-        }
-
-        return [{ index, previous, top }];
-      });
-
-      return {
-        overlaps: sessions.flatMap((session) =>
-          session.overlaps.map((overlap) => ({
-            session: session.label,
-            ...overlap,
-          })),
-        ),
-        cardOverflows: sessions.flatMap((session) =>
-          session.cards.flatMap((card) => {
-            if (card.visualBottom <= card.bottom + 1) {
-              return [];
-            }
-
-            return [
-              {
-                session: session.label,
-                title: card.title,
-                bottom: card.bottom,
-                visualBottom: card.visualBottom,
-              },
-            ];
-          }),
-        ),
-        markerRegressions,
-      };
-    });
+    const layoutReport = await collectAgendaMetrics(harness.page);
 
     expect(layoutReport.overlaps).toEqual([]);
     expect(layoutReport.cardOverflows).toEqual([]);
     expect(layoutReport.markerRegressions).toEqual([]);
+    expect(layoutReport.firstTalkMeta).toContain('PDF');
+    expect(layoutReport.firstTalkMeta).toContain('annotated slide');
+  } finally {
+    await harness.close();
+  }
+});
+
+test('adapts agenda columns across wide and portrait layouts', async () => {
+  const harness = await openLargeAgenda();
+
+  try {
+    await harness.page.setViewportSize({ width: 1400, height: 900 });
+    const wideMetrics = await collectAgendaMetrics(harness.page);
+    await harness.page
+      .getByLabel('Agenda day canvas')
+      .screenshot({ path: 'test-results/agenda-canvas-wide.png' });
+
+    await harness.page.setViewportSize({ width: 820, height: 1080 });
+    const portraitMetrics = await collectAgendaMetrics(harness.page);
+    await harness.page
+      .getByLabel('Agenda day canvas')
+      .screenshot({ path: 'test-results/agenda-canvas-portrait.png' });
+
+    expect(wideMetrics.visibleSessionColumns).toBeGreaterThan(2.1);
+    expect(wideMetrics.sharedWidth).toBeGreaterThanOrEqual(
+      wideMetrics.sessionWidth * 2,
+    );
+    expect(portraitMetrics.visibleSessionColumns).toBeGreaterThan(1);
+    expect(portraitMetrics.visibleSessionColumns).toBeLessThan(2);
+    expect(portraitMetrics.sharedWidth).toBeGreaterThanOrEqual(
+      portraitMetrics.sessionWidth * 2,
+    );
+  } finally {
+    await harness.close();
+  }
+});
+
+test('keeps agenda controls reachable by keyboard and names status indicators', async () => {
+  const harness = await openLargeAgenda();
+
+  try {
+    await harness.page.setViewportSize({ width: 1220, height: 900 });
+    await harness.page.locator('body').click({ position: { x: 12, y: 12 } });
+
+    const focusOrder: string[] = [];
+    for (let index = 0; index < 14; index += 1) {
+      await harness.page.keyboard.press('Tab');
+      const activeLabel = await harness.page.evaluate(() => {
+        const element = document.activeElement as HTMLElement | null;
+        if (!element) {
+          return '';
+        }
+
+        return (
+          element.getAttribute('aria-label') ??
+          element.getAttribute('title') ??
+          element.textContent?.replace(/\s+/g, ' ').trim() ??
+          ''
+        );
+      });
+      focusOrder.push(activeLabel);
+    }
+
+    expect(focusOrder[0]).toBe('Library');
+    expect(focusOrder[1]).toBe('Agenda');
+
+    const commandButtons = ['Back', 'Search', 'Refresh', 'Export notes'];
+    const commandIndexes = commandButtons.map((label) =>
+      focusOrder.indexOf(label),
+    );
+    expect(commandIndexes.every((index) => index >= 0)).toBe(true);
+    expect(Math.max(...commandIndexes)).toBeLessThan(14);
+    expect(focusOrder.some((label) => label.includes('2026'))).toBe(true);
+
+    const firstTalkCard = harness.page.locator('.agenda-talk-card').first();
+    await expect(firstTalkCard.getByText('PDF')).toBeVisible();
+    await expect(firstTalkCard.getByText('3 annotated slides')).toBeVisible();
   } finally {
     await harness.close();
   }

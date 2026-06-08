@@ -4,6 +4,7 @@ import {
   agendaCanvasColumnWidth as layoutAgendaCanvasColumnWidth,
   agendaTimeGutterWidth as layoutAgendaTimeGutterWidth,
   buildAgendaCanvasLayout,
+  getResponsiveAgendaColumnWidth,
   formatAgendaClockFromMinutes as layoutFormatAgendaClockFromMinutes,
 } from './agendaCanvasLayout';
 import type { AppInfo } from './shared/appInfo';
@@ -194,9 +195,55 @@ function AgendaTimelineCanvas({
   onOpenTalk: (talk: AgendaTalkSummary) => void;
   onToggleBookmark: (talk: AgendaTalkSummary) => void;
 }) {
-  const layout = React.useMemo(
+  const [viewportWidthPx, setViewportWidthPx] = React.useState(
+    layoutAgendaTimeGutterWidth + layoutAgendaCanvasColumnWidth * 3,
+  );
+
+  React.useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return undefined;
+    }
+
+    const updateViewportWidth = () => {
+      setViewportWidthPx(scrollContainer.clientWidth);
+    };
+
+    updateViewportWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateViewportWidth);
+      return () => {
+        window.removeEventListener('resize', updateViewportWidth);
+      };
+    }
+
+    const observer = new ResizeObserver(updateViewportWidth);
+    observer.observe(scrollContainer);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [scrollContainerRef]);
+
+  const provisionalLayout = React.useMemo(
     () => buildAgendaCanvasLayout(visibleAgendaTalks),
     [visibleAgendaTalks],
+  );
+  const responsiveColumnWidthPx = React.useMemo(
+    () =>
+      getResponsiveAgendaColumnWidth(
+        viewportWidthPx,
+        provisionalLayout.columnCount,
+      ),
+    [provisionalLayout.columnCount, viewportWidthPx],
+  );
+  const layout = React.useMemo(
+    () =>
+      buildAgendaCanvasLayout(visibleAgendaTalks, {
+        columnWidthPx: responsiveColumnWidthPx,
+      }),
+    [visibleAgendaTalks, responsiveColumnWidthPx],
   );
 
   const filterLabel =
@@ -236,7 +283,7 @@ function AgendaTimelineCanvas({
         <div
           className="agenda-canvas-grid agenda-canvas-grid--absolute"
           style={{
-            width: `${layoutAgendaTimeGutterWidth + layout.columnCount * layoutAgendaCanvasColumnWidth}px`,
+            width: `${layout.canvasWidthPx}px`,
             height: `${layout.canvasHeightPx}px`,
           }}
         >
@@ -273,10 +320,11 @@ function AgendaTimelineCanvas({
             return (
               <section
                 key={block.key}
-                className="agenda-session-block agenda-session-block--absolute"
+                className={`agenda-session-block agenda-session-block--absolute${block.spanFullWidth ? ' agenda-session-block--shared' : ''}`}
                 style={{
-                  left: `${layoutAgendaTimeGutterWidth + block.columnIndex * layoutAgendaCanvasColumnWidth}px`,
-                  width: `${layoutAgendaCanvasColumnWidth}px`,
+                  top: `${block.blockTopPx}px`,
+                  left: `${layoutAgendaTimeGutterWidth + (block.spanFullWidth ? 0 : Math.max(0, block.columnIndex) * layout.columnWidthPx)}px`,
+                  width: `${block.spanFullWidth ? layout.canvasWidthPx - layoutAgendaTimeGutterWidth : layout.columnWidthPx}px`,
                   height: `${layout.canvasHeightPx}px`,
                 }}
                 aria-label={`${block.title} session on ${block.dayLabel}`}
