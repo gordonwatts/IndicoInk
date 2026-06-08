@@ -286,6 +286,12 @@ type AgendaSessionBlock = {
   startLabel: string;
   endLabel: string;
   talks: AgendaTalkSummary[];
+  talkPlacements: Array<{
+    talk: AgendaTalkSummary;
+    topPx: number;
+    heightPx: number;
+  }>;
+  trackHeightPx: number;
   columnIndex: number;
 };
 
@@ -294,6 +300,7 @@ const agendaCanvasColumnWidth = 368;
 const agendaTimeGutterWidth = 88;
 const agendaCanvasTrackPadding = 12;
 const agendaCanvasTalkMinHeight = 112;
+const agendaCanvasTalkGap = 12;
 
 function parseAgendaTimeRange(timeRangeLabel: string) {
   const matches = [...timeRangeLabel.matchAll(/(\d{1,2}):(\d{2})/g)];
@@ -382,6 +389,45 @@ function buildAgendaSessionBlocks(talks: AgendaTalkSummary[]) {
           .sort((left, right) => right - left)[0] ?? startMinutes + 30;
 
       const firstTalk = orderedTalks[0] ?? null;
+      const talkPlacements: Array<{
+        talk: AgendaTalkSummary;
+        topPx: number;
+        heightPx: number;
+      }> = [];
+      let nextAvailableTop = agendaCanvasTrackPadding;
+
+      orderedTalks.forEach((talk) => {
+        const talkStartMinutes = getAgendaTalkStartMinutes(talk) ?? startMinutes;
+        const relativeTop =
+          agendaCanvasTrackPadding +
+          Math.max(
+            0,
+            Math.round(
+              ((talkStartMinutes - startMinutes) / 30) * agendaCanvasRowHeight,
+            ),
+          );
+        const heightPx = Math.max(
+          agendaCanvasTalkMinHeight,
+          Math.round((getAgendaTalkDurationMinutes(talk) / 30) * agendaCanvasRowHeight),
+        );
+        const topPx = Math.max(relativeTop, nextAvailableTop);
+
+        talkPlacements.push({
+          talk,
+          topPx,
+          heightPx,
+        });
+
+        nextAvailableTop = topPx + heightPx + agendaCanvasTalkGap;
+      });
+
+      const trackHeightPx =
+        Math.max(
+          nextAvailableTop,
+          agendaCanvasTrackPadding +
+            Math.round(((endMinutes - startMinutes) / 30) * agendaCanvasRowHeight) +
+            agendaCanvasTalkMinHeight,
+        ) + agendaCanvasTrackPadding;
 
       return {
         key,
@@ -393,6 +439,8 @@ function buildAgendaSessionBlocks(talks: AgendaTalkSummary[]) {
         startLabel: formatAgendaClockFromMinutes(startMinutes),
         endLabel: formatAgendaClockFromMinutes(endMinutes),
         talks: orderedTalks,
+        talkPlacements,
+        trackHeightPx,
         columnIndex: 0,
       } satisfies AgendaSessionBlock;
     })
@@ -559,28 +607,16 @@ function AgendaDayCanvas({
                 <div
                   className="agenda-session-track"
                   style={{
-                    minHeight: `${Math.max(
-                      agendaCanvasTrackPadding * 2,
-                      Math.round(
-                        ((block.endMinutes - block.startMinutes) / 30) *
-                          agendaCanvasRowHeight,
-                      ) + agendaCanvasTrackPadding * 2,
-                    )}px`,
+                    minHeight: `${block.trackHeightPx}px`,
                   }}
                 >
-                  {block.talks.map((talk) => (
+                  {block.talkPlacements.map(({ talk, topPx, heightPx }) => (
                     <div
                       key={talk.id}
                       className="agenda-talk-placement"
                       style={{
-                        top: `${agendaCanvasTrackPadding + Math.max(0, Math.round((((getAgendaTalkStartMinutes(talk) ?? block.startMinutes) - block.startMinutes) / 30) * agendaCanvasRowHeight))}px`,
-                        height: `${Math.max(
-                          agendaCanvasTalkMinHeight,
-                          Math.round(
-                            (getAgendaTalkDurationMinutes(talk) / 30) *
-                              agendaCanvasRowHeight,
-                          ),
-                        )}px`,
+                        top: `${topPx}px`,
+                        height: `${heightPx}px`,
                       }}
                     >
                       <article
