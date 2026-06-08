@@ -1051,6 +1051,26 @@ input:focus-visible {
   gap: 20px;
 }
 
+.agenda-milestone {
+  display: grid;
+  gap: 16px;
+}
+
+.agenda-milestone-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.agenda-list {
+  display: grid;
+  gap: 10px;
+}
+
+.agenda-empty-state {
+  min-height: 176px;
+}
+
 .event-details {
   display: grid;
   gap: 12px;

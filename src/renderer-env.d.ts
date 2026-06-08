@@ -1,4 +1,5 @@
 import type { AppInfo } from './shared/appInfo';
+import type { AgendaTalkSummary } from './shared/agenda';
 import type { PdfSelection } from './openPdf';
 import type {
   LibraryEventSummary,
@@ -22,6 +23,7 @@ declare global {
         snapshot: PdfWorkspaceSnapshot,
       ) => Promise<PdfWorkspaceSaveResult>;
       listLibraryEvents: () => Promise<LibraryEventSummary[]>;
+      listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
       deleteLibraryEvent: (conferenceId: string) => Promise<void>;
       openLibraryEvent: (
         eventUrl: string,

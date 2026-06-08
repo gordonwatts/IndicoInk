@@ -1,6 +1,7 @@
 import React from 'react';
 
 import type { AppInfo } from './shared/appInfo';
+import type { AgendaTalkSummary } from './shared/agenda';
 import type { LibraryEventSummary } from './shared/library';
 import {
   CommandBar,
@@ -273,6 +274,11 @@ export function App() {
   const [selectedEventId, setSelectedEventId] = React.useState<string | null>(
     null,
   );
+  const [agendaTalks, setAgendaTalks] = React.useState<AgendaTalkSummary[]>([]);
+  const [agendaTalksLoading, setAgendaTalksLoading] = React.useState(false);
+  const [agendaTalksError, setAgendaTalksError] = React.useState<string | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
     null,
   );
@@ -296,6 +302,9 @@ export function App() {
     destination === 'annotated';
   const activeEvent =
     libraryEvents.find((event) => event.id === selectedEventId) ?? defaultEvent;
+  const selectedAgendaEvent = selectedEventId
+    ? libraryEvents.find((event) => event.id === selectedEventId) ?? null
+    : null;
   const eventUrlError = eventUrlTouched ? validateEventUrl(eventUrl) : null;
   const handleOpenEvent = async () => {
     setEventUrlTouched(true);
@@ -418,6 +427,48 @@ export function App() {
       setDestination('library');
     }
   };
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    if (destination !== 'agenda' || !selectedEventId) {
+      setAgendaTalks([]);
+      setAgendaTalksLoading(false);
+      setAgendaTalksError(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setAgendaTalksLoading(true);
+    setAgendaTalksError(null);
+
+    void window.indicoInk
+      .listAgendaTalks(selectedEventId)
+      .then((talks) => {
+        if (!cancelled) {
+          setAgendaTalks(talks);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAgendaTalksError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load the agenda list.',
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAgendaTalksLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [destination, selectedEventId]);
 
   return (
     <div className="app-frame">
@@ -632,20 +683,97 @@ export function App() {
                   </div>
                 </DetailsSurface>
                 <DetailsSurface
-                  title="Agenda frame"
-                  subtitle="Placeholder canvas structure for V1."
+                  title="Agenda list milestone"
+                  subtitle="Temporary single-column list built from stored agenda data. The final V1 agenda is the two-dimensional day canvas."
                 >
-                  <div className="placeholder-canvas">
-                    <div className="canvas-chip">Day strip</div>
-                    <div className="canvas-chip">Filters</div>
-                    <div className="canvas-block">
-                      <strong>Session block</strong>
+                  {selectedAgendaEvent ? (
+                    <div className="agenda-milestone">
+                      <div className="agenda-milestone-note">
+                        <StatusLabel
+                          label={`Loaded ${agendaTalks.length} talks from ${selectedAgendaEvent.title}`}
+                          tone="success"
+                          icon="agenda"
+                        />
+                      </div>
+                      {agendaTalksLoading ? (
+                        <div className="empty-state agenda-empty-state">
+                          <Icon name="agenda" />
+                          <strong>Loading agenda talks</strong>
+                          <span>
+                            Stored talks are being read from the local event
+                            cache.
+                          </span>
+                        </div>
+                      ) : agendaTalksError ? (
+                        <div className="empty-state agenda-empty-state">
+                          <Icon name="info" />
+                          <strong>Agenda unavailable</strong>
+                          <span>{agendaTalksError}</span>
+                        </div>
+                      ) : agendaTalks.length ? (
+                        <div className="agenda-list">
+                          {agendaTalks.map((talk) => (
+                            <Row
+                              key={talk.id}
+                              variant="list"
+                              title={talk.title}
+                              meta={
+                                <>
+                                  {talk.timeRangeLabel} - {talk.sessionTitle}{' '}
+                                  - {talk.room}
+                                </>
+                              }
+                              detail={
+                                <div className="row-pills">
+                                  <StatusLabel
+                                    label={talk.speaker}
+                                    icon="info"
+                                  />
+                                  <StatusLabel
+                                    label={talk.materialSummary}
+                                    tone="neutral"
+                                    icon="open"
+                                  />
+                                  <StatusLabel
+                                    label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                    tone="warning"
+                                    icon="annotated"
+                                  />
+                                </div>
+                              }
+                              action={
+                                talk.bookmarked ? (
+                                  <StatusLabel
+                                    label="Bookmarked"
+                                    tone="success"
+                                    icon="bookmark"
+                                  />
+                                ) : undefined
+                              }
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="empty-state agenda-empty-state">
+                          <Icon name="agenda" />
+                          <strong>No stored talks yet</strong>
+                          <span>
+                            Open a conference event to populate the temporary
+                            agenda list.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="empty-state agenda-empty-state">
+                      <Icon name="agenda" />
+                      <strong>No active event selected</strong>
                       <span>
-                        Time, room, talk rows, and shared canvas layout land
-                        here.
+                        Open a stored conference event from Library to browse
+                        its agenda.
                       </span>
                     </div>
-                  </div>
+                  )}
                 </DetailsSurface>
               </div>
             </section>

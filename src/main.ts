@@ -9,6 +9,7 @@ import {
   buildLibraryEventSummaries,
   importConferenceFixtureByName,
 } from './libraryData';
+import { buildAgendaTalkSummaries } from './agendaData';
 import { importIndicoEvent } from './indicoImport';
 import { IndicoHttpError } from './indicoHttp';
 import { IndicoCredentialStore } from './indicoCredentials';
@@ -209,6 +210,12 @@ ipcMain.handle(
 
 ipcMain.handle('library:list-events', async () =>
   buildLibraryEventSummaries(getPersistenceStore()),
+);
+
+ipcMain.handle(
+  'agenda:list-talks',
+  async (_event, conferenceId: string) =>
+    buildAgendaTalkSummaries(getPersistenceStore(), conferenceId),
 );
 
 ipcMain.handle('library:delete-event', async (_event, conferenceId: string) => {

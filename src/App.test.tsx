@@ -24,6 +24,7 @@ describe('App', () => {
         savedAt: Date.now(),
       }),
       listLibraryEvents: vi.fn().mockResolvedValue([]),
+      listAgendaTalks: vi.fn().mockResolvedValue([]),
       deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
       openLibraryEvent: vi.fn().mockResolvedValue({
         kind: 'opened',
@@ -273,9 +274,40 @@ describe('App', () => {
       annotationSummary: '12 annotated slides',
       cacheStatus: 'Cached for offline use',
     };
+    const agendaTalks = [
+      {
+        id: 'talk-1',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-1',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        title: 'Designing a calm note-taking workflow',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Opening keynote',
+        timeRangeLabel: '09:00 - 09:45',
+        room: 'Auditorium A',
+        bookmarked: true,
+        materialSummary: 'PDF',
+        annotatedSlideCount: 3,
+      },
+      {
+        id: 'talk-2',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-2',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 45, 0, 0),
+        title: 'Tracking talks across a conference',
+        speaker: 'Grace Hopper',
+        sessionTitle: 'Opening keynote',
+        timeRangeLabel: '09:45 - 10:30',
+        room: 'Auditorium A',
+        bookmarked: false,
+        materialSummary: '2 PDFs',
+        annotatedSlideCount: 1,
+      },
+    ];
     window.indicoInk.listLibraryEvents = vi
       .fn()
       .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
 
     render(<App />);
 
@@ -301,6 +333,10 @@ describe('App', () => {
         name: libraryEvent.title,
       }),
     ).toBeTruthy();
+    expect(
+      await screen.findByText('Designing a calm note-taking workflow'),
+    ).toBeTruthy();
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
