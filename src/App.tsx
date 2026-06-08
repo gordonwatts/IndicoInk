@@ -302,6 +302,25 @@ const agendaCanvasTrackPadding = 12;
 const agendaCanvasTalkMinHeight = 112;
 const agendaCanvasTalkGap = 12;
 
+function estimateAgendaTalkCardHeight(talk: AgendaTalkSummary) {
+  const titleLineCount = Math.min(
+    3,
+    Math.max(1, Math.ceil(talk.title.length / 26)),
+  );
+  const speakerLineCount = talk.speaker.length > 34 ? 2 : 1;
+  const summaryLineCount = talk.materialSummary.length > 16 ? 2 : 1;
+  const annotationLineCount = talk.annotatedSlideCount > 0 ? 1 : 1;
+
+  return Math.max(
+    agendaCanvasTalkMinHeight,
+    84 +
+      (titleLineCount - 1) * 22 +
+      (speakerLineCount - 1) * 18 +
+      (summaryLineCount - 1) * 16 +
+      (annotationLineCount - 1) * 14,
+  );
+}
+
 function parseAgendaTimeRange(timeRangeLabel: string) {
   const matches = [...timeRangeLabel.matchAll(/(\d{1,2}):(\d{2})/g)];
   const startMinutes = matches[0]
@@ -406,9 +425,12 @@ function buildAgendaSessionBlocks(talks: AgendaTalkSummary[]) {
               ((talkStartMinutes - startMinutes) / 30) * agendaCanvasRowHeight,
             ),
           );
+        const durationHeightPx = Math.round(
+          (getAgendaTalkDurationMinutes(talk) / 30) * agendaCanvasRowHeight,
+        );
         const heightPx = Math.max(
-          agendaCanvasTalkMinHeight,
-          Math.round((getAgendaTalkDurationMinutes(talk) / 30) * agendaCanvasRowHeight),
+          estimateAgendaTalkCardHeight(talk),
+          durationHeightPx,
         );
         const topPx = Math.max(relativeTop, nextAvailableTop);
 
@@ -493,8 +515,22 @@ function buildAgendaSessionBlocks(talks: AgendaTalkSummary[]) {
     positionedBlocks
       .map((block) => block.endMinutes)
       .sort((left, right) => right - left)[0] ?? earliestStart + 180;
+  const latestRenderedEnd =
+    positionedBlocks.reduce((maxEndMinutes, block) => {
+      const renderedDurationMinutes = Math.max(
+        30,
+        Math.ceil(
+          Math.max(0, block.trackHeightPx - agendaCanvasTrackPadding * 2) /
+            agendaCanvasRowHeight,
+        ) * 30,
+      );
+      return Math.max(
+        maxEndMinutes,
+        block.startMinutes + renderedDurationMinutes,
+      );
+    }, latestEnd);
   const timeStart = Math.floor(earliestStart / 30) * 30;
-  const timeEnd = Math.ceil(latestEnd / 30) * 30;
+  const timeEnd = Math.ceil(latestRenderedEnd / 30) * 30;
   const timeMarkers: number[] = [];
 
   for (let minute = timeStart; minute <= timeEnd; minute += 30) {
