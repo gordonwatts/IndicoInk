@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -98,9 +98,10 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('button', {
-        name: 'Annotated',
-      }),
+      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
+        'button',
+        { name: 'Annotated' },
+      ),
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
@@ -391,6 +392,12 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Bookmarked' })).toBeTruthy();
     expect(
+      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
+        'button',
+        { name: 'Annotated' },
+      ),
+    ).toBeTruthy();
+    expect(
       screen.getByText('Annotated', { selector: '.segmented-control-option' }),
     ).toBeTruthy();
     expect(
@@ -440,6 +447,65 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByText('Tracking talks across a conference'),
+    ).toBeTruthy();
+
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
+        'button',
+        { name: 'Annotated' },
+      ),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Annotated talks',
+        level: 2,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Designing a calm note-taking workflow'),
+    ).toBeTruthy();
+
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
+        'button',
+        { name: 'Search' },
+      ),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Search talks',
+        level: 2,
+      }),
+    ).toBeTruthy();
+
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: 'Search talks',
+      }),
+      'Grace',
+    );
+
+    expect(
+      screen.getByText('Tracking talks across a conference'),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open search result for Tracking talks across a conference',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Event agenda',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', {
+        name: 'Tracking talks across a conference',
+      }),
     ).toBeTruthy();
 
     await user.click(
@@ -575,6 +641,12 @@ describe('App', () => {
       }),
     );
 
+    expect(
+      screen.getByRole('button', {
+        name: 'Friday, June 12, 2026',
+      }),
+    ).toBeTruthy();
+
     window.scrollY = 420;
     await user.click(
       screen.getByRole('button', {
@@ -582,10 +654,40 @@ describe('App', () => {
       }),
     );
 
+    expect(
+      screen.getByRole('button', {
+        name: 'Saturday, June 13, 2026',
+      }),
+    ).toBeTruthy();
+
     expect(window.scrollTo).toHaveBeenLastCalledWith({
       top: 0,
       behavior: 'auto',
     });
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'All',
+      }),
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Saturday, June 13, 2026',
+      }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Bookmarked',
+      }),
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Saturday, June 13, 2026',
+      }),
+    ).toBeTruthy();
 
     window.scrollY = 125;
     await user.click(
@@ -593,6 +695,12 @@ describe('App', () => {
         name: 'Previous day',
       }),
     );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Friday, June 12, 2026',
+      }),
+    ).toBeTruthy();
 
     expect(window.scrollTo).toHaveBeenLastCalledWith({
       top: 420,

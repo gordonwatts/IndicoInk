@@ -20,6 +20,7 @@ import {
 type Destination =
   | 'library'
   | 'agenda'
+  | 'search'
   | 'bookmarks'
   | 'annotated'
   | 'settings';
@@ -34,6 +35,7 @@ const destinations: Array<{
 }> = [
   { id: 'library', label: 'Library', shortLabel: 'Lib', icon: 'library' },
   { id: 'agenda', label: 'Agenda', shortLabel: 'Agenda', icon: 'agenda' },
+  { id: 'search', label: 'Search', shortLabel: 'Find', icon: 'search' },
   { id: 'bookmarks', label: 'Bookmarks', shortLabel: 'Book', icon: 'bookmark' },
   {
     id: 'annotated',
@@ -246,6 +248,34 @@ function AgendaTalkDetailSurface({
   );
 }
 
+function getAgendaTalkSearchText(talk: AgendaTalkSummary) {
+  return [
+    talk.title,
+    talk.speaker,
+    talk.sessionTitle,
+    talk.contributionId,
+    talk.dayLabel,
+    talk.timeRangeLabel,
+    talk.room,
+    talk.materialSummary,
+    ...talk.materials.map((material) => material.title),
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+function talkMatchesSearchQuery(talk: AgendaTalkSummary, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  const searchText = getAgendaTalkSearchText(talk);
+  return query
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((part) => searchText.includes(part));
+}
+
 function ComponentGallery() {
   const [galleryFilter, setGalleryFilter] =
     React.useState<GalleryFilter>('all');
@@ -390,6 +420,7 @@ export function App() {
   const [selectedAgendaTalkId, setSelectedAgendaTalkId] = React.useState<
     string | null
   >(null);
+  const [agendaSearchQuery, setAgendaSearchQuery] = React.useState('');
   const [agendaFilter, setAgendaFilter] =
     React.useState<GalleryFilter>('all');
   const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
@@ -413,6 +444,7 @@ export function App() {
 
   const eventFocused =
     destination === 'agenda' ||
+    destination === 'search' ||
     destination === 'bookmarks' ||
     destination === 'annotated';
   const activeEvent =
@@ -441,6 +473,13 @@ export function App() {
     return matchesDay && matchesFilter;
   });
   const bookmarkedAgendaTalks = agendaTalks.filter((talk) => talk.bookmarked);
+  const annotatedAgendaTalks = agendaTalks.filter(
+    (talk) => talk.annotatedSlideCount > 0,
+  );
+  const normalizedAgendaSearchQuery = agendaSearchQuery.trim().toLowerCase();
+  const searchAgendaTalks = agendaTalks.filter((talk) =>
+    talkMatchesSearchQuery(talk, normalizedAgendaSearchQuery),
+  );
   const selectedAgendaTalk =
     visibleAgendaTalks.find((talk) => talk.id === selectedAgendaTalkId) ??
     visibleAgendaTalks[0] ??
@@ -472,11 +511,14 @@ export function App() {
       console.error('Failed to open slides URL:', error);
     }
   };
-  const openAgendaTalkFromBookmark = (talk: AgendaTalkSummary) => {
+  const openAgendaTalkFromIndex = (talk: AgendaTalkSummary) => {
     setSelectedEventId(talk.conferenceId);
     setAgendaDayLabel(talk.dayLabel);
     setSelectedAgendaTalkId(talk.id);
     setDestination('agenda');
+  };
+  const openSearchResult = (talk: AgendaTalkSummary) => {
+    openAgendaTalkFromIndex(talk);
   };
   const handleOpenEvent = async () => {
     setEventUrlTouched(true);
@@ -780,6 +822,8 @@ export function App() {
               ? 'Open a conference event'
               : destination === 'agenda'
                 ? 'Event agenda'
+                : destination === 'search'
+                  ? 'Search talks'
                 : destination === 'bookmarks'
                   ? 'Bookmarks'
                   : destination === 'annotated'
@@ -808,7 +852,11 @@ export function App() {
           }
           actions={
             <>
-              <IconButton label="Search" icon="search" />
+              <IconButton
+                label="Search"
+                icon="search"
+                onClick={() => setDestination('search')}
+              />
               <IconButton label="Refresh" icon="refresh" />
               <PrimaryButton icon="export">Export notes</PrimaryButton>
               <div className="runtime-pill" aria-label="Runtime information">
@@ -1204,7 +1252,7 @@ export function App() {
                         variant="list"
                         selected={talk.id === selectedAgendaTalk?.id}
                         onClick={() => {
-                          openAgendaTalkFromBookmark(talk);
+                          openAgendaTalkFromIndex(talk);
                         }}
                         ariaLabel={`Open bookmarked talk ${talk.title}`}
                         title={talk.title}
@@ -1268,17 +1316,229 @@ export function App() {
           {destination === 'annotated' && (
             <section className="page-stack">
               <DetailsSurface
-                title="Annotated talks in the current event"
-                subtitle="Slide annotations stay attached to the active conference while the user moves between destinations."
+                title="Annotated talks"
+                subtitle="Annotated slides remain attached to the active conference and reopen the matching agenda day."
               >
-                <div className="empty-state">
-                  <Icon name="annotated" />
-                  <strong>{activeEvent.annotationSummary}</strong>
-                  <span>
-                    Annotated talks will be surfaced here once slide notes
-                    exist.
-                  </span>
-                </div>
+                {annotatedAgendaTalks.length ? (
+                  <div className="agenda-list">
+                    {annotatedAgendaTalks.map((talk) => (
+                      <Row
+                        key={talk.id}
+                        variant="list"
+                        selected={talk.id === selectedAgendaTalk?.id}
+                        onClick={() => {
+                          openAgendaTalkFromIndex(talk);
+                        }}
+                        ariaLabel={`Open annotated talk ${talk.title}`}
+                        title={talk.title}
+                        meta={
+                          <>
+                            {talk.dayLabel} - {talk.timeRangeLabel} -{' '}
+                            {talk.speaker}
+                            {talk.room !== 'Room unavailable'
+                              ? ` - ${talk.room}`
+                              : ''}
+                          </>
+                        }
+                        detail={
+                          <div className="row-pills">
+                            <StatusLabel
+                              label={talk.materialSummary}
+                              tone="neutral"
+                              icon="open"
+                            />
+                            <StatusLabel
+                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                              tone="warning"
+                              icon="annotated"
+                            />
+                          </div>
+                        }
+                        action={
+                          <div
+                            className="row-action"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                            }}
+                          >
+                            <IconButton
+                              label={
+                                talk.bookmarked
+                                  ? 'Remove bookmark'
+                                  : 'Bookmark talk'
+                              }
+                              icon="bookmark"
+                              pressed={talk.bookmarked}
+                              title={
+                                talk.bookmarked
+                                  ? 'Remove bookmark'
+                                  : 'Bookmark talk'
+                              }
+                              onClick={() => {
+                                void toggleAgendaTalkBookmark(
+                                  talk.id,
+                                  !talk.bookmarked,
+                                );
+                              }}
+                            />
+                          </div>
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <Icon name="annotated" />
+                    <strong>No annotated talks yet</strong>
+                    <span>
+                      Annotate slides in Slide Notes and they will appear here.
+                    </span>
+                  </div>
+                )}
+              </DetailsSurface>
+            </section>
+          )}
+
+          {destination === 'search' && (
+            <section className="page-stack">
+              <DetailsSurface
+                title="Search talks"
+                subtitle="Search title, speaker, session, contribution ID, and keywords across the current conference."
+              >
+                {selectedEventId ? (
+                  <div className="agenda-search">
+                    <label className="field agenda-search-field">
+                      <span>Search talks</span>
+                      <input
+                        value={agendaSearchQuery}
+                        onChange={(event) => setAgendaSearchQuery(event.target.value)}
+                        type="search"
+                        autoComplete="off"
+                        placeholder="Try title, speaker, session, or contribution ID"
+                      />
+                    </label>
+                    <div className="agenda-list-meta">
+                      <StatusLabel
+                        label={`${searchAgendaTalks.length} result${searchAgendaTalks.length === 1 ? '' : 's'}`}
+                        icon="search"
+                      />
+                      <StatusLabel
+                        label={selectedAgendaEvent?.title ?? activeEvent.title}
+                        tone="neutral"
+                        icon="event"
+                      />
+                    </div>
+                    {agendaTalksLoading ? (
+                      <div className="empty-state agenda-empty-state">
+                        <Icon name="search" />
+                        <strong>Loading searchable talks</strong>
+                        <span>
+                          Search stays active while the event refreshes.
+                        </span>
+                      </div>
+                    ) : agendaTalksError ? (
+                      <div className="empty-state agenda-empty-state">
+                        <Icon name="info" />
+                        <strong>Search unavailable</strong>
+                        <span>{agendaTalksError}</span>
+                      </div>
+                    ) : searchAgendaTalks.length ? (
+                      <div className="agenda-list">
+                        {searchAgendaTalks.map((talk) => (
+                          <Row
+                            key={talk.id}
+                            variant="list"
+                            selected={talk.id === selectedAgendaTalk?.id}
+                            onClick={() => {
+                              openSearchResult(talk);
+                            }}
+                            ariaLabel={`Open search result for ${talk.title}`}
+                            title={talk.title}
+                            meta={
+                              <>
+                                {talk.dayLabel} - {talk.timeRangeLabel} -{' '}
+                                {talk.speaker}
+                                {talk.room !== 'Room unavailable'
+                                  ? ` - ${talk.room}`
+                                  : ''}
+                              </>
+                            }
+                            detail={
+                              <div className="row-pills">
+                                <StatusLabel
+                                  label={talk.contributionId}
+                                  tone="neutral"
+                                  icon="info"
+                                />
+                                <StatusLabel
+                                  label={talk.sessionTitle}
+                                  tone="neutral"
+                                  icon="agenda"
+                                />
+                                <StatusLabel
+                                  label={talk.materialSummary}
+                                  tone="neutral"
+                                  icon="open"
+                                />
+                                <StatusLabel
+                                  label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                  tone="warning"
+                                  icon="annotated"
+                                />
+                              </div>
+                            }
+                            action={
+                              <div
+                                className="row-action"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                }}
+                              >
+                                <IconButton
+                                  label={
+                                    talk.bookmarked
+                                      ? 'Remove bookmark'
+                                      : 'Bookmark talk'
+                                  }
+                                  icon="bookmark"
+                                  pressed={talk.bookmarked}
+                                  title={
+                                    talk.bookmarked
+                                      ? 'Remove bookmark'
+                                      : 'Bookmark talk'
+                                  }
+                                  onClick={() => {
+                                    void toggleAgendaTalkBookmark(
+                                      talk.id,
+                                      !talk.bookmarked,
+                                    );
+                                  }}
+                                />
+                              </div>
+                            }
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-state agenda-empty-state">
+                        <Icon name="search" />
+                        <strong>No matching talks</strong>
+                        <span>
+                          Try a title, speaker, session, contribution ID, or
+                          keyword.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="empty-state agenda-empty-state">
+                    <Icon name="search" />
+                    <strong>No active event selected</strong>
+                    <span>
+                      Open a conference first, then search across its talks.
+                    </span>
+                  </div>
+                )}
               </DetailsSurface>
             </section>
           )}

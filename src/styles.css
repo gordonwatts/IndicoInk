@@ -1182,6 +1182,15 @@ input:focus-visible {
   align-items: center;
 }
 
+.agenda-search {
+  display: grid;
+  gap: 16px;
+}
+
+.agenda-search-field input {
+  width: 100%;
+}
+
 .agenda-empty-state {
   min-height: 176px;
 }
