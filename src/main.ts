@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  shell,
   safeStorage,
   session,
 } from 'electron';
@@ -230,6 +231,18 @@ ipcMain.handle(
   'agenda:set-talk-bookmarked',
   async (_event, talkId: string, bookmarked: boolean) => {
     await getPersistenceStore().setTalkBookmarked(talkId, bookmarked);
+  },
+);
+
+ipcMain.handle(
+  'system:open-external-url',
+  async (_event, url: string): Promise<void> => {
+    const parsedUrl = new URL(url);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('Only http and https URLs can be opened.');
+    }
+
+    await shell.openExternal(parsedUrl.toString());
   },
 );
 

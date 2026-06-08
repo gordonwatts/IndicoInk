@@ -86,7 +86,7 @@ export const buildAgendaTalkSummaries = async (
             return slides.filter((slide) => slide.annotated).length;
           }),
         )
-      ).reduce((total, count) => total + count, 0);
+        ).reduce((total, count) => total + count, 0);
 
       return {
         id: talk.id,
@@ -101,6 +101,13 @@ export const buildAgendaTalkSummaries = async (
         room: talk.room,
         bookmarked: talk.bookmarked,
         materialSummary: formatMaterialSummary(pdfDecks.length),
+        materials: decks.map((deck) => ({
+          id: deck.id,
+          title: deck.displayName,
+          sourceUrl: deck.sourceUrl,
+          mimeType: deck.mimeType,
+          selected: deck.selected,
+        })),
         annotatedSlideCount,
       } satisfies AgendaTalkSummary;
     }),

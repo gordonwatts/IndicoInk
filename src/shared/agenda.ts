@@ -11,5 +11,14 @@ export type AgendaTalkSummary = {
   room: string;
   bookmarked: boolean;
   materialSummary: string;
+  materials: AgendaTalkMaterialSummary[];
   annotatedSlideCount: number;
+};
+
+export type AgendaTalkMaterialSummary = {
+  id: string;
+  title: string;
+  sourceUrl: string;
+  mimeType: string;
+  selected: boolean;
 };

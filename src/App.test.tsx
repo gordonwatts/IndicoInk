@@ -49,6 +49,7 @@ describe('App', () => {
       }),
       saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
       setTalkBookmarked: vi.fn().mockResolvedValue(undefined),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -300,6 +301,15 @@ describe('App', () => {
         room: 'Auditorium A',
         bookmarked: true,
         materialSummary: 'PDF',
+        materials: [
+          {
+            id: 'deck-1',
+            title: 'Opening slides',
+            sourceUrl: 'https://indico.example.org/materials/deck-1.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+          },
+        ],
         annotatedSlideCount: 3,
       },
       {
@@ -315,6 +325,22 @@ describe('App', () => {
         room: 'Auditorium A',
         bookmarked: false,
         materialSummary: '2 PDFs',
+        materials: [
+          {
+            id: 'deck-2a',
+            title: 'Main deck',
+            sourceUrl: 'https://indico.example.org/materials/deck-2a.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+          },
+          {
+            id: 'deck-2b',
+            title: 'Supplementary deck',
+            sourceUrl: 'https://indico.example.org/materials/deck-2b.pdf',
+            mimeType: 'application/pdf',
+            selected: false,
+          },
+        ],
         annotatedSlideCount: 1,
       },
     ];
@@ -371,7 +397,49 @@ describe('App', () => {
       screen.getByRole('button', { name: 'Slides available' }),
     ).toBeTruthy();
     expect(
-      await screen.findByText('Designing a calm note-taking workflow'),
+      screen.getByRole('heading', {
+        name: 'Designing a calm note-taking workflow',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open slides' })).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Show details for Tracking talks across a conference',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Tracking talks across a conference',
+      }),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Open slides' }));
+
+    expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
+      'https://indico.example.org/materials/deck-2a.pdf',
+    );
+
+    await user.click(
+      screen.getAllByRole('button', {
+        name: 'Bookmark talk',
+      })[0],
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Bookmarks',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Bookmarked talks',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Tracking talks across a conference'),
     ).toBeTruthy();
 
     await user.click(
@@ -418,6 +486,15 @@ describe('App', () => {
         room: 'Auditorium A',
         bookmarked: true,
         materialSummary: 'PDF',
+        materials: [
+          {
+            id: 'deck-1',
+            title: 'Opening slides',
+            sourceUrl: 'https://indico.example.org/materials/deck-1.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+          },
+        ],
         annotatedSlideCount: 3,
       },
       {
@@ -433,6 +510,22 @@ describe('App', () => {
         room: 'Auditorium A',
         bookmarked: false,
         materialSummary: '2 PDFs',
+        materials: [
+          {
+            id: 'deck-2a',
+            title: 'Main deck',
+            sourceUrl: 'https://indico.example.org/materials/deck-2a.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+          },
+          {
+            id: 'deck-2b',
+            title: 'Supplementary deck',
+            sourceUrl: 'https://indico.example.org/materials/deck-2b.pdf',
+            mimeType: 'application/pdf',
+            selected: false,
+          },
+        ],
         annotatedSlideCount: 1,
       },
       {
@@ -448,6 +541,7 @@ describe('App', () => {
         room: 'Auditorium B',
         bookmarked: false,
         materialSummary: 'No slides',
+        materials: [],
         annotatedSlideCount: 0,
       },
     ];

@@ -141,6 +141,111 @@ function EventSummaryRow({
   );
 }
 
+function AgendaTalkDetailSurface({
+  event,
+  talk,
+  onToggleBookmark,
+  onOpenSlides,
+}: {
+  event: EventSummary;
+  talk: AgendaTalkSummary;
+  onToggleBookmark: (talk: AgendaTalkSummary) => void;
+  onOpenSlides: (talk: AgendaTalkSummary) => void;
+}) {
+  const selectedPdfMaterial =
+    talk.materials.find(
+      (material) => material.mimeType === 'application/pdf' && material.selected,
+    ) ??
+    talk.materials.find((material) => material.mimeType === 'application/pdf') ??
+    null;
+
+  return (
+    <DetailsSurface
+      title={talk.title}
+      subtitle={`${talk.timeRangeLabel} - ${talk.speaker}`}
+    >
+      <div className="agenda-talk-detail">
+        <div className="agenda-talk-detail-topline">
+          <StatusLabel label={talk.dayLabel} tone="neutral" icon="event" />
+          <StatusLabel label={talk.sessionTitle} tone="neutral" icon="agenda" />
+          <StatusLabel
+            label={talk.room}
+            tone="neutral"
+            icon="info"
+          />
+        </div>
+
+        <div className="agenda-talk-detail-actions">
+          <PrimaryButton
+            icon="open"
+            disabled={!selectedPdfMaterial}
+            onClick={() => onOpenSlides(talk)}
+          >
+            Open slides
+          </PrimaryButton>
+          <IconButton
+            label={talk.bookmarked ? 'Remove bookmark' : 'Bookmark talk'}
+            icon="bookmark"
+            pressed={talk.bookmarked}
+            onClick={() => onToggleBookmark(talk)}
+          />
+        </div>
+
+        <div className="agenda-talk-detail-facts">
+          <div className="agenda-talk-detail-fact">
+            <span>Contribution</span>
+            <strong>{talk.contributionId}</strong>
+          </div>
+          <div className="agenda-talk-detail-fact">
+            <span>Event</span>
+            <strong>{event.title}</strong>
+          </div>
+          <div className="agenda-talk-detail-fact">
+            <span>Slides</span>
+            <strong>{talk.materialSummary}</strong>
+          </div>
+          <div className="agenda-talk-detail-fact">
+            <span>Annotated slides</span>
+            <strong>
+              {talk.annotatedSlideCount} annotated slide
+              {talk.annotatedSlideCount === 1 ? '' : 's'}
+            </strong>
+          </div>
+        </div>
+
+        <div className="agenda-talk-materials">
+          <div className="surface-panel-header">
+            <h3>Materials</h3>
+            <p>Stored deck metadata for this talk.</p>
+          </div>
+          {talk.materials.length ? (
+            <div className="agenda-talk-material-list">
+              {talk.materials.map((material) => (
+                <div key={material.id} className="agenda-talk-material-row">
+                  <StatusLabel
+                    label={material.title}
+                    tone={material.mimeType === 'application/pdf' ? 'success' : 'neutral'}
+                    icon={material.mimeType === 'application/pdf' ? 'open' : 'info'}
+                  />
+                  {material.selected ? (
+                    <StatusLabel label="Default" tone="warning" icon="check" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state agenda-detail-empty-state">
+              <Icon name="info" />
+              <strong>No stored materials</strong>
+              <span>This talk did not import any deck metadata yet.</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </DetailsSurface>
+  );
+}
+
 function ComponentGallery() {
   const [galleryFilter, setGalleryFilter] =
     React.useState<GalleryFilter>('all');
@@ -282,6 +387,9 @@ export function App() {
   const [agendaDayLabel, setAgendaDayLabel] = React.useState<string | null>(
     null,
   );
+  const [selectedAgendaTalkId, setSelectedAgendaTalkId] = React.useState<
+    string | null
+  >(null);
   const [agendaFilter, setAgendaFilter] =
     React.useState<GalleryFilter>('all');
   const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
@@ -332,6 +440,11 @@ export function App() {
 
     return matchesDay && matchesFilter;
   });
+  const bookmarkedAgendaTalks = agendaTalks.filter((talk) => talk.bookmarked);
+  const selectedAgendaTalk =
+    visibleAgendaTalks.find((talk) => talk.id === selectedAgendaTalkId) ??
+    visibleAgendaTalks[0] ??
+    null;
   const selectedAgendaDayIndex = selectedAgendaDay
     ? agendaDayLabels.indexOf(selectedAgendaDay)
     : -1;
@@ -340,6 +453,31 @@ export function App() {
     selectedAgendaDayIndex >= 0 &&
     selectedAgendaDayIndex < agendaDayLabels.length - 1;
   const eventUrlError = eventUrlTouched ? validateEventUrl(eventUrl) : null;
+  const openAgendaTalkSlides = async (talk: AgendaTalkSummary) => {
+    const selectedPdfMaterial =
+      talk.materials.find(
+        (material) =>
+          material.mimeType === 'application/pdf' && material.selected,
+      ) ??
+      talk.materials.find((material) => material.mimeType === 'application/pdf') ??
+      null;
+
+    if (!selectedPdfMaterial) {
+      return;
+    }
+
+    try {
+      await window.indicoInk.openExternalUrl(selectedPdfMaterial.sourceUrl);
+    } catch (error) {
+      console.error('Failed to open slides URL:', error);
+    }
+  };
+  const openAgendaTalkFromBookmark = (talk: AgendaTalkSummary) => {
+    setSelectedEventId(talk.conferenceId);
+    setAgendaDayLabel(talk.dayLabel);
+    setSelectedAgendaTalkId(talk.id);
+    setDestination('agenda');
+  };
   const handleOpenEvent = async () => {
     setEventUrlTouched(true);
     const validationError = validateEventUrl(eventUrl);
@@ -451,6 +589,9 @@ export function App() {
       ),
     );
   };
+  const handleAgendaTalkBookmarkToggle = async (talk: AgendaTalkSummary) => {
+    await toggleAgendaTalkBookmark(talk.id, !talk.bookmarked);
+  };
   const requestDeleteLibraryEvent = (event: EventSummary) => {
     setDeleteTarget(event);
   };
@@ -478,6 +619,7 @@ export function App() {
       setAgendaTalksLoading(false);
       setAgendaTalksError(null);
       setAgendaDayLabel(null);
+      setSelectedAgendaTalkId(null);
       return () => {
         cancelled = true;
       };
@@ -522,6 +664,7 @@ export function App() {
   React.useEffect(() => {
     if (!agendaTalks.length) {
       setAgendaDayLabel(null);
+      setSelectedAgendaTalkId(null);
       return;
     }
 
@@ -533,6 +676,25 @@ export function App() {
       return agendaTalks[0]?.dayLabel ?? null;
     });
   }, [agendaTalks]);
+
+  React.useEffect(() => {
+    if (!visibleAgendaTalks.length) {
+      if (selectedAgendaTalkId !== null) {
+        setSelectedAgendaTalkId(null);
+      }
+
+      return;
+    }
+
+    if (
+      selectedAgendaTalkId &&
+      visibleAgendaTalks.some((talk) => talk.id === selectedAgendaTalkId)
+    ) {
+      return;
+    }
+
+    setSelectedAgendaTalkId(visibleAgendaTalks[0]?.id ?? null);
+  }, [selectedAgendaTalkId, visibleAgendaTalks]);
 
   React.useEffect(() => {
     if (destination !== 'agenda' || !selectedEventId) {
@@ -821,151 +983,188 @@ export function App() {
                         <span>{agendaTalksError}</span>
                       </div>
                     ) : agendaTalks.length ? (
-                      <>
-                        <div className="agenda-controls">
-                          <div className="agenda-day-strip">
-                            <IconButton
-                              label="Previous day"
-                              icon="back"
-                              disabled={!canMoveToPreviousDay}
-                              onClick={() => {
-                                if (canMoveToPreviousDay) {
-                                  setAgendaDayLabel(
-                                    agendaDayLabels[
-                                      selectedAgendaDayIndex - 1
-                                    ] ?? null,
-                                  );
-                                }
-                              }}
-                            />
-                            <SegmentedControl
-                              options={agendaDayLabels.map((label) => ({
-                                label,
-                                value: label,
-                              }))}
-                              value={selectedAgendaDay ?? agendaDayLabels[0] ?? ''}
-                              onChange={setAgendaDayLabel}
-                            />
-                            <IconButton
-                              label="Next day"
-                              icon="chevron"
-                              disabled={!canMoveToNextDay}
-                              onClick={() => {
-                                if (canMoveToNextDay) {
-                                  setAgendaDayLabel(
-                                    agendaDayLabels[
-                                      selectedAgendaDayIndex + 1
-                                    ] ?? null,
-                                  );
-                                }
-                              }}
-                            />
-                          </div>
-                          <SegmentedControl
-                            options={filterOptions}
-                            value={agendaFilter}
-                            onChange={setAgendaFilter}
-                          />
-                        </div>
-
-                        <div className="agenda-list-meta">
-                          <StatusLabel
-                            label={`${visibleAgendaTalks.length} talk${visibleAgendaTalks.length === 1 ? '' : 's'} shown`}
-                            icon="agenda"
-                          />
-                          <StatusLabel
-                            label={selectedAgendaDay ?? 'All days'}
-                            tone="neutral"
-                            icon="event"
-                          />
-                          <StatusLabel
-                            label={
-                              agendaFilter === 'all'
-                                ? 'All talks'
-                                : agendaFilter === 'bookmarked'
-                                  ? 'Bookmarked'
-                                  : agendaFilter === 'annotated'
-                                    ? 'Annotated'
-                                    : 'Slides available'
-                            }
-                            tone="neutral"
-                            icon="check"
-                          />
-                        </div>
-
-                        {visibleAgendaTalks.length ? (
-                          <div className="agenda-list">
-                            {visibleAgendaTalks.map((talk) => (
-                              <Row
-                                key={talk.id}
-                                variant="list"
-                                title={talk.title}
-                                meta={
-                                  <>
-                                    {talk.timeRangeLabel} -{' '}
-                                    {talk.speaker}
-                                    {talk.room !== 'Room unavailable'
-                                      ? ` - ${talk.room}`
-                                      : ''}
-                                  </>
-                                }
-                                detail={
-                                  <div className="row-pills">
-                                    <StatusLabel
-                                      label={talk.materialSummary}
-                                      tone="neutral"
-                                      icon="open"
-                                    />
-                                    <StatusLabel
-                                      label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                                      tone="warning"
-                                      icon="annotated"
-                                    />
-                                  </div>
-                                }
-                                action={
-                                  <div
-                                    className="row-action"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                    }}
-                                  >
-                                    <IconButton
-                                      label={
-                                        talk.bookmarked
-                                          ? 'Remove bookmark'
-                                          : 'Bookmark talk'
-                                      }
-                                      icon="bookmark"
-                                      pressed={talk.bookmarked}
-                                      title={
-                                        talk.bookmarked
-                                          ? 'Remove bookmark'
-                                          : 'Bookmark talk'
-                                      }
-                                      onClick={() => {
-                                        void toggleAgendaTalkBookmark(
-                                          talk.id,
-                                          !talk.bookmarked,
-                                        );
-                                      }}
-                                    />
-                                  </div>
-                                }
+                      <div className="agenda-shell">
+                        <div className="agenda-shell-main">
+                          <div className="agenda-controls">
+                            <div className="agenda-day-strip">
+                              <IconButton
+                                label="Previous day"
+                                icon="back"
+                                disabled={!canMoveToPreviousDay}
+                                onClick={() => {
+                                  if (canMoveToPreviousDay) {
+                                    setAgendaDayLabel(
+                                      agendaDayLabels[
+                                        selectedAgendaDayIndex - 1
+                                      ] ?? null,
+                                    );
+                                  }
+                                }}
                               />
-                            ))}
+                              <SegmentedControl
+                                options={agendaDayLabels.map((label) => ({
+                                  label,
+                                  value: label,
+                                }))}
+                                value={
+                                  selectedAgendaDay ?? agendaDayLabels[0] ?? ''
+                                }
+                                onChange={setAgendaDayLabel}
+                              />
+                              <IconButton
+                                label="Next day"
+                                icon="chevron"
+                                disabled={!canMoveToNextDay}
+                                onClick={() => {
+                                  if (canMoveToNextDay) {
+                                    setAgendaDayLabel(
+                                      agendaDayLabels[
+                                        selectedAgendaDayIndex + 1
+                                      ] ?? null,
+                                    );
+                                  }
+                                }}
+                              />
+                            </div>
+                            <SegmentedControl
+                              options={filterOptions}
+                              value={agendaFilter}
+                              onChange={setAgendaFilter}
+                            />
                           </div>
-                        ) : (
-                          <div className="empty-state agenda-empty-state">
-                            <Icon name="agenda" />
-                            <strong>No talks match this view</strong>
-                            <span>
-                              Try a different day or filter to keep browsing
-                              the stored agenda data.
-                            </span>
+
+                          <div className="agenda-list-meta">
+                            <StatusLabel
+                              label={`${visibleAgendaTalks.length} talk${visibleAgendaTalks.length === 1 ? '' : 's'} shown`}
+                              icon="agenda"
+                            />
+                            <StatusLabel
+                              label={selectedAgendaDay ?? 'All days'}
+                              tone="neutral"
+                              icon="event"
+                            />
+                            <StatusLabel
+                              label={
+                                agendaFilter === 'all'
+                                  ? 'All talks'
+                                  : agendaFilter === 'bookmarked'
+                                    ? 'Bookmarked'
+                                    : agendaFilter === 'annotated'
+                                      ? 'Annotated'
+                                      : 'Slides available'
+                              }
+                              tone="neutral"
+                              icon="check"
+                            />
                           </div>
-                        )}
-                      </>
+
+                          {visibleAgendaTalks.length ? (
+                            <div className="agenda-list">
+                              {visibleAgendaTalks.map((talk) => (
+                                <Row
+                                  key={talk.id}
+                                  variant="list"
+                                  title={talk.title}
+                                  selected={talk.id === selectedAgendaTalk?.id}
+                                  onClick={() => {
+                                    setSelectedAgendaTalkId(talk.id);
+                                  }}
+                                  ariaLabel={`Show details for ${talk.title}`}
+                                  meta={
+                                    <>
+                                      {talk.timeRangeLabel} - {talk.speaker}
+                                      {talk.room !== 'Room unavailable'
+                                        ? ` - ${talk.room}`
+                                        : ''}
+                                    </>
+                                  }
+                                  detail={
+                                    <div className="row-pills">
+                                      <StatusLabel
+                                        label={talk.materialSummary}
+                                        tone="neutral"
+                                        icon="open"
+                                      />
+                                      <StatusLabel
+                                        label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                        tone="warning"
+                                        icon="annotated"
+                                      />
+                                    </div>
+                                  }
+                                  action={
+                                    <div
+                                      className="row-action"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                      }}
+                                    >
+                                      <IconButton
+                                        label={
+                                          talk.bookmarked
+                                            ? 'Remove bookmark'
+                                            : 'Bookmark talk'
+                                        }
+                                        icon="bookmark"
+                                        pressed={talk.bookmarked}
+                                        title={
+                                          talk.bookmarked
+                                            ? 'Remove bookmark'
+                                            : 'Bookmark talk'
+                                        }
+                                        onClick={() => {
+                                          void toggleAgendaTalkBookmark(
+                                            talk.id,
+                                            !talk.bookmarked,
+                                          );
+                                        }}
+                                      />
+                                    </div>
+                                  }
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="empty-state agenda-empty-state">
+                              <Icon name="agenda" />
+                              <strong>No talks match this view</strong>
+                              <span>
+                                Try a different day or filter to keep browsing
+                                the stored agenda data.
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        <aside className="agenda-talk-detail-panel">
+                          {selectedAgendaTalk ? (
+                            <AgendaTalkDetailSurface
+                              event={selectedAgendaEvent ?? activeEvent}
+                              talk={selectedAgendaTalk}
+                              onToggleBookmark={(talk) => {
+                                void handleAgendaTalkBookmarkToggle(talk);
+                              }}
+                              onOpenSlides={(talk) => {
+                                void openAgendaTalkSlides(talk);
+                              }}
+                            />
+                          ) : (
+                            <DetailsSurface
+                              title="Talk details"
+                              subtitle="Select a talk to inspect materials and open slides."
+                            >
+                              <div className="empty-state agenda-detail-empty-state">
+                                <Icon name="agenda" />
+                                <strong>No talk selected</strong>
+                                <span>
+                                  Choose a row in the agenda list to open its
+                                  metadata.
+                                </span>
+                              </div>
+                            </DetailsSurface>
+                          )}
+                        </aside>
+                      </div>
                     ) : (
                       <div className="empty-state agenda-empty-state">
                         <Icon name="agenda" />
@@ -994,16 +1193,74 @@ export function App() {
           {destination === 'bookmarks' && (
             <section className="page-stack">
               <DetailsSurface
-                title="Bookmarks across the active event"
-                subtitle="A future event-wide view will show saved talks without leaving the current conference context."
+                title="Bookmarked talks"
+                subtitle="Saved talks stay attached to the current conference and reopen the matching agenda day."
               >
-                <div className="empty-state">
-                  <Icon name="bookmark" />
-                  <strong>No bookmarked talks yet</strong>
-                  <span>
-                    Saved talks will appear here once the agenda is wired up.
-                  </span>
-                </div>
+                {bookmarkedAgendaTalks.length ? (
+                  <div className="agenda-list">
+                    {bookmarkedAgendaTalks.map((talk) => (
+                      <Row
+                        key={talk.id}
+                        variant="list"
+                        selected={talk.id === selectedAgendaTalk?.id}
+                        onClick={() => {
+                          openAgendaTalkFromBookmark(talk);
+                        }}
+                        ariaLabel={`Open bookmarked talk ${talk.title}`}
+                        title={talk.title}
+                        meta={
+                          <>
+                            {talk.dayLabel} - {talk.timeRangeLabel} -{' '}
+                            {talk.speaker}
+                            {talk.room !== 'Room unavailable'
+                              ? ` - ${talk.room}`
+                              : ''}
+                          </>
+                        }
+                        detail={
+                          <div className="row-pills">
+                            <StatusLabel
+                              label={talk.materialSummary}
+                              tone="neutral"
+                              icon="open"
+                            />
+                            <StatusLabel
+                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                              tone="warning"
+                              icon="annotated"
+                            />
+                          </div>
+                        }
+                        action={
+                          <div
+                            className="row-action"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                            }}
+                          >
+                            <IconButton
+                              label="Remove bookmark"
+                              icon="bookmark"
+                              pressed
+                              title="Remove bookmark"
+                              onClick={() => {
+                                void toggleAgendaTalkBookmark(talk.id, false);
+                              }}
+                            />
+                          </div>
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <Icon name="bookmark" />
+                    <strong>No bookmarked talks yet</strong>
+                    <span>
+                      Bookmark a talk from the agenda to pin it here.
+                    </span>
+                  </div>
+                )}
               </DetailsSurface>
             </section>
           )}
