@@ -43,6 +43,12 @@ describe('App', () => {
         pageCount: 0,
         savedAt: Date.now(),
       }),
+      loadDeckWorkspaceState: vi.fn().mockResolvedValue(null),
+      saveDeckWorkspaceState: vi.fn().mockResolvedValue({
+        sourceUrl: '',
+        pageCount: 0,
+        savedAt: Date.now(),
+      }),
       listLibraryEvents: vi.fn().mockResolvedValue([]),
       listAgendaTalks: vi.fn().mockResolvedValue([]),
       deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
@@ -58,6 +64,19 @@ describe('App', () => {
       }),
       saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
       setTalkBookmarked: vi.fn().mockResolvedValue(undefined),
+      setSelectedDeck: vi.fn().mockResolvedValue(undefined),
+      openTalkDeck: vi.fn().mockResolvedValue({
+        kind: 'ready',
+        conferenceId: 'conference-opened',
+        talkId: 'talk-opened',
+        deckId: 'deck-opened',
+        sourceUrl: 'https://indico.example.org/materials/deck.pdf',
+        displayName: 'Deck',
+        filePath: 'C:/temp/deck.pdf',
+        pageCount: 10,
+      }),
+      getDeckDownloadStatus: vi.fn().mockResolvedValue(null),
+      cancelDeckDownload: vi.fn().mockResolvedValue(undefined),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
     };
   });
@@ -317,6 +336,7 @@ describe('App', () => {
             sourceUrl: 'https://indico.example.org/materials/deck-1.pdf',
             mimeType: 'application/pdf',
             selected: true,
+            pageCount: 10,
           },
         ],
         annotatedSlideCount: 3,
@@ -341,6 +361,7 @@ describe('App', () => {
             sourceUrl: 'https://indico.example.org/materials/deck-2a.pdf',
             mimeType: 'application/pdf',
             selected: true,
+            pageCount: 8,
           },
           {
             id: 'deck-2b',
@@ -348,6 +369,7 @@ describe('App', () => {
             sourceUrl: 'https://indico.example.org/materials/deck-2b.pdf',
             mimeType: 'application/pdf',
             selected: false,
+            pageCount: 3,
           },
         ],
         annotatedSlideCount: 1,
@@ -412,19 +434,29 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open slides for Designing a calm note-taking workflow',
+        name: 'Open details for Designing a calm note-taking workflow',
       }),
     ).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Open slides for Tracking talks across a conference',
+        name: 'Open details for Tracking talks across a conference',
       }),
     );
 
-    expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
-      'https://indico.example.org/materials/deck-2a.pdf',
-    );
+    expect(
+      screen.getByRole('heading', {
+        name: 'Talk details',
+        level: 2,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Open slides',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Main deck/)).toBeTruthy();
+    expect(screen.getByText(/Supplementary deck/)).toBeTruthy();
 
     const firstBookmarkButton = screen.getAllByRole('button', {
       name: 'Bookmark talk',
@@ -496,7 +528,7 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open slides for Tracking talks across a conference',
+        name: 'Open details for Tracking talks across a conference',
       }),
     ).toBeTruthy();
 
@@ -551,6 +583,7 @@ describe('App', () => {
             sourceUrl: 'https://indico.example.org/materials/deck-1.pdf',
             mimeType: 'application/pdf',
             selected: true,
+            pageCount: 10,
           },
         ],
         annotatedSlideCount: 3,
@@ -575,6 +608,7 @@ describe('App', () => {
             sourceUrl: 'https://indico.example.org/materials/deck-2a.pdf',
             mimeType: 'application/pdf',
             selected: true,
+            pageCount: 8,
           },
           {
             id: 'deck-2b',
@@ -582,6 +616,7 @@ describe('App', () => {
             sourceUrl: 'https://indico.example.org/materials/deck-2b.pdf',
             mimeType: 'application/pdf',
             selected: false,
+            pageCount: 3,
           },
         ],
         annotatedSlideCount: 1,

@@ -111,6 +111,24 @@ describe('fetchIndicoJson', () => {
     ).rejects.toBeInstanceOf(IndicoResponseSizeError);
   });
 
+  it('accepts large Indico exports within the raised default cap', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      makeResponse({
+        headers: {
+          get: vi.fn().mockReturnValue('6793059'),
+        },
+        text: vi
+          .fn()
+          .mockResolvedValue('{"count":1,"results":[{"title":"Large"}]}'),
+      }),
+    );
+
+    await expect(fetchIndicoJson(identity, { fetchImpl })).resolves.toEqual({
+      count: 1,
+      results: [{ title: 'Large' }],
+    });
+  });
+
   it('only treats auth-like 403 responses as API-key prompts', () => {
     expect(
       isLikelyIndicoApiKeyError(
@@ -124,8 +142,6 @@ describe('fetchIndicoJson', () => {
         '<html><body>API key required for this event</body></html>',
       ),
     ).toBe(true);
-    expect(isLikelyIndicoApiKeyError(401, '<html>anything</html>')).toBe(
-      true,
-    );
+    expect(isLikelyIndicoApiKeyError(401, '<html>anything</html>')).toBe(true);
   });
 });

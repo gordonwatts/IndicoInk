@@ -21,4 +21,5 @@ export type AgendaTalkMaterialSummary = {
   sourceUrl: string;
   mimeType: string;
   selected: boolean;
+  pageCount: number | null;
 };

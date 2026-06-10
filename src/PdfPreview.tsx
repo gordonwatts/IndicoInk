@@ -24,7 +24,9 @@ import {
 } from './strokeTools';
 import { getPdfWorkerSrc } from './pdfjs';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
-import { IconButton, SegmentedControl, StatusLabel } from './ui';
+import type { AgendaTalkMaterialSummary } from './shared/agenda';
+import type { DeckCacheDownloadStatus } from './shared/deckCache';
+import { IconButton, PrimaryButton, SegmentedControl, StatusLabel } from './ui';
 
 type PdfPreviewState =
   | { kind: 'idle' }
@@ -210,7 +212,37 @@ const createIdlePersistenceStatus = (): PersistenceStatus => ({
   label: 'No saved workspace',
 });
 
-export function PdfPreview({ filePath }: { filePath: string | null }) {
+type PdfPreviewProps = {
+  filePath: string | null;
+  title?: string;
+  materials?: AgendaTalkMaterialSummary[];
+  selectedMaterialId?: string | null;
+  downloadStatus?: DeckCacheDownloadStatus | null;
+  conferenceId?: string | null;
+  talkId?: string | null;
+  workspaceDeckId?: string | null;
+  onBack?: () => void;
+  onSelectMaterial?: (deckId: string) => void;
+  onCancelDownload?: () => void;
+  onRetryDownload?: () => void;
+  onExportNotes?: () => void;
+};
+
+export function PdfPreview({
+  filePath,
+  title,
+  materials = [],
+  selectedMaterialId = null,
+  downloadStatus = null,
+  conferenceId = null,
+  talkId = null,
+  workspaceDeckId = null,
+  onBack,
+  onSelectMaterial,
+  onCancelDownload,
+  onRetryDownload,
+  onExportNotes,
+}: PdfPreviewProps) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
   const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
@@ -243,6 +275,11 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     null,
   );
   const currentSlideNumberRef = React.useRef(1);
+  const pageFigureRefs = React.useRef<Array<HTMLElement | null>>([]);
+  const [zoomLevel, setZoomLevel] = React.useState(1);
+  const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
+  const [jumpToSlideValue, setJumpToSlideValue] = React.useState('1');
+  const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(false);
 
   const resolvePointerInteraction = React.useCallback(
     (
@@ -443,6 +480,35 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
   const currentPageCount =
     state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0;
 
+  const handleJumpToSlide = React.useCallback(() => {
+    const parsed = Number(jumpToSlideValue);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > currentPageCount) {
+      return;
+    }
+
+    const pageNumber = parsed;
+    const pageIndex = pageNumber - 1;
+    const target = pageFigureRefs.current[pageIndex];
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    currentSlideNumberRef.current = pageNumber;
+    setCurrentSlideNumber(pageNumber);
+  }, [currentPageCount, jumpToSlideValue]);
+
+  const handleZoomIn = React.useCallback(() => {
+    setZoomLevel((currentZoom) =>
+      Math.min(2.5, Number((currentZoom + 0.15).toFixed(2))),
+    );
+  }, []);
+
+  const handleZoomOut = React.useCallback(() => {
+    setZoomLevel((currentZoom) =>
+      Math.max(0.5, Number((currentZoom - 0.15).toFixed(2))),
+    );
+  }, []);
+
   const schedulePersistenceSave = React.useCallback(() => {
     if (
       !filePath ||
@@ -472,16 +538,24 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         return;
       }
 
-      void window.indicoInk
-        .savePdfWorkspaceState({
-          sourceUrl: filePath,
-          pageCount: currentPageCount,
-          strokesByPage,
-          currentSlideNumber: currentSlideNumberRef.current,
-          scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
-          scrollTop: stageScrollRef.current?.scrollTop ?? 0,
-          zoom: 1,
-        })
+      const snapshot: PdfWorkspaceSnapshot = {
+        sourceUrl: filePath,
+        pageCount: currentPageCount,
+        strokesByPage,
+        currentSlideNumber: currentSlideNumberRef.current,
+        scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
+        scrollTop: stageScrollRef.current?.scrollTop ?? 0,
+        zoom: zoomLevel,
+        ...(workspaceDeckId && conferenceId ? { conferenceId } : {}),
+        ...(workspaceDeckId && talkId ? { talkId } : {}),
+        ...(workspaceDeckId ? { deckId: workspaceDeckId } : {}),
+      };
+
+      const saveWorkspace = workspaceDeckId
+        ? window.indicoInk.saveDeckWorkspaceState(snapshot)
+        : window.indicoInk.savePdfWorkspaceState(snapshot);
+
+      void saveWorkspace
         .then((result) => {
           setPersistenceStatus({
             kind: 'saved',
@@ -498,7 +572,14 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           });
         });
     }, 400);
-  }, [currentPageCount, filePath, state.kind, strokesByPage]);
+  }, [
+    currentPageCount,
+    filePath,
+    state.kind,
+    strokesByPage,
+    workspaceDeckId,
+    zoomLevel,
+  ]);
 
   React.useEffect(() => {
     if (
@@ -538,6 +619,8 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
         currentSlideNumberRef.current = pageIndex + 1;
+        setCurrentSlideNumber(pageIndex + 1);
+        setJumpToSlideValue(String(pageIndex + 1));
         const pageSize =
           state.kind === 'loading' || state.kind === 'ready'
             ? state.pageSizes[pageIndex]
@@ -774,6 +857,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
 
         const pageCount = document.numPages;
         pageCanvasRefs.current = Array.from({ length: pageCount }, () => null);
+        pageFigureRefs.current = Array.from({ length: pageCount }, () => null);
         setStrokesByPage(createEmptyStrokePages(pageCount));
         setUndoStack([]);
         setRedoStack([]);
@@ -802,8 +886,9 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           kind: 'loading',
           label: `Loading saved workspace for ${getFileName(filePath)}`,
         });
-        const savedWorkspace =
-          await window.indicoInk.loadPdfWorkspaceState(filePath);
+        const savedWorkspace = workspaceDeckId
+          ? await window.indicoInk.loadDeckWorkspaceState(workspaceDeckId)
+          : await window.indicoInk.loadPdfWorkspaceState(filePath);
         if (cancelled) {
           return;
         }
@@ -838,7 +923,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
             );
           }
 
-          const viewport = page.getViewport({ scale: 1.4 });
+          const viewport = page.getViewport({ scale: 1.4 * zoomLevel });
           const scale = window.devicePixelRatio || 1;
           const width = Math.floor(viewport.width);
           const height = Math.floor(viewport.height);
@@ -903,7 +988,7 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       }
       void loadingTask?.destroy?.();
     };
-  }, [filePath]);
+  }, [filePath, workspaceDeckId, zoomLevel]);
 
   React.useEffect(() => {
     if (state.kind !== 'ready' || !filePath) {
@@ -924,6 +1009,9 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
       }
 
       currentSlideNumberRef.current = restore.currentSlideNumber;
+      setCurrentSlideNumber(restore.currentSlideNumber);
+      setJumpToSlideValue(String(restore.currentSlideNumber));
+      setZoomLevel(restore.zoom || 1);
       pendingWorkspaceRestoreRef.current = null;
       persistenceHydratedRef.current = true;
       setPersistenceStatus({
@@ -979,32 +1067,98 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
           },
         }
       : null;
+  const pdfMaterials = materials.filter(
+    (material) => material.mimeType === 'application/pdf',
+  );
+  const downloadLabel =
+    downloadStatus?.message ??
+    (downloadStatus?.kind === 'downloading'
+      ? `Downloading ${Math.round(
+          downloadStatus.totalBytes
+            ? (downloadStatus.bytesDownloaded / downloadStatus.totalBytes) * 100
+            : 0,
+        )}%`
+      : downloadStatus?.kind === 'ready'
+        ? 'Download complete'
+        : null);
 
   return (
     <section className="pdf-preview" aria-label="PDF preview">
-      <div className="surface-panel-header">
-        <h3>Selected PDF</h3>
-        <p>Continuous vertical roll rendered with PDF.js print intent.</p>
+      <div className="pdf-preview-topbar">
+        <div className="surface-panel-header">
+          <h3>{title ?? 'Selected PDF'}</h3>
+          <p>Continuous vertical roll rendered with PDF.js print intent.</p>
+        </div>
+        <div className="pdf-preview-topbar-actions">
+          {onBack ? (
+            <IconButton label="Back to agenda" icon="back" onClick={onBack} />
+          ) : null}
+          {pdfMaterials.length > 1 && onSelectMaterial ? (
+            <SegmentedControl
+              options={pdfMaterials.map((material) => ({
+                label: material.title,
+                value: material.id,
+              }))}
+              value={selectedMaterialId ?? pdfMaterials[0]?.id ?? ''}
+              onChange={onSelectMaterial}
+            />
+          ) : null}
+          {onExportNotes ? (
+            <PrimaryButton icon="export" onClick={onExportNotes}>
+              Export notes
+            </PrimaryButton>
+          ) : null}
+        </div>
       </div>
 
-      {state.kind === 'idle' ? (
+      <div className="pdf-preview-status-row">
+        {downloadLabel ? (
+          <StatusLabel
+            label={downloadLabel}
+            tone={
+              downloadStatus?.kind === 'error'
+                ? 'error'
+                : downloadStatus?.kind === 'ready'
+                  ? 'success'
+                  : downloadStatus?.kind === 'canceled'
+                    ? 'warning'
+                    : 'neutral'
+            }
+            icon={
+              downloadStatus?.kind === 'error'
+                ? 'info'
+                : downloadStatus?.kind === 'ready'
+                  ? 'check'
+                  : 'info'
+            }
+          />
+        ) : null}
+        {state.kind === 'idle' ? (
+          <StatusLabel
+            label="Choose a PDF to render a preview."
+            tone="neutral"
+            icon="info"
+          />
+        ) : (
+          <StatusLabel
+            label={state.label}
+            tone={state.kind === 'error' ? 'error' : 'neutral'}
+            icon={state.kind === 'error' ? 'info' : 'check'}
+          />
+        )}
         <StatusLabel
-          label="Choose a PDF to render a preview."
+          label={`${currentSlideNumber} / ${currentPageCount || 0} slides`}
           tone="neutral"
-          icon="info"
+          icon="agenda"
         />
-      ) : (
-        <StatusLabel
-          label={state.label}
-          tone={state.kind === 'error' ? 'error' : 'neutral'}
-          icon={state.kind === 'error' ? 'info' : 'check'}
-        />
-      )}
+      </div>
 
-      <div className="pdf-preview-toolbar" aria-label="Mouse drawing mode">
+      <div className="pdf-preview-toolbar" aria-label="Annotation toolbar">
         <div className="surface-panel-header">
-          <h4>Input mode</h4>
-          <p>Mouse input can stay in draw mode or pan the document.</p>
+          <h4>Annotation toolbar</h4>
+          <p>
+            Draw, erase, undo, redo, zoom, and jump without leaving the roll.
+          </p>
         </div>
         <div className="pdf-preview-toolbar-row">
           <div className="pdf-preview-toolbar-actions">
@@ -1040,6 +1194,35 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
               disabled={!redoStack.length}
             />
           </div>
+          <div className="pdf-preview-toolbar-actions">
+            <IconButton label="Zoom out" icon="minus" onClick={handleZoomOut} />
+            <StatusLabel
+              label={`${Math.round(zoomLevel * 100)}%`}
+              icon="info"
+            />
+            <IconButton label="Zoom in" icon="plus" onClick={handleZoomIn} />
+          </div>
+        </div>
+        <div className="pdf-preview-toolbar-row">
+          <label className="field pdf-preview-jump-field">
+            <span>Jump to slide</span>
+            <input
+              value={jumpToSlideValue}
+              onChange={(event) => setJumpToSlideValue(event.target.value)}
+              type="number"
+              min={1}
+              max={currentPageCount || 1}
+            />
+          </label>
+          <PrimaryButton onClick={handleJumpToSlide}>Go</PrimaryButton>
+          {onCancelDownload &&
+          downloadStatus &&
+          downloadStatus.kind === 'downloading' ? (
+            <PrimaryButton onClick={onCancelDownload}>Cancel</PrimaryButton>
+          ) : null}
+          {onRetryDownload && downloadStatus?.kind === 'error' ? (
+            <PrimaryButton onClick={onRetryDownload}>Retry</PrimaryButton>
+          ) : null}
         </div>
         <div className="pdf-preview-toolbar-status">
           <StatusLabel
@@ -1190,10 +1373,70 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
         </div>
       </div>
 
+      <details
+        className="pdf-preview-navigator"
+        open={!isNavigatorCollapsed}
+        onToggle={(event) => {
+          setIsNavigatorCollapsed(!event.currentTarget.open);
+        }}
+      >
+        <summary>
+          Slide navigator
+          <StatusLabel
+            label={`${currentSlideNumber} / ${currentPageCount || 0}`}
+            tone="neutral"
+            icon="agenda"
+          />
+        </summary>
+        <div className="pdf-preview-navigator-grid">
+          {Array.from({ length: currentPageCount }, (_, index) => {
+            const annotated = (strokesByPage[index]?.length ?? 0) > 0;
+            return (
+              <button
+                key={index}
+                type="button"
+                className={`pdf-preview-navigator-item${index + 1 === currentSlideNumber ? ' is-active' : ''}`}
+                onClick={() => {
+                  setJumpToSlideValue(String(index + 1));
+                  currentSlideNumberRef.current = index + 1;
+                  setCurrentSlideNumber(index + 1);
+                  const target = pageFigureRefs.current[index];
+                  target?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  });
+                }}
+              >
+                <span>Slide {index + 1}</span>
+                {annotated ? (
+                  <StatusLabel
+                    label="Annotated"
+                    tone="warning"
+                    icon="annotated"
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </details>
+
       <div
         ref={stageScrollRef}
         className="pdf-preview-stage"
         onScroll={handleStageScroll}
+        onWheel={(event) => {
+          if (!event.ctrlKey) {
+            return;
+          }
+
+          event.preventDefault();
+          if (event.deltaY < 0) {
+            handleZoomIn();
+          } else {
+            handleZoomOut();
+          }
+        }}
       >
         {state.kind === 'ready' || state.kind === 'loading' ? (
           <div className="pdf-preview-pages">
@@ -1242,7 +1485,13 @@ export function PdfPreview({ filePath }: { filePath: string | null }) {
               );
 
               return (
-                <figure key={index} className="pdf-preview-page">
+                <figure
+                  key={index}
+                  className="pdf-preview-page"
+                  ref={(element) => {
+                    pageFigureRefs.current[index] = element;
+                  }}
+                >
                   <figcaption className="pdf-preview-page-caption">
                     <span>Page {index + 1}</span>
                     <StatusLabel

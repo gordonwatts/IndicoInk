@@ -9,6 +9,10 @@ import type {
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
+import type {
+  DeckCacheDownloadStatus,
+  DeckCacheOpenResult,
+} from './shared/deckCache';
 
 declare global {
   interface Window {
@@ -22,6 +26,12 @@ declare global {
       savePdfWorkspaceState: (
         snapshot: PdfWorkspaceSnapshot,
       ) => Promise<PdfWorkspaceSaveResult>;
+      loadDeckWorkspaceState: (
+        deckId: string,
+      ) => Promise<PdfWorkspaceSnapshot | null>;
+      saveDeckWorkspaceState: (
+        snapshot: PdfWorkspaceSnapshot,
+      ) => Promise<PdfWorkspaceSaveResult>;
       listLibraryEvents: () => Promise<LibraryEventSummary[]>;
       listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
       deleteLibraryEvent: (conferenceId: string) => Promise<void>;
@@ -31,6 +41,16 @@ declare global {
       ) => Promise<OpenLibraryEventResult>;
       saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
       setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
+      setSelectedDeck: (talkId: string, deckId: string) => Promise<void>;
+      openTalkDeck: (
+        conferenceId: string,
+        talkId: string,
+        deckId: string,
+      ) => Promise<DeckCacheOpenResult>;
+      getDeckDownloadStatus: (
+        operationId: string,
+      ) => Promise<DeckCacheDownloadStatus | null>;
+      cancelDeckDownload: (operationId: string) => Promise<void>;
       openExternalUrl: (url: string) => Promise<void>;
     };
   }

@@ -7,6 +7,10 @@ import type {
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
 import type {
+  DeckCacheDownloadStatus,
+  DeckCacheOpenResult,
+} from './shared/deckCache';
+import type {
   LibraryEventSummary,
   OpenLibraryEventResult,
 } from './shared/library';
@@ -30,6 +34,16 @@ const savePdfWorkspaceState = async (
   snapshot: PdfWorkspaceSnapshot,
 ): Promise<PdfWorkspaceSaveResult> =>
   ipcRenderer.invoke('persistence:save-pdf-workspace', snapshot);
+
+const loadDeckWorkspaceState = async (
+  deckId: string,
+): Promise<PdfWorkspaceSnapshot | null> =>
+  ipcRenderer.invoke('persistence:load-deck-workspace', deckId);
+
+const saveDeckWorkspaceState = async (
+  snapshot: PdfWorkspaceSnapshot,
+): Promise<PdfWorkspaceSaveResult> =>
+  ipcRenderer.invoke('persistence:save-deck-workspace', snapshot);
 
 const listLibraryEvents = async (): Promise<LibraryEventSummary[]> =>
   ipcRenderer.invoke('library:list-events');
@@ -56,7 +70,26 @@ const saveIndicoApiKey = async (
 const setTalkBookmarked = async (
   talkId: string,
   bookmarked: boolean,
-): Promise<void> => ipcRenderer.invoke('agenda:set-talk-bookmarked', talkId, bookmarked);
+): Promise<void> =>
+  ipcRenderer.invoke('agenda:set-talk-bookmarked', talkId, bookmarked);
+
+const setSelectedDeck = async (talkId: string, deckId: string): Promise<void> =>
+  ipcRenderer.invoke('agenda:set-selected-deck', talkId, deckId);
+
+const openTalkDeck = async (
+  conferenceId: string,
+  talkId: string,
+  deckId: string,
+): Promise<DeckCacheOpenResult> =>
+  ipcRenderer.invoke('deck:open', conferenceId, talkId, deckId);
+
+const getDeckDownloadStatus = async (
+  operationId: string,
+): Promise<DeckCacheDownloadStatus | null> =>
+  ipcRenderer.invoke('deck:download-status', operationId);
+
+const cancelDeckDownload = async (operationId: string): Promise<void> =>
+  ipcRenderer.invoke('deck:cancel-download', operationId);
 
 const openExternalUrl = async (url: string): Promise<void> =>
   ipcRenderer.invoke('system:open-external-url', url);
@@ -67,12 +100,18 @@ contextBridge.exposeInMainWorld('indicoInk', {
   readPdfBytes,
   loadPdfWorkspaceState,
   savePdfWorkspaceState,
+  loadDeckWorkspaceState,
+  saveDeckWorkspaceState,
   listLibraryEvents,
   listAgendaTalks,
   deleteLibraryEvent,
   openLibraryEvent,
   saveIndicoApiKey,
   setTalkBookmarked,
+  setSelectedDeck,
+  openTalkDeck,
+  getDeckDownloadStatus,
+  cancelDeckDownload,
   openExternalUrl,
 });
 
@@ -86,6 +125,12 @@ export type IndicoInkApi = {
   savePdfWorkspaceState: (
     snapshot: PdfWorkspaceSnapshot,
   ) => Promise<PdfWorkspaceSaveResult>;
+  loadDeckWorkspaceState: (
+    deckId: string,
+  ) => Promise<PdfWorkspaceSnapshot | null>;
+  saveDeckWorkspaceState: (
+    snapshot: PdfWorkspaceSnapshot,
+  ) => Promise<PdfWorkspaceSaveResult>;
   listLibraryEvents: () => Promise<LibraryEventSummary[]>;
   listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
   deleteLibraryEvent: (conferenceId: string) => Promise<void>;
@@ -95,5 +140,15 @@ export type IndicoInkApi = {
   ) => Promise<OpenLibraryEventResult>;
   saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
   setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
+  setSelectedDeck: (talkId: string, deckId: string) => Promise<void>;
+  openTalkDeck: (
+    conferenceId: string,
+    talkId: string,
+    deckId: string,
+  ) => Promise<DeckCacheOpenResult>;
+  getDeckDownloadStatus: (
+    operationId: string,
+  ) => Promise<DeckCacheDownloadStatus | null>;
+  cancelDeckDownload: (operationId: string) => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
 };

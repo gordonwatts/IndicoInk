@@ -26,6 +26,8 @@ import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
+import { DeckCacheManager } from './deckCache';
+import type { DeckCacheDownloadStatus } from './shared/deckCache';
 import {
   getIsolatedUserDataPath,
   shouldDisableGpu,
@@ -39,6 +41,7 @@ import type { OpenLibraryEventResult } from './shared/library';
 let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
 let credentialStore: IndicoCredentialStore | null = null;
+let deckCacheManager: DeckCacheManager | null = null;
 const importFixtureName = getImportFixtureName(process.argv);
 
 if (shouldDisableGpu()) {
@@ -74,6 +77,13 @@ const getCredentialStore = () =>
   (credentialStore = new IndicoCredentialStore(
     join(app.getPath('userData'), 'indicoink-credentials.json'),
     safeStorage,
+  ));
+
+const getDeckCacheManager = () =>
+  deckCacheManager ??
+  (deckCacheManager = new DeckCacheManager(
+    join(app.getPath('userData'), 'deck-cache'),
+    session.defaultSession.fetch.bind(session.defaultSession),
   ));
 
 function getImportFixtureName(argv: string[]) {
@@ -221,10 +231,8 @@ ipcMain.handle('library:list-events', async () =>
   buildLibraryEventSummaries(getPersistenceStore()),
 );
 
-ipcMain.handle(
-  'agenda:list-talks',
-  async (_event, conferenceId: string) =>
-    buildAgendaTalkSummaries(getPersistenceStore(), conferenceId),
+ipcMain.handle('agenda:list-talks', async (_event, conferenceId: string) =>
+  buildAgendaTalkSummaries(getPersistenceStore(), conferenceId),
 );
 
 ipcMain.handle(
@@ -313,6 +321,50 @@ ipcMain.handle(
   async (_event, snapshot: PdfWorkspaceSnapshot) =>
     getPersistenceStore().saveLocalPdfWorkspace(snapshot),
 );
+
+ipcMain.handle(
+  'persistence:load-deck-workspace',
+  async (_event, deckId: string) =>
+    getPersistenceStore().loadDeckPdfWorkspace(deckId),
+);
+
+ipcMain.handle(
+  'persistence:save-deck-workspace',
+  async (_event, snapshot: PdfWorkspaceSnapshot) =>
+    getPersistenceStore().saveDeckPdfWorkspace(snapshot),
+);
+
+ipcMain.handle(
+  'agenda:set-selected-deck',
+  async (_event, talkId: string, deckId: string) => {
+    await getPersistenceStore().setSelectedDeckForTalk(talkId, deckId);
+  },
+);
+
+ipcMain.handle(
+  'deck:open',
+  async (_event, conferenceId: string, talkId: string, deckId: string) => {
+    const deck = await getPersistenceStore().getDeck(deckId);
+    if (!deck || deck.conferenceId !== conferenceId || deck.talkId !== talkId) {
+      throw new Error('The requested deck does not exist.');
+    }
+
+    return getDeckCacheManager().openDeck(deck);
+  },
+);
+
+ipcMain.handle(
+  'deck:download-status',
+  async (
+    _event,
+    operationId: string,
+  ): Promise<DeckCacheDownloadStatus | null> =>
+    getDeckCacheManager().getDownloadStatus(operationId),
+);
+
+ipcMain.handle('deck:cancel-download', async (_event, operationId: string) => {
+  await getDeckCacheManager().cancelDownload(operationId);
+});
 
 app.whenReady().then(() => {
   if (importFixtureName) {

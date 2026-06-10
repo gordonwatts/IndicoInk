@@ -67,7 +67,9 @@ export const isLikelyIndicoApiKeyError = (
     return true;
   }
 
-  if (cloudflareChallengePatterns.some((pattern) => pattern.test(responseBody))) {
+  if (
+    cloudflareChallengePatterns.some((pattern) => pattern.test(responseBody))
+  ) {
     return false;
   }
 
@@ -96,7 +98,7 @@ export type FetchIndicoJsonOptions = {
 };
 
 const defaultTimeoutMilliseconds = 15_000;
-const defaultMaxBytes = 2_000_000;
+const defaultMaxBytes = 15_000_000;
 
 const getByteLength = (value: string) => Buffer.byteLength(value, 'utf8');
 

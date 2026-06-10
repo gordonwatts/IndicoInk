@@ -362,7 +362,8 @@ function getColumnMarkerTopPx(
     if (beforeTalk) {
       const beforeEnd = getAgendaTalkEndMinutes(beforeTalk.talk);
       const beforeDeltaMinutes = Math.max(1, startMinutes - beforeEnd);
-      const beforeBottom = column.blockTopPx + beforeTalk.topPx + beforeTalk.heightPx;
+      const beforeBottom =
+        column.blockTopPx + beforeTalk.topPx + beforeTalk.heightPx;
       return (
         beforeBottom +
         ((minute - beforeEnd) / beforeDeltaMinutes) *

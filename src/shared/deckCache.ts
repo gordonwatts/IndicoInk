@@ -1,0 +1,55 @@
+export type DeckCacheOpenReadyResult = {
+  kind: 'ready';
+  conferenceId: string;
+  talkId: string;
+  deckId: string;
+  sourceUrl: string;
+  displayName: string;
+  filePath: string;
+  pageCount: number;
+};
+
+export type DeckCacheOpenDownloadingResult = {
+  kind: 'downloading';
+  conferenceId: string;
+  talkId: string;
+  deckId: string;
+  sourceUrl: string;
+  displayName: string;
+  filePath: string;
+  pageCount: number;
+  operationId: string;
+};
+
+export type DeckCacheOpenErrorResult = {
+  kind: 'error';
+  conferenceId: string;
+  talkId: string;
+  deckId: string;
+  sourceUrl: string;
+  displayName: string;
+  filePath: string;
+  pageCount: number;
+  operationId: string | null;
+  message: string;
+};
+
+export type DeckCacheOpenResult =
+  | DeckCacheOpenReadyResult
+  | DeckCacheOpenDownloadingResult
+  | DeckCacheOpenErrorResult;
+
+export type DeckCacheDownloadStatus = {
+  operationId: string;
+  conferenceId: string;
+  talkId: string;
+  deckId: string;
+  sourceUrl: string;
+  displayName: string;
+  filePath: string;
+  kind: 'queued' | 'downloading' | 'ready' | 'error' | 'canceled';
+  bytesDownloaded: number;
+  totalBytes: number | null;
+  message: string | null;
+  updatedAt: number;
+};

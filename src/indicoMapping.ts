@@ -380,7 +380,10 @@ const mapContribution = (
   const speakers = speakerEntities
     .map((speaker) => speaker.name)
     .filter(Boolean);
-  const materials = collectMaterials(contribution.material, contribution.folders)
+  const materials = collectMaterials(
+    contribution.material,
+    contribution.folders,
+  )
     .map((material, materialIndex) =>
       mapMaterial(contributionId, material, materialIndex),
     )

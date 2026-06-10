@@ -646,6 +646,15 @@ export class PersistenceStore {
     await this.flushIfNeeded();
   }
 
+  async setSelectedDeckForTalk(talkId: string, deckId: string) {
+    const db = await this.getDb();
+    db.prepare(
+      'UPDATE decks SET selected = CASE WHEN id = ? THEN 1 ELSE 0 END, updated_at = ? WHERE talk_id = ?',
+    ).run([deckId, this.now(), talkId]);
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
   async upsertSlide(slide: Slide): Promise<Slide> {
     const db = await this.getDb();
     db.prepare(
@@ -864,6 +873,57 @@ export class PersistenceStore {
 
     return {
       sourceUrl,
+      conferenceId: conference.id,
+      talkId: talkId,
+      deckId,
+      pageCount: slides.length,
+      strokesByPage: slides.map((slide) =>
+        (annotationsBySlide.get(slide.id) ?? [])
+          .filter(
+            (annotation): annotation is PenStroke => 'points' in annotation,
+          )
+          .map((annotation) => ({
+            id: annotation.id,
+            pageNumber: slide.slideNumber,
+            points: annotation.points,
+          })),
+      ),
+      currentSlideNumber: viewState?.currentSlideNumber ?? 1,
+      scrollLeft: viewState?.scrollLeft ?? 0,
+      scrollTop: viewState?.scrollTop ?? 0,
+      zoom: viewState?.zoom ?? 1,
+    };
+  }
+
+  async loadDeckPdfWorkspace(
+    deckId: string,
+  ): Promise<PdfWorkspaceSnapshot | null> {
+    const deck = await this.getDeck(deckId);
+    if (!deck) {
+      return null;
+    }
+
+    const conference = await this.getConference(deck.conferenceId);
+    const talk = await this.getTalk(deck.talkId);
+    if (!conference || !talk) {
+      return null;
+    }
+
+    const slides = await this.listSlidesByDeck(deckId);
+    const annotationsBySlide = new Map<string, Annotation[]>();
+    for (const slide of slides) {
+      annotationsBySlide.set(
+        slide.id,
+        await this.listAnnotationsBySlide(slide.id),
+      );
+    }
+    const viewState = await this.getViewState(deckId);
+
+    return {
+      sourceUrl: deck.sourceUrl,
+      conferenceId: conference.id,
+      talkId: talk.id,
+      deckId,
       pageCount: slides.length,
       strokesByPage: slides.map((slide) =>
         (annotationsBySlide.get(slide.id) ?? [])
@@ -983,6 +1043,82 @@ export class PersistenceStore {
 
     return {
       sourceUrl: state.sourceUrl,
+      pageCount: state.pageCount,
+      savedAt: now,
+    };
+  }
+
+  async saveDeckPdfWorkspace(
+    state: PdfWorkspaceSnapshot,
+  ): Promise<PdfWorkspaceSaveResult> {
+    const conferenceId = state.conferenceId;
+    const talkId = state.talkId;
+    const deckId = state.deckId;
+    if (!conferenceId || !talkId || !deckId) {
+      return this.saveLocalPdfWorkspace(state);
+    }
+
+    const now = this.now();
+    const conference = await this.getConference(conferenceId);
+    const talk = await this.getTalk(talkId);
+    const deck = await this.getDeck(deckId);
+    if (!conference || !talk || !deck) {
+      throw new Error('Cannot save a deck workspace for an unknown deck.');
+    }
+
+    await this.transaction(async () => {
+      await this.deleteSlidesByDeck(deckId);
+
+      for (let pageIndex = 0; pageIndex < state.pageCount; pageIndex += 1) {
+        const slideNumber = pageIndex + 1;
+        const slideId = createSlideId(deckId, slideNumber);
+        const pageStrokes = state.strokesByPage[pageIndex] ?? [];
+        const annotated = pageStrokes.length > 0;
+
+        await this.upsertSlide({
+          id: slideId,
+          conferenceId,
+          talkId,
+          deckId,
+          slideNumber,
+          annotated,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        for (const stroke of pageStrokes) {
+          await this.upsertAnnotation({
+            id: stroke.id,
+            conferenceId,
+            talkId,
+            deckId,
+            slideId,
+            points: stroke.points,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+
+      await this.upsertViewState({
+        id: createViewStateId(deckId),
+        conferenceId,
+        talkId,
+        deckId,
+        slideId: state.currentSlideNumber
+          ? createSlideId(deckId, state.currentSlideNumber)
+          : null,
+        currentSlideNumber: state.currentSlideNumber,
+        zoom: state.zoom,
+        scrollLeft: state.scrollLeft,
+        scrollTop: state.scrollTop,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    return {
+      sourceUrl: deck.sourceUrl,
       pageCount: state.pageCount,
       savedAt: now,
     };
