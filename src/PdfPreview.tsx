@@ -188,7 +188,12 @@ const getPagePoint = (
   event: React.PointerEvent<HTMLElement>,
   pageSize: PageSize,
 ): NormalizedPagePoint => {
-  const bounds = event.currentTarget.getBoundingClientRect();
+  const canvas = event.currentTarget.querySelector<HTMLCanvasElement>(
+    '.pdf-preview-canvas',
+  );
+  const bounds =
+    canvas?.getBoundingClientRect() ??
+    event.currentTarget.getBoundingClientRect();
   const relativePoint = {
     x: event.clientX - bounds.left,
     y: event.clientY - bounds.top,
@@ -409,6 +414,7 @@ export function PdfPreview({
     (eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
         if (eventKind === 'pointerdown') {
+          event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
         }
 
