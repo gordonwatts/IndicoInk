@@ -1461,39 +1461,43 @@ export function PdfPreview({
               const pageStrokes = strokesByPage[index] ?? [];
               const marker =
                 pointerMarker?.pageIndex === index ? pointerMarker : null;
-              const strokeSegments = pageStrokes.flatMap((stroke) => {
-                const strokePoints = getRenderableStrokePoints(stroke);
+              const hasRenderablePageSize =
+                pageSize.width > 0 && pageSize.height > 0;
+              const strokeSegments = hasRenderablePageSize
+                ? pageStrokes.flatMap((stroke) => {
+                    const strokePoints = getRenderableStrokePoints(stroke);
 
-                if (strokePoints.length === 1) {
-                  const point = strokePoints[0]!;
+                    if (strokePoints.length === 1) {
+                      const point = strokePoints[0]!;
 
-                  return [
-                    <circle
-                      key={`${stroke.id}-point`}
-                      cx={point.x * (pageSize.width || 1)}
-                      cy={point.y * (pageSize.height || 1)}
-                      r={point.pressure > 0 ? 2.5 + point.pressure * 2 : 3}
-                      fill="#111111"
-                    />,
-                  ];
-                }
+                      return [
+                        <circle
+                          key={`${stroke.id}-point`}
+                          cx={point.x * pageSize.width}
+                          cy={point.y * pageSize.height}
+                          r={point.pressure > 0 ? 2.5 + point.pressure * 2 : 3}
+                          fill="#111111"
+                        />,
+                      ];
+                    }
 
-                return createStrokeSegmentList(strokePoints, pageSize).map(
-                  (segment, segmentIndex) => (
-                    <line
-                      key={`${stroke.id}-${segmentIndex}`}
-                      x1={segment.x1}
-                      y1={segment.y1}
-                      x2={segment.x2}
-                      y2={segment.y2}
-                      stroke="#111111"
-                      strokeWidth={segment.width}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  ),
-                );
-              });
+                    return createStrokeSegmentList(strokePoints, pageSize).map(
+                      (segment, segmentIndex) => (
+                        <line
+                          key={`${stroke.id}-${segmentIndex}`}
+                          x1={segment.x1}
+                          y1={segment.y1}
+                          x2={segment.x2}
+                          y2={segment.y2}
+                          stroke="#111111"
+                          strokeWidth={segment.width}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ),
+                    );
+                  })
+                : [];
 
               return (
                 <figure
@@ -1546,20 +1550,20 @@ export function PdfPreview({
                       preserveAspectRatio="none"
                     >
                       {strokeSegments}
-                      {marker ? (
+                      {marker && hasRenderablePageSize ? (
                         marker.tool === 'pen' ? (
                           <circle
                             key="pointer-marker"
-                            cx={marker.point.x * (pageSize.width || 1)}
-                            cy={marker.point.y * (pageSize.height || 1)}
+                            cx={marker.point.x * pageSize.width}
+                            cy={marker.point.y * pageSize.height}
                             r="5"
                             className="pdf-preview-pointer-marker pen"
                           />
                         ) : (
                           <rect
                             key="pointer-marker"
-                            x={marker.point.x * (pageSize.width || 1) - 6}
-                            y={marker.point.y * (pageSize.height || 1) - 6}
+                            x={marker.point.x * pageSize.width - 6}
+                            y={marker.point.y * pageSize.height - 6}
                             width="12"
                             height="12"
                             rx="3"

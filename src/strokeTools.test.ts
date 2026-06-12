@@ -35,6 +35,20 @@ describe('strokeTools', () => {
     });
   });
 
+  it('skips zero-sized pages when rendering or hit-testing strokes', () => {
+    const stroke = {
+      id: 'stroke-1',
+      pageNumber: 1,
+      points: [
+        { x: 0.1, y: 0.1, pressure: 0.5, time: 1 },
+        { x: 0.9, y: 0.9, pressure: 0.5, time: 2 },
+      ],
+    };
+
+    expect(createStrokeSegmentList(stroke.points, { width: 0, height: 100 })).toEqual([]);
+    expect(strokeHitsPoint(stroke, stroke.points[0]!, { width: 0, height: 100 })).toBe(false);
+  });
+
   it('hits strokes that intersect the eraser radius', () => {
     expect(
       strokeHitsPoint(

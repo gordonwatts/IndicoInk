@@ -30,7 +30,11 @@ export const createStrokeSegmentList = (
   points: NormalizedPagePoint[],
   pageSize: PageSize,
 ): StrokeSegment[] => {
-  if (points.length < 2) {
+  if (
+    points.length < 2 ||
+    pageSize.width <= 0 ||
+    pageSize.height <= 0
+  ) {
     return [];
   }
 
@@ -78,6 +82,10 @@ export const strokeHitsPoint = (
   point: NormalizedPagePoint,
   pageSize: PageSize,
 ) => {
+  if (pageSize.width <= 0 || pageSize.height <= 0) {
+    return false;
+  }
+
   const screenPoint = toScreenPoint(point, pageSize);
   const segments = createStrokeSegmentList(stroke.points, pageSize);
 
