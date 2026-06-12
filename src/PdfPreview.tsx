@@ -131,6 +131,9 @@ const createPageStatuses = (pageCount: number) =>
 const createEmptyStrokePages = (pageCount: number) =>
   Array.from({ length: pageCount }, () => [] as InkStroke[]);
 
+const getRenderableStrokePoints = (stroke: InkStroke) =>
+  Array.isArray(stroke.points) ? stroke.points : [];
+
 const cloneStrokePages = (pages: Array<InkStroke[]>) =>
   pages.map((pageStrokes) =>
     pageStrokes.map((stroke) => ({
@@ -1458,37 +1461,39 @@ export function PdfPreview({
               const pageStrokes = strokesByPage[index] ?? [];
               const marker =
                 pointerMarker?.pageIndex === index ? pointerMarker : null;
-              const strokeSegments = pageStrokes.flatMap((stroke) =>
-                stroke.points.length === 1
-                  ? [
-                      <circle
-                        key={`${stroke.id}-point`}
-                        cx={stroke.points[0]!.x * (pageSize.width || 1)}
-                        cy={stroke.points[0]!.y * (pageSize.height || 1)}
-                        r={
-                          stroke.points[0]!.pressure > 0
-                            ? 2.5 + stroke.points[0]!.pressure * 2
-                            : 3
-                        }
-                        fill="#111111"
-                      />,
-                    ]
-                  : createStrokeSegmentList(stroke.points, pageSize).map(
-                      (segment, segmentIndex) => (
-                        <line
-                          key={`${stroke.id}-${segmentIndex}`}
-                          x1={segment.x1}
-                          y1={segment.y1}
-                          x2={segment.x2}
-                          y2={segment.y2}
-                          stroke="#111111"
-                          strokeWidth={segment.width}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      ),
-                    ),
-              );
+              const strokeSegments = pageStrokes.flatMap((stroke) => {
+                const strokePoints = getRenderableStrokePoints(stroke);
+
+                if (strokePoints.length === 1) {
+                  const point = strokePoints[0]!;
+
+                  return [
+                    <circle
+                      key={`${stroke.id}-point`}
+                      cx={point.x * (pageSize.width || 1)}
+                      cy={point.y * (pageSize.height || 1)}
+                      r={point.pressure > 0 ? 2.5 + point.pressure * 2 : 3}
+                      fill="#111111"
+                    />,
+                  ];
+                }
+
+                return createStrokeSegmentList(strokePoints, pageSize).map(
+                  (segment, segmentIndex) => (
+                    <line
+                      key={`${stroke.id}-${segmentIndex}`}
+                      x1={segment.x1}
+                      y1={segment.y1}
+                      x2={segment.x2}
+                      y2={segment.y2}
+                      stroke="#111111"
+                      strokeWidth={segment.width}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ),
+                );
+              });
 
               return (
                 <figure

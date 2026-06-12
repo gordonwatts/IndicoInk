@@ -65,7 +65,26 @@ const serializePoints = (points: NormalizedPagePoint[]) =>
   JSON.stringify(points);
 
 const deserializePoints = (value: string): NormalizedPagePoint[] =>
-  JSON.parse(value) as NormalizedPagePoint[];
+  (() => {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed.filter(
+        (point): point is NormalizedPagePoint =>
+          typeof point === 'object' &&
+          point !== null &&
+          typeof (point as Record<string, unknown>).x === 'number' &&
+          typeof (point as Record<string, unknown>).y === 'number' &&
+          typeof (point as Record<string, unknown>).pressure === 'number' &&
+          typeof (point as Record<string, unknown>).time === 'number',
+      );
+    } catch {
+      return [];
+    }
+  })();
 
 const migration1 = (db: SqliteDatabaseAdapter) => {
   db.exec(`
@@ -880,7 +899,8 @@ export class PersistenceStore {
       strokesByPage: slides.map((slide) =>
         (annotationsBySlide.get(slide.id) ?? [])
           .filter(
-            (annotation): annotation is PenStroke => 'points' in annotation,
+            (annotation): annotation is PenStroke =>
+              'points' in annotation && annotation.points.length > 0,
           )
           .map((annotation) => ({
             id: annotation.id,
@@ -928,7 +948,8 @@ export class PersistenceStore {
       strokesByPage: slides.map((slide) =>
         (annotationsBySlide.get(slide.id) ?? [])
           .filter(
-            (annotation): annotation is PenStroke => 'points' in annotation,
+            (annotation): annotation is PenStroke =>
+              'points' in annotation && annotation.points.length > 0,
           )
           .map((annotation) => ({
             id: annotation.id,

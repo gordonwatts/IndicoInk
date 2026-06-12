@@ -204,4 +204,52 @@ describe('persistence store', () => {
     expect(restored?.zoom).toBe(1.25);
     await secondStore.close();
   });
+
+  it('skips malformed annotation payloads while loading a workspace', async () => {
+    const dbPath = createTempDbPath('corrupt-workspace');
+    const sourceUrl = 'C:\\slides\\corrupt.pdf';
+
+    const firstStore = new PersistenceStore(dbPath, () => 1700000000000);
+    await firstStore.saveLocalPdfWorkspace({
+      sourceUrl,
+      pageCount: 1,
+      strokesByPage: [
+        [
+          {
+            id: 'stroke-1',
+            pageNumber: 1,
+            points: [
+              { x: 0.1, y: 0.2, pressure: 0.4, time: 1 },
+              { x: 0.3, y: 0.4, pressure: 0.8, time: 2 },
+            ],
+          },
+        ],
+      ],
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+    await firstStore.close();
+
+    const SQL = await initSqlJs({
+      locateFile: () => sqlWasmUrl,
+    });
+    const corruptedDb = new SQL.Database(
+      new Uint8Array(await readFile(dbPath)),
+    );
+    corruptedDb.exec(
+      "UPDATE annotations SET payload_json = 'not-json' WHERE id = 'stroke-1';",
+    );
+    writeFileSync(dbPath, corruptedDb.export());
+    corruptedDb.close();
+
+    const secondStore = new PersistenceStore(dbPath, () => 1700000005000);
+    const restored = await secondStore.loadLocalPdfWorkspace(sourceUrl);
+
+    expect(restored?.pageCount).toBe(1);
+    expect(restored?.strokesByPage[0]).toHaveLength(0);
+    expect(restored?.currentSlideNumber).toBe(1);
+    await secondStore.close();
+  });
 });
