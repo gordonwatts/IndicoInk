@@ -11,6 +11,19 @@ describe('App', () => {
       configurable: true,
       writable: true,
     });
+    class ResizeObserverMock {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+    Object.defineProperty(window, 'ResizeObserver', {
+      value: ResizeObserverMock,
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      value: ResizeObserverMock,
+      configurable: true,
+    });
     window.scrollTo = vi.fn();
     window.requestAnimationFrame = vi.fn((callback) => {
       callback(performance.now());
@@ -546,6 +559,123 @@ describe('App', () => {
     expect(
       screen.getByText(libraryEvent.title, {
         selector: '.nav-rail-foot strong',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('keeps non-PDF materials in talk details and opens the selected PDF deck', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-chooser',
+      sourceUrl: 'https://indico.example.org/event/chooser-2026',
+      title: 'Chooser Event 2026',
+      dates: 'June 12, 2026',
+      host: 'chooser.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '1 annotated slide',
+      cacheStatus: 'Cached for offline use',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-chooser',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-chooser',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Opening the right deck',
+        speaker: 'Judy Clapp',
+        sessionTitle: 'Tooling session',
+        timeRangeLabel: '09:00 - 09:30',
+        room: 'Auditorium B',
+        bookmarked: false,
+        materialSummary: '2 PDFs',
+        materials: [
+          {
+            id: 'deck-main',
+            title: 'Main deck',
+            sourceUrl: 'https://indico.example.org/materials/main.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+            pageCount: 10,
+          },
+          {
+            id: 'deck-alt',
+            title: 'Alternate deck',
+            sourceUrl: 'https://indico.example.org/materials/alt.pdf',
+            mimeType: 'application/pdf',
+            selected: false,
+            pageCount: 6,
+          },
+          {
+            id: 'slides-notes',
+            title: 'Speaker notes',
+            sourceUrl: 'https://indico.example.org/materials/notes.txt',
+            mimeType: 'text/plain',
+            selected: false,
+            pageCount: null,
+          },
+        ],
+        annotatedSlideCount: 1,
+      },
+    ];
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open details for Opening the right deck',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Talk details',
+        level: 2,
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('Main deck · 10 pages')).toBeTruthy();
+    expect(screen.getByText('Alternate deck · 6 pages')).toBeTruthy();
+    expect(screen.getByText('Speaker notes · text/plain')).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Select Alternate deck for Opening the right deck',
+      }),
+    );
+
+    expect(window.indicoInk.setSelectedDeck).toHaveBeenCalledWith(
+      'talk-chooser',
+      'deck-alt',
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open slides',
+      }),
+    );
+
+    expect(window.indicoInk.openTalkDeck).toHaveBeenCalledWith(
+      libraryEvent.id,
+      'talk-chooser',
+      'deck-alt',
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Opening the right deck',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Alternate deck',
       }),
     ).toBeTruthy();
   });

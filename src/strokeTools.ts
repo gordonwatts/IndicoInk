@@ -30,11 +30,7 @@ export const createStrokeSegmentList = (
   points: NormalizedPagePoint[],
   pageSize: PageSize,
 ): StrokeSegment[] => {
-  if (
-    points.length < 2 ||
-    pageSize.width <= 0 ||
-    pageSize.height <= 0
-  ) {
+  if (points.length < 2 || pageSize.width <= 0 || pageSize.height <= 0) {
     return [];
   }
 

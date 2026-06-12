@@ -45,8 +45,12 @@ describe('strokeTools', () => {
       ],
     };
 
-    expect(createStrokeSegmentList(stroke.points, { width: 0, height: 100 })).toEqual([]);
-    expect(strokeHitsPoint(stroke, stroke.points[0]!, { width: 0, height: 100 })).toBe(false);
+    expect(
+      createStrokeSegmentList(stroke.points, { width: 0, height: 100 }),
+    ).toEqual([]);
+    expect(
+      strokeHitsPoint(stroke, stroke.points[0]!, { width: 0, height: 100 }),
+    ).toBe(false);
   });
 
   it('hits strokes that intersect the eraser radius', () => {

@@ -252,4 +252,79 @@ describe('persistence store', () => {
     expect(restored?.currentSlideNumber).toBe(1);
     await secondStore.close();
   });
+
+  it('remembers the selected deck for a talk across restart', async () => {
+    const dbPath = createTempDbPath('selected-deck');
+    const now = 1700000000000;
+
+    const firstStore = new PersistenceStore(dbPath, () => now);
+    await firstStore.transaction(async (repo) => {
+      await repo.upsertConference({
+        id: 'conference-1',
+        sourceUrl: 'https://example.org/event/chooser',
+        title: 'Chooser Conference',
+        dates: 'June 12, 2026',
+        host: 'chooser.example.org',
+        lastOpenedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await repo.upsertTalk({
+        id: 'talk-1',
+        conferenceId: 'conference-1',
+        contributionId: 'contribution-1',
+        title: 'Choosing the right deck',
+        speaker: 'Judy Clapp',
+        sessionTitle: 'Tools session',
+        startsAt: now,
+        endsAt: now + 1_800_000,
+        room: 'Auditorium B',
+        bookmarked: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await repo.upsertDeck({
+        id: 'deck-a',
+        conferenceId: 'conference-1',
+        talkId: 'talk-1',
+        sourceUrl: 'https://example.org/materials/main.pdf',
+        displayName: 'Main deck',
+        mimeType: 'application/pdf',
+        selected: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await repo.upsertDeck({
+        id: 'deck-b',
+        conferenceId: 'conference-1',
+        talkId: 'talk-1',
+        sourceUrl: 'https://example.org/materials/alt.pdf',
+        displayName: 'Alternate deck',
+        mimeType: 'application/pdf',
+        selected: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await firstStore.setSelectedDeckForTalk('talk-1', 'deck-b');
+    await firstStore.close();
+
+    const secondStore = new PersistenceStore(dbPath, () => now + 5000);
+    const decks = await secondStore.listDecksByTalk('talk-1');
+
+    expect(decks).toHaveLength(2);
+    expect(decks.find((deck) => deck.id === 'deck-a')?.selected).toBe(false);
+    expect(decks.find((deck) => deck.id === 'deck-b')?.selected).toBe(true);
+
+    await expect(secondStore.loadDeckPdfWorkspace('deck-b')).resolves.toEqual(
+      expect.objectContaining({
+        deckId: 'deck-b',
+        conferenceId: 'conference-1',
+        talkId: 'talk-1',
+        pageCount: 0,
+      }),
+    );
+    await secondStore.close();
+  });
 });
