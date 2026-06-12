@@ -285,9 +285,37 @@ export function PdfPreview({
   const currentSlideNumberRef = React.useRef(1);
   const pageFigureRefs = React.useRef<Array<HTMLElement | null>>([]);
   const [zoomLevel, setZoomLevel] = React.useState(1);
+  const [previewViewportWidth, setPreviewViewportWidth] = React.useState(0);
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [jumpToSlideValue, setJumpToSlideValue] = React.useState('1');
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(false);
+
+  React.useEffect(() => {
+    const viewportElement = stageScrollRef.current;
+    if (!viewportElement) {
+      return;
+    }
+
+    const updateWidth = () => {
+      const nextWidth = Math.max(
+        0,
+        Math.floor(viewportElement.getBoundingClientRect().width - 36),
+      );
+      setPreviewViewportWidth((currentWidth) =>
+        currentWidth === nextWidth ? currentWidth : nextWidth,
+      );
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(() => {
+      updateWidth();
+    });
+    observer.observe(viewportElement);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const resolvePointerInteraction = React.useCallback(
     (
@@ -932,7 +960,14 @@ export function PdfPreview({
             );
           }
 
-          const viewport = page.getViewport({ scale: 1.4 * zoomLevel });
+          const baseViewport = page.getViewport({ scale: 1 });
+          const fitScale =
+            previewViewportWidth > 0
+              ? previewViewportWidth / baseViewport.width
+              : 1;
+          const viewport = page.getViewport({
+            scale: fitScale * zoomLevel,
+          });
           const scale = window.devicePixelRatio || 1;
           const width = Math.floor(viewport.width);
           const height = Math.floor(viewport.height);
@@ -997,7 +1032,7 @@ export function PdfPreview({
       }
       void loadingTask?.destroy?.();
     };
-  }, [filePath, workspaceDeckId, zoomLevel]);
+  }, [filePath, previewViewportWidth, workspaceDeckId, zoomLevel]);
 
   React.useEffect(() => {
     if (state.kind !== 'ready' || !filePath) {
