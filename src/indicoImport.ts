@@ -49,6 +49,7 @@ export const importIndicoEvent = async (
         id: talkId,
         conferenceId: identity.conferenceId,
         contributionId: talk.contributionId,
+        contributionUrl: talk.contributionUrl,
         title: talk.title,
         speaker: talk.speaker,
         sessionTitle: talk.sessionTitle,

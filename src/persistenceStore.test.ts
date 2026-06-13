@@ -41,6 +41,8 @@ describe('persistence store', () => {
           id: 'talk-1',
           conferenceId: 'conference-1',
           contributionId: 'contribution-1',
+          contributionUrl:
+            'https://example.org/event/contributions/contribution-1/',
           title: 'Talk One',
           speaker: 'Speaker One',
           sessionTitle: 'Session One',
@@ -150,7 +152,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(2);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(3);
     versionDb.close();
     await store.close();
   });
@@ -245,6 +247,8 @@ describe('persistence store', () => {
         id: 'talk-history',
         conferenceId: 'conference-history',
         contributionId: 'contribution-history',
+        contributionUrl:
+          'https://example.org/event/history/contributions/contribution-history/',
         title: 'Keeping annotation history',
         speaker: 'Ada Lovelace',
         sessionTitle: 'Persistence session',
@@ -425,6 +429,8 @@ describe('persistence store', () => {
         id: 'talk-1',
         conferenceId: 'conference-1',
         contributionId: 'contribution-1',
+        contributionUrl:
+          'https://example.org/event/chooser/contributions/contribution-1/',
         title: 'Choosing the right deck',
         speaker: 'Judy Clapp',
         sessionTitle: 'Tools session',

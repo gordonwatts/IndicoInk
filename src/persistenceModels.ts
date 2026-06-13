@@ -37,6 +37,7 @@ export type Talk = {
   id: string;
   conferenceId: string;
   contributionId: string;
+  contributionUrl: string;
   title: string;
   speaker: string;
   sessionTitle: string;

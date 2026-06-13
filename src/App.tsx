@@ -14,6 +14,10 @@ import type {
 } from './shared/agenda';
 import type { LibraryEventSummary } from './shared/library';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
+import type {
+  ConferenceExportSnapshot,
+  ExportRenderedSlide,
+} from './shared/exportNotes';
 import {
   CommandBar,
   DetailsSurface,
@@ -28,6 +32,11 @@ import {
   ThemePreview,
 } from './ui';
 import { PdfPreview } from './PdfPreview';
+import {
+  buildConferenceNotesMarkdown,
+  collectExportRenderJobs,
+  renderAnnotatedSlidePng,
+} from './exportNotes';
 
 type Destination =
   | 'library'
@@ -79,6 +88,16 @@ const filterOptions = [
 
 type GalleryFilter = (typeof filterOptions)[number]['value'];
 
+type ExportProgressState =
+  | { kind: 'idle' }
+  | { kind: 'preparing'; label: string }
+  | { kind: 'rendering'; label: string; completed: number; total: number }
+  | { kind: 'writing'; label: string; completed: number; total: number }
+  | { kind: 'done'; label: string; filePath: string }
+  | { kind: 'empty'; label: string }
+  | { kind: 'error'; label: string }
+  | { kind: 'canceled'; label: string };
+
 const validateEventUrl = (value: string) => {
   const trimmed = value.trim();
 
@@ -102,6 +121,19 @@ const validateEventUrl = (value: string) => {
   }
 
   return null;
+};
+
+const sanitizeFileName = (value: string) =>
+  value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const createExportFileName = (snapshot: ConferenceExportSnapshot) => {
+  const baseName =
+    sanitizeFileName(snapshot.conference.title) || 'indico-notes';
+  return `${baseName} notes.md`;
 };
 
 function EventSummaryRow({
@@ -659,6 +691,12 @@ export function App() {
   const agendaScrollFrameRef = React.useRef<number | null>(null);
   const agendaCanvasScrollRef = React.useRef<HTMLDivElement | null>(null);
   const deckDownloadPollRef = React.useRef<number | null>(null);
+  const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
+    null,
+  );
+  const [exportState, setExportState] = React.useState<ExportProgressState>({
+    kind: 'idle',
+  });
 
   React.useEffect(() => {
     void window.indicoInk.getAppInfo().then(setInfo);
@@ -1004,6 +1042,152 @@ export function App() {
 
     await openAgendaTalkSlides(selectedAgendaTalk);
   };
+  const handleCancelExport = () => {
+    if (exportCancellationRef.current) {
+      exportCancellationRef.current.cancelled = true;
+    }
+  };
+  const handleExportNotes = async () => {
+    if (!selectedEventId) {
+      setExportState({
+        kind: 'error',
+        label: 'Open an event before exporting notes.',
+      });
+      return;
+    }
+
+    const cancellationState = { cancelled: false };
+    exportCancellationRef.current = cancellationState;
+    setExportState({
+      kind: 'preparing',
+      label: 'Preparing export from annotated talks...',
+    });
+
+    try {
+      const snapshot =
+        await window.indicoInk.getConferenceExportSnapshot(selectedEventId);
+      if (cancellationState.cancelled) {
+        setExportState({
+          kind: 'canceled',
+          label: 'Export canceled before rendering.',
+        });
+        return;
+      }
+
+      if (!snapshot || snapshot.talks.length === 0) {
+        setExportState({
+          kind: 'empty',
+          label: 'No annotated slides are available to export.',
+        });
+        return;
+      }
+
+      const saveResult = await window.indicoInk.showExportSaveDialog({
+        title: `Export notes for ${snapshot.conference.title}`,
+        defaultPath: createExportFileName(snapshot),
+      });
+
+      if (cancellationState.cancelled) {
+        setExportState({
+          kind: 'canceled',
+          label: 'Export canceled before saving.',
+        });
+        return;
+      }
+
+      if (saveResult.canceled || !saveResult.filePath) {
+        setExportState({ kind: 'idle' });
+        return;
+      }
+
+      const renderJobs = collectExportRenderJobs(snapshot);
+      const renderedSlides: ExportRenderedSlide[] = [];
+      setExportState({
+        kind: 'rendering',
+        label: `Rendering ${renderJobs.length} annotated slide${
+          renderJobs.length === 1 ? '' : 's'
+        }...`,
+        completed: 0,
+        total: renderJobs.length,
+      });
+
+      for (let index = 0; index < renderJobs.length; index += 1) {
+        const job = renderJobs[index];
+        if (!job) {
+          continue;
+        }
+
+        if (cancellationState.cancelled) {
+          setExportState({
+            kind: 'canceled',
+            label: 'Export canceled before the file was written.',
+          });
+          return;
+        }
+
+        const imageDataUrl = await renderAnnotatedSlidePng({
+          filePath: job.deckFilePath,
+          slideNumber: job.slideNumber,
+          annotations: job.annotations,
+          readPdfBytes: (filePath) => window.indicoInk.readPdfBytes(filePath),
+        });
+        renderedSlides.push({
+          talkId: job.talkId,
+          contributionId: job.contributionId,
+          contributionUrl: job.contributionUrl,
+          talkTitle: job.talkTitle,
+          sessionTitle: job.sessionTitle,
+          deckId: job.deckId,
+          deckDisplayName: job.deckDisplayName,
+          deckSourceUrl: job.deckSourceUrl,
+          slideNumber: job.slideNumber,
+          imageDataUrl,
+        });
+        setExportState({
+          kind: 'rendering',
+          label: `Rendering ${index + 1} of ${renderJobs.length} annotated slide${
+            renderJobs.length === 1 ? '' : 's'
+          }...`,
+          completed: index + 1,
+          total: renderJobs.length,
+        });
+      }
+
+      const markdown = buildConferenceNotesMarkdown(snapshot, renderedSlides);
+      setExportState({
+        kind: 'writing',
+        label: 'Writing Markdown export...',
+        completed: renderJobs.length,
+        total: renderJobs.length,
+      });
+      await window.indicoInk.writeExportFile(saveResult.filePath, markdown);
+
+      if (cancellationState.cancelled) {
+        setExportState({
+          kind: 'canceled',
+          label: 'Export canceled after rendering completed.',
+        });
+        return;
+      }
+
+      await window.indicoInk.openExportFileLocation(saveResult.filePath);
+      setExportState({
+        kind: 'done',
+        label: `Exported notes to ${saveResult.filePath}`,
+        filePath: saveResult.filePath,
+      });
+    } catch (error) {
+      setExportState({
+        kind: 'error',
+        label:
+          error instanceof Error ? error.message : 'Failed to export notes.',
+      });
+    } finally {
+      if (exportCancellationRef.current === cancellationState) {
+        exportCancellationRef.current = null;
+      }
+    }
+  };
   const handleBackFromSlides = () => {
     setDestination('agenda');
   };
@@ -1315,7 +1499,35 @@ export function App() {
                         : 'Settings'
           }
           status={
-            eventFocused ? (
+            exportState.kind === 'preparing' ||
+            exportState.kind === 'rendering' ||
+            exportState.kind === 'writing' ? (
+              <StatusLabel
+                label={exportState.label}
+                tone="neutral"
+                icon="info"
+              />
+            ) : exportState.kind === 'done' ? (
+              <StatusLabel
+                label={exportState.label}
+                tone="success"
+                icon="check"
+              />
+            ) : exportState.kind === 'error' ? (
+              <StatusLabel label={exportState.label} tone="error" icon="info" />
+            ) : exportState.kind === 'empty' ? (
+              <StatusLabel
+                label={exportState.label}
+                tone="warning"
+                icon="info"
+              />
+            ) : exportState.kind === 'canceled' ? (
+              <StatusLabel
+                label={exportState.label}
+                tone="warning"
+                icon="info"
+              />
+            ) : eventFocused ? (
               <StatusLabel
                 label="Current event active"
                 tone="success"
@@ -1356,7 +1568,20 @@ export function App() {
                   onClick={() => setDestination('search')}
                 />
                 <IconButton label="Refresh" icon="refresh" />
-                <PrimaryButton icon="export">Export notes</PrimaryButton>
+                <PrimaryButton
+                  icon="export"
+                  onClick={() => {
+                    void handleExportNotes();
+                  }}
+                  disabled={
+                    !selectedEventId ||
+                    exportState.kind === 'rendering' ||
+                    exportState.kind === 'writing' ||
+                    exportState.kind === 'preparing'
+                  }
+                >
+                  Export notes
+                </PrimaryButton>
                 <div className="runtime-pill" aria-label="Runtime information">
                   <span className="runtime-pill-label">Runtime</span>
                   <span className="runtime-pill-value">
@@ -1916,11 +2141,7 @@ export function App() {
                     void handleRetryDeckDownload();
                   }}
                   onExportNotes={() => {
-                    if (selectedTalkDeck?.sourceUrl) {
-                      void window.indicoInk.openExternalUrl(
-                        selectedTalkDeck.sourceUrl,
-                      );
-                    }
+                    void handleExportNotes();
                   }}
                   workspaceDeckId={activeSlideDeckId}
                 />
@@ -2280,6 +2501,74 @@ export function App() {
                   setApiKeyDialogOrigin(null);
                   setApiKeyValue('');
                   setApiKeyError(null);
+                }}
+              />
+            </div>
+          ) : null}
+
+          {exportState.kind !== 'idle' ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title="Export notes"
+                body={
+                  <div className="dialog-copy">
+                    <p>{exportState.label}</p>
+                    {exportState.kind === 'rendering' ||
+                    exportState.kind === 'writing' ? (
+                      <StatusLabel
+                        label={
+                          exportState.total > 0
+                            ? `${exportState.completed} / ${exportState.total} annotated slides`
+                            : 'Preparing export'
+                        }
+                        tone="neutral"
+                        icon="info"
+                      />
+                    ) : null}
+                    {exportState.kind === 'done' ? (
+                      <p>{exportState.filePath}</p>
+                    ) : null}
+                  </div>
+                }
+                primaryLabel={
+                  exportState.kind === 'done'
+                    ? 'Open file location'
+                    : exportState.kind === 'empty' ||
+                        exportState.kind === 'error' ||
+                        exportState.kind === 'canceled'
+                      ? 'Close'
+                      : 'Cancel export'
+                }
+                secondaryLabel={
+                  exportState.kind === 'done' ||
+                  exportState.kind === 'empty' ||
+                  exportState.kind === 'error' ||
+                  exportState.kind === 'canceled'
+                    ? 'Dismiss'
+                    : 'Keep working'
+                }
+                onPrimary={() => {
+                  if (exportState.kind === 'done') {
+                    void window.indicoInk.openExportFileLocation(
+                      exportState.filePath,
+                    );
+                    setExportState({ kind: 'idle' });
+                    return;
+                  }
+
+                  if (
+                    exportState.kind === 'empty' ||
+                    exportState.kind === 'error' ||
+                    exportState.kind === 'canceled'
+                  ) {
+                    setExportState({ kind: 'idle' });
+                    return;
+                  }
+
+                  handleCancelExport();
+                }}
+                onSecondary={() => {
+                  setExportState({ kind: 'idle' });
                 }}
               />
             </div>

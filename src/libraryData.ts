@@ -147,6 +147,12 @@ const getSelectedDeck = (materials: ReadonlyArray<MaterialFixture>) =>
   materials.find((material) => material.kind === 'pdf' && material.selected) ??
   materials.find((material) => material.kind === 'pdf');
 
+const createContributionUrl = (sourceUrl: string, contributionId: string) =>
+  new URL(
+    `contributions/${encodeURIComponent(contributionId)}/`,
+    sourceUrl.endsWith('/') ? sourceUrl : `${sourceUrl}/`,
+  ).toString();
+
 export const importConferenceFixture = async (
   store: PersistenceStore,
   fixture: ConferenceFixture,
@@ -180,6 +186,10 @@ export const importConferenceFixture = async (
             id: talkId,
             conferenceId,
             contributionId: talk.contributionId,
+            contributionUrl: createContributionUrl(
+              fixture.sourceUrl,
+              talk.contributionId,
+            ),
             title: talk.title,
             speaker: talk.speaker,
             sessionTitle: session.title,

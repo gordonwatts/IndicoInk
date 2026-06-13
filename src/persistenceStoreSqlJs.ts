@@ -54,7 +54,7 @@ type SqlJsModule = {
   Database: new (data?: Uint8Array | ArrayBuffer) => SqlJsDatabase;
 };
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 const getFileName = (value: string) => {
   const normalized = value.replaceAll('\\', '/');
@@ -270,6 +270,7 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
       id TEXT PRIMARY KEY,
       conference_id TEXT NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
       contribution_id TEXT NOT NULL,
+      contribution_url TEXT NOT NULL,
       title TEXT NOT NULL,
       speaker TEXT NOT NULL,
       session_title TEXT NOT NULL,
@@ -367,7 +368,37 @@ const migration2 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
-const migrations = [migration1, migration2];
+const migration3 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(talks)') as Array<{
+        columns: string[];
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!columns.has('contribution_url')) {
+    db.exec(
+      'ALTER TABLE talks ADD COLUMN contribution_url TEXT NOT NULL DEFAULT "";',
+    );
+  }
+
+  db.exec(`
+    UPDATE talks
+    SET contribution_url = COALESCE(
+      NULLIF(contribution_url, ''),
+      (
+        SELECT source_url
+        FROM conferences
+        WHERE conferences.id = talks.conference_id
+      ) || '/contributions/' || contribution_id || '/'
+    )
+    WHERE contribution_url IS NULL OR contribution_url = '';
+  `);
+};
+
+const migrations = [migration1, migration2, migration3];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -387,6 +418,7 @@ const rowToTalk = (row: Record<string, unknown>): Talk => ({
   id: String(row.id),
   conferenceId: String(row.conference_id),
   contributionId: String(row.contribution_id),
+  contributionUrl: String(row.contribution_url),
   title: String(row.title),
   speaker: String(row.speaker),
   sessionTitle: String(row.session_title),
@@ -745,15 +777,18 @@ export class PersistenceStore {
     db.prepare(
       `
         INSERT INTO talks (
-          id, conference_id, contribution_id, title, speaker, session_title,
-          starts_at, ends_at, room, bookmarked, created_at, updated_at
+          id, conference_id, contribution_id, contribution_url, title, speaker,
+          session_title, starts_at, ends_at, room, bookmarked, created_at,
+          updated_at
         ) VALUES (
-          @id, @conferenceId, @contributionId, @title, @speaker, @sessionTitle,
-          @startsAt, @endsAt, @room, @bookmarked, @createdAt, @updatedAt
+          @id, @conferenceId, @contributionId, @contributionUrl, @title,
+          @speaker, @sessionTitle, @startsAt, @endsAt, @room, @bookmarked,
+          @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           conference_id = excluded.conference_id,
           contribution_id = excluded.contribution_id,
+          contribution_url = excluded.contribution_url,
           title = excluded.title,
           speaker = excluded.speaker,
           session_title = excluded.session_title,
@@ -768,6 +803,7 @@ export class PersistenceStore {
       bookmarked: talk.bookmarked ? 1 : 0,
       conferenceId: talk.conferenceId,
       contributionId: talk.contributionId,
+      contributionUrl: talk.contributionUrl,
       sessionTitle: talk.sessionTitle,
       startsAt: talk.startsAt,
       endsAt: talk.endsAt,
@@ -1266,6 +1302,7 @@ export class PersistenceStore {
       id: talkId,
       conferenceId,
       contributionId: state.sourceUrl,
+      contributionUrl: state.sourceUrl,
       title: fileName || 'Local PDF workspace',
       speaker: '',
       sessionTitle: 'Local PDF preview',

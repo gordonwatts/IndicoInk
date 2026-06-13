@@ -15,6 +15,7 @@ import type {
   OpenLibraryEventResult,
 } from './shared/library';
 import type { AgendaTalkSummary } from './shared/agenda';
+import type { ConferenceExportSnapshot } from './shared/exportNotes';
 
 const getAppInfo = async (): Promise<AppInfo> =>
   ipcRenderer.invoke('app:get-info');
@@ -94,6 +95,25 @@ const cancelDeckDownload = async (operationId: string): Promise<void> =>
 const openExternalUrl = async (url: string): Promise<void> =>
   ipcRenderer.invoke('system:open-external-url', url);
 
+const getConferenceExportSnapshot = async (
+  conferenceId: string,
+): Promise<ConferenceExportSnapshot | null> =>
+  ipcRenderer.invoke('export:get-conference-snapshot', conferenceId);
+
+const showExportSaveDialog = async (options: {
+  defaultPath: string;
+  title: string;
+}): Promise<{ canceled: boolean; filePath: string | null }> =>
+  ipcRenderer.invoke('export:show-save-dialog', options);
+
+const writeExportFile = async (
+  filePath: string,
+  contents: string,
+): Promise<void> => ipcRenderer.invoke('export:write-file', filePath, contents);
+
+const openExportFileLocation = async (filePath: string): Promise<void> =>
+  ipcRenderer.invoke('export:open-file-location', filePath);
+
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
   openPdf,
@@ -113,6 +133,10 @@ contextBridge.exposeInMainWorld('indicoInk', {
   getDeckDownloadStatus,
   cancelDeckDownload,
   openExternalUrl,
+  getConferenceExportSnapshot,
+  showExportSaveDialog,
+  writeExportFile,
+  openExportFileLocation,
 });
 
 export type IndicoInkApi = {
@@ -151,4 +175,13 @@ export type IndicoInkApi = {
   ) => Promise<DeckCacheDownloadStatus | null>;
   cancelDeckDownload: (operationId: string) => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
+  getConferenceExportSnapshot: (
+    conferenceId: string,
+  ) => Promise<ConferenceExportSnapshot | null>;
+  showExportSaveDialog: (options: {
+    defaultPath: string;
+    title: string;
+  }) => Promise<{ canceled: boolean; filePath: string | null }>;
+  writeExportFile: (filePath: string, contents: string) => Promise<void>;
+  openExportFileLocation: (filePath: string) => Promise<void>;
 };

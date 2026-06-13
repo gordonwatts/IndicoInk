@@ -13,6 +13,7 @@ import type {
   DeckCacheDownloadStatus,
   DeckCacheOpenResult,
 } from './shared/deckCache';
+import type { ConferenceExportSnapshot } from './shared/exportNotes';
 
 declare global {
   interface Window {
@@ -52,6 +53,15 @@ declare global {
       ) => Promise<DeckCacheDownloadStatus | null>;
       cancelDeckDownload: (operationId: string) => Promise<void>;
       openExternalUrl: (url: string) => Promise<void>;
+      getConferenceExportSnapshot: (
+        conferenceId: string,
+      ) => Promise<ConferenceExportSnapshot | null>;
+      showExportSaveDialog: (options: {
+        defaultPath: string;
+        title: string;
+      }) => Promise<{ canceled: boolean; filePath: string | null }>;
+      writeExportFile: (filePath: string, contents: string) => Promise<void>;
+      openExportFileLocation: (filePath: string) => Promise<void>;
     };
   }
 }

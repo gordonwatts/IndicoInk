@@ -91,6 +91,13 @@ describe('App', () => {
       getDeckDownloadStatus: vi.fn().mockResolvedValue(null),
       cancelDeckDownload: vi.fn().mockResolvedValue(undefined),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      getConferenceExportSnapshot: vi.fn().mockResolvedValue(null),
+      showExportSaveDialog: vi.fn().mockResolvedValue({
+        canceled: true,
+        filePath: null,
+      }),
+      writeExportFile: vi.fn().mockResolvedValue(undefined),
+      openExportFileLocation: vi.fn().mockResolvedValue(undefined),
     };
   });
 

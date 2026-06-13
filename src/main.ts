@@ -8,7 +8,7 @@ import {
   session,
 } from 'electron';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -26,6 +26,12 @@ import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
+import type {
+  ConferenceExportSnapshot,
+  ExportDeckSnapshot,
+  ExportSlideSnapshot,
+  ExportTalkSnapshot,
+} from './shared/exportNotes';
 import { DeckCacheManager } from './deckCache';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
 import {
@@ -85,6 +91,115 @@ const getDeckCacheManager = () =>
     join(app.getPath('userData'), 'deck-cache'),
     session.defaultSession.fetch.bind(session.defaultSession),
   ));
+
+const toExportAnnotation = (annotation: {
+  id: string;
+  points?: Array<{ x: number; y: number; pressure: number; time: number }>;
+  x?: number;
+  y?: number;
+  text?: string;
+}) =>
+  annotation.points
+    ? {
+        id: annotation.id,
+        kind: 'stroke' as const,
+        points: annotation.points,
+      }
+    : {
+        id: annotation.id,
+        kind: 'text' as const,
+        x: annotation.x ?? 0,
+        y: annotation.y ?? 0,
+        text: annotation.text ?? '',
+      };
+
+const buildConferenceExportSnapshot = async (
+  conferenceId: string,
+): Promise<ConferenceExportSnapshot | null> => {
+  const store = getPersistenceStore();
+  const conference = await store.getConference(conferenceId);
+  if (!conference) {
+    return null;
+  }
+
+  const talks = await store.listTalksByConference(conferenceId);
+  const exportTalks: ExportTalkSnapshot[] = [];
+
+  for (const talk of talks) {
+    const decks = await store.listDecksByTalk(talk.id);
+    const exportDecks: ExportDeckSnapshot[] = [];
+
+    for (const deck of decks) {
+      const slides = await store.listSlidesByDeck(deck.id);
+      const exportSlides: ExportSlideSnapshot[] = [];
+
+      for (const slide of slides) {
+        if (!slide.annotated) {
+          continue;
+        }
+
+        const annotations = await store.listAnnotationsBySlide(slide.id);
+        if (!annotations.length) {
+          continue;
+        }
+
+        exportSlides.push({
+          id: slide.id,
+          slideNumber: slide.slideNumber,
+          filePath: getDeckCacheManager().getCacheFilePath(
+            conferenceId,
+            deck.id,
+          ),
+          annotations: annotations.map((annotation) =>
+            toExportAnnotation(annotation),
+          ),
+        });
+      }
+
+      if (exportSlides.length > 0) {
+        exportDecks.push({
+          id: deck.id,
+          displayName: deck.displayName,
+          sourceUrl: deck.sourceUrl,
+          filePath: getDeckCacheManager().getCacheFilePath(
+            conferenceId,
+            deck.id,
+          ),
+          selected: deck.selected,
+          slides: exportSlides,
+        });
+      }
+    }
+
+    if (exportDecks.length > 0) {
+      exportTalks.push({
+        id: talk.id,
+        contributionId: talk.contributionId,
+        contributionUrl: talk.contributionUrl,
+        title: talk.title,
+        speaker: talk.speaker,
+        sessionTitle: talk.sessionTitle,
+        startsAt: talk.startsAt,
+        endsAt: talk.endsAt,
+        room: talk.room,
+        bookmarked: talk.bookmarked,
+        decks: exportDecks,
+      });
+    }
+  }
+
+  return {
+    conference: {
+      id: conference.id,
+      title: conference.title,
+      dates: conference.dates,
+      host: conference.host,
+      sourceUrl: conference.sourceUrl,
+      exportedAt: Date.now(),
+    },
+    talks: exportTalks,
+  };
+};
 
 function getImportFixtureName(argv: string[]) {
   const argument = argv.find(
@@ -365,6 +480,54 @@ ipcMain.handle(
 ipcMain.handle('deck:cancel-download', async (_event, operationId: string) => {
   await getDeckCacheManager().cancelDownload(operationId);
 });
+
+ipcMain.handle(
+  'export:get-conference-snapshot',
+  async (_event, conferenceId: string) =>
+    buildConferenceExportSnapshot(conferenceId),
+);
+
+ipcMain.handle(
+  'export:show-save-dialog',
+  async (
+    _event,
+    options: {
+      defaultPath: string;
+      title: string;
+    },
+  ) => {
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, {
+          title: options.title,
+          defaultPath: options.defaultPath,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+      : await dialog.showSaveDialog({
+          title: options.title,
+          defaultPath: options.defaultPath,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        });
+
+    return {
+      canceled: result.canceled,
+      filePath: result.filePath ?? null,
+    };
+  },
+);
+
+ipcMain.handle(
+  'export:write-file',
+  async (_event, filePath: string, contents: string) => {
+    await writeFile(filePath, contents, 'utf8');
+  },
+);
+
+ipcMain.handle(
+  'export:open-file-location',
+  async (_event, filePath: string) => {
+    await shell.showItemInFolder(filePath);
+  },
+);
 
 app.whenReady().then(() => {
   if (importFixtureName) {
