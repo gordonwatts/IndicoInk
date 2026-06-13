@@ -19,6 +19,7 @@ export type IconName =
   | 'plus'
   | 'minus'
   | 'pen'
+  | 'text'
   | 'eraser'
   | 'check'
   | 'info'
@@ -52,6 +53,7 @@ const iconPaths: Record<IconName, string> = {
   plus: 'M11 5.5h2v13h-2v-13Zm-5.5 5.5h13v2h-13v-2Z',
   minus: 'M5.5 11h13v2h-13v-2Z',
   pen: 'M5.5 18.5 8 16l5.6-5.6 2.8 2.8L10.8 18H5.5v.5Zm9.6-7.6-2.8-2.8 1.2-1.2c.5-.5 1.2-.5 1.7 0l1.1 1.1c.5.5.5 1.2 0 1.7l-1.2 1.2Z',
+  text: 'M6.5 6.5h11v2h-4v9h-3v-9h-4v-2Zm2.5 11.5h6v2H9v-2Z',
   eraser:
     'M7 16.5h9.4l2.1-2.1c.8-.8.8-2.1 0-2.9l-4.1-4.1c-.8-.8-2.1-.8-2.9 0L4.5 14.4c-.8.8-.8 2.1 0 2.9.3.2.7.3 1 .3H7Zm1.2-2L14 8.7l3.1 3.1-5.8 5.8H8.2Z',
   check: 'M10 16.2 5.8 12l1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2Z',
@@ -73,6 +75,7 @@ export function IconButton({
   icon,
   title,
   onClick,
+  onPointerDown,
   disabled,
   pressed,
 }: {
@@ -80,6 +83,7 @@ export function IconButton({
   icon: IconName;
   title?: string;
   onClick?: () => void;
+  onPointerDown?: React.PointerEventHandler<HTMLButtonElement>;
   disabled?: boolean;
   pressed?: boolean;
 }) {
@@ -90,6 +94,7 @@ export function IconButton({
       aria-label={label}
       title={title ?? label}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       disabled={disabled}
       aria-pressed={pressed}
     >

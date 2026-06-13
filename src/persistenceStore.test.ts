@@ -150,7 +150,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(1);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(2);
     versionDb.close();
     await store.close();
   });
@@ -185,6 +185,25 @@ describe('persistence store', () => {
           },
         ],
       ],
+      textNotesByPage: [
+        [],
+        [
+          {
+            id: 'text-note-1',
+            conferenceId: 'conference-1',
+            talkId: 'talk-1',
+            deckId: 'deck-1',
+            slideId: createSlideId('deck-1', 2),
+            x: 0.4,
+            y: 0.6,
+            text: 'Speaker note',
+            createdAt: 1700000000000,
+            updatedAt: 1700000000000,
+          },
+        ],
+      ],
+      undoStack: [],
+      redoStack: [],
       currentSlideNumber: 2,
       scrollLeft: 45,
       scrollTop: 123,
@@ -198,10 +217,143 @@ describe('persistence store', () => {
     expect(restored?.pageCount).toBe(2);
     expect(restored?.strokesByPage[0]).toHaveLength(1);
     expect(restored?.strokesByPage[1]).toHaveLength(1);
+    expect(restored?.textNotesByPage?.[1]).toHaveLength(1);
     expect(restored?.scrollLeft).toBe(45);
     expect(restored?.scrollTop).toBe(123);
     expect(restored?.currentSlideNumber).toBe(2);
     expect(restored?.zoom).toBe(1.25);
+    await secondStore.close();
+  });
+
+  it('restores undo and redo history for a deck workspace across restart', async () => {
+    const dbPath = createTempDbPath('workspace-history');
+    const now = 1700000000000;
+
+    const firstStore = new PersistenceStore(dbPath, () => now);
+    await firstStore.transaction(async (repo) => {
+      await repo.upsertConference({
+        id: 'conference-history',
+        sourceUrl: 'https://example.org/event/history',
+        title: 'History Conference',
+        dates: 'June 12, 2026',
+        host: 'history.example.org',
+        lastOpenedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await repo.upsertTalk({
+        id: 'talk-history',
+        conferenceId: 'conference-history',
+        contributionId: 'contribution-history',
+        title: 'Keeping annotation history',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Persistence session',
+        startsAt: now,
+        endsAt: now + 1_800_000,
+        room: 'Room C',
+        bookmarked: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await repo.upsertDeck({
+        id: 'deck-history',
+        conferenceId: 'conference-history',
+        talkId: 'talk-history',
+        sourceUrl: 'https://example.org/materials/history.pdf',
+        displayName: 'History deck',
+        mimeType: 'application/pdf',
+        selected: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const slideId = createSlideId('deck-history', 1);
+    await firstStore.saveDeckPdfWorkspace({
+      sourceUrl: 'https://example.org/materials/history.pdf',
+      conferenceId: 'conference-history',
+      talkId: 'talk-history',
+      deckId: 'deck-history',
+      pageCount: 2,
+      strokesByPage: [
+        [
+          {
+            id: 'stroke-current',
+            pageNumber: 1,
+            points: [
+              { x: 0.1, y: 0.2, pressure: 0.3, time: 1 },
+              { x: 0.2, y: 0.3, pressure: 0.4, time: 2 },
+            ],
+          },
+        ],
+        [],
+      ],
+      undoStack: [
+        [
+          {
+            strokes: [
+              {
+                id: 'stroke-undo',
+                pageNumber: 1,
+                points: [
+                  { x: 0.15, y: 0.25, pressure: 0.5, time: 3 },
+                  { x: 0.25, y: 0.35, pressure: 0.6, time: 4 },
+                ],
+              },
+            ],
+            textNotes: [],
+          },
+          {
+            strokes: [],
+            textNotes: [],
+          },
+        ],
+      ],
+      redoStack: [
+        [
+          {
+            strokes: [],
+            textNotes: [],
+          },
+          {
+            strokes: [
+              {
+                id: 'stroke-redo',
+                pageNumber: 2,
+                points: [
+                  { x: 0.45, y: 0.55, pressure: 0.2, time: 5 },
+                  { x: 0.55, y: 0.65, pressure: 0.8, time: 6 },
+                ],
+              },
+            ],
+            textNotes: [],
+          },
+        ],
+      ],
+      currentSlideNumber: 1,
+      scrollLeft: 11,
+      scrollTop: 22,
+      zoom: 1.1,
+    });
+    await firstStore.close();
+
+    const secondStore = new PersistenceStore(dbPath, () => now + 5000);
+    const restored = await secondStore.loadDeckPdfWorkspace('deck-history');
+
+    expect(restored?.strokesByPage[0]).toHaveLength(1);
+    expect(restored?.strokesByPage[0]?.[0]?.pageNumber).toBe(1);
+    expect(restored?.undoStack).toHaveLength(1);
+    expect(restored?.undoStack?.[0]?.[0]?.strokes).toHaveLength(1);
+    expect(restored?.undoStack?.[0]?.[0]?.strokes[0]?.pageNumber).toBe(1);
+    expect(restored?.redoStack).toHaveLength(1);
+    expect(restored?.redoStack?.[0]?.[1]?.strokes).toHaveLength(1);
+    expect(restored?.redoStack?.[0]?.[1]?.strokes[0]?.pageNumber).toBe(2);
+    expect(restored?.currentSlideNumber).toBe(1);
+    expect(restored?.zoom).toBe(1.1);
+    expect(restored?.deckId).toBe('deck-history');
+    await expect(secondStore.getSlide(slideId)).resolves.toMatchObject({
+      annotated: true,
+    });
     await secondStore.close();
   });
 

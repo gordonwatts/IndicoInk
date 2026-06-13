@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto';
-
 import type { NormalizedPagePoint } from './inkGeometry';
+import { sha1Hex } from './stableHash';
 
 const createStableId = (kind: string, identity: string) =>
-  `${kind}_${createHash('sha1').update(identity).digest('hex').slice(0, 20)}`;
+  `${kind}_${sha1Hex(identity).slice(0, 20)}`;
 
 export const createConferenceId = (sourceUrl: string) =>
   createStableId('conference', sourceUrl);

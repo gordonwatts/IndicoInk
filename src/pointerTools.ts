@@ -1,6 +1,12 @@
-export type PointerTool = 'mouse' | 'pen' | 'eraser' | 'touch' | 'unknown';
+export type PointerTool =
+  | 'mouse'
+  | 'pen'
+  | 'eraser'
+  | 'touch'
+  | 'text'
+  | 'unknown';
 
-export type PointerInteractionMode = 'draw' | 'erase' | 'pan' | 'none';
+export type PointerInteractionMode = 'draw' | 'erase' | 'pan' | 'text' | 'none';
 
 export type PointerSample = {
   pointerType: string;
@@ -69,6 +75,8 @@ export const getPointerCursor = (tool: PointerTool) => {
   switch (tool) {
     case 'mouse':
       return 'crosshair';
+    case 'text':
+      return 'text';
     case 'pen':
     case 'eraser':
     case 'touch':
@@ -90,6 +98,8 @@ export const getPointerInteractionMode = (
       return 'draw';
     case 'eraser':
       return 'erase';
+    case 'text':
+      return 'text';
     case 'touch':
       return 'pan';
     default:

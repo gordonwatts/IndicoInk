@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import type { NormalizedPagePoint } from './inkGeometry';
+import type { InkStroke } from './strokeTools';
 import type {
   Annotation,
   Conference,
@@ -17,6 +18,7 @@ import type {
 import type {
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
+  PdfWorkspacePageState,
 } from './shared/pdfWorkspace';
 import {
   createConferenceId,
@@ -52,7 +54,7 @@ type SqlJsModule = {
   Database: new (data?: Uint8Array | ArrayBuffer) => SqlJsDatabase;
 };
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 const getFileName = (value: string) => {
   const normalized = value.replaceAll('\\', '/');
@@ -63,6 +65,113 @@ const toBoolean = (value: unknown) => value === 1 || value === true;
 
 const serializePoints = (points: NormalizedPagePoint[]) =>
   JSON.stringify(points);
+
+const createEmptyPageState = (): PdfWorkspacePageState => ({
+  strokes: [],
+  textNotes: [],
+});
+
+const serializeWorkspaceHistory = (history: PdfWorkspacePageState[][]) =>
+  JSON.stringify(history);
+
+const isStrokeCandidate = (
+  value: unknown,
+): value is Partial<InkStroke> & { id: string; pageNumber: number } =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as Record<string, unknown>).id === 'string' &&
+  typeof (value as Record<string, unknown>).pageNumber === 'number' &&
+  Array.isArray((value as Record<string, unknown>).points);
+
+const isTextNoteCandidate = (
+  value: unknown,
+): value is Partial<TextNote> & { id: string; slideId: string } =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as Record<string, unknown>).id === 'string' &&
+  typeof (value as Record<string, unknown>).slideId === 'string' &&
+  typeof (value as Record<string, unknown>).x === 'number' &&
+  typeof (value as Record<string, unknown>).y === 'number' &&
+  typeof (value as Record<string, unknown>).text === 'string';
+
+const normalizeStroke = (stroke: unknown): InkStroke | null => {
+  if (!isStrokeCandidate(stroke)) {
+    return null;
+  }
+
+  const candidate = stroke as {
+    id: string;
+    pageNumber: number;
+    points: Array<unknown>;
+  };
+  const points = candidate.points.filter(
+    (point): point is NormalizedPagePoint =>
+      typeof point === 'object' &&
+      point !== null &&
+      typeof (point as Record<string, unknown>).x === 'number' &&
+      typeof (point as Record<string, unknown>).y === 'number' &&
+      typeof (point as Record<string, unknown>).pressure === 'number' &&
+      typeof (point as Record<string, unknown>).time === 'number',
+  );
+
+  return {
+    id: candidate.id,
+    pageNumber: candidate.pageNumber,
+    points,
+  };
+};
+
+const normalizeTextNote = (note: unknown): TextNote | null => {
+  if (!isTextNoteCandidate(note)) {
+    return null;
+  }
+
+  const candidate = note as {
+    id: string;
+    conferenceId?: string;
+    talkId?: string;
+    deckId?: string;
+    slideId: string;
+    x: number;
+    y: number;
+    text: string;
+    createdAt?: number;
+    updatedAt?: number;
+  };
+
+  return {
+    id: candidate.id,
+    conferenceId: String(candidate.conferenceId ?? ''),
+    talkId: String(candidate.talkId ?? ''),
+    deckId: String(candidate.deckId ?? ''),
+    slideId: candidate.slideId,
+    x: candidate.x,
+    y: candidate.y,
+    text: candidate.text,
+    createdAt: Number(candidate.createdAt ?? 0),
+    updatedAt: Number(candidate.updatedAt ?? 0),
+  };
+};
+
+const normalizePageState = (value: unknown): PdfWorkspacePageState => {
+  if (!value || typeof value !== 'object') {
+    return createEmptyPageState();
+  }
+
+  const candidate = value as Partial<PdfWorkspacePageState>;
+  return {
+    strokes: Array.isArray(candidate.strokes)
+      ? candidate.strokes
+          .map(normalizeStroke)
+          .filter((stroke): stroke is InkStroke => stroke !== null)
+      : [],
+    textNotes: Array.isArray(candidate.textNotes)
+      ? candidate.textNotes
+          .map(normalizeTextNote)
+          .filter((note): note is TextNote => note !== null)
+      : [],
+  } as PdfWorkspacePageState;
+};
 
 const deserializePoints = (value: string): NormalizedPagePoint[] =>
   (() => {
@@ -85,6 +194,58 @@ const deserializePoints = (value: string): NormalizedPagePoint[] =>
       return [];
     }
   })();
+
+const deserializeWorkspaceHistory = (
+  value: string | null | undefined,
+): PdfWorkspacePageState[][] => {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map((entry) => {
+      if (Array.isArray(entry)) {
+        if (entry.length === 0) {
+          return [];
+        }
+
+        if (Array.isArray(entry[0])) {
+          return entry.map((page) => ({
+            strokes: Array.isArray(page)
+              ? page.map(normalizeStroke).filter(Boolean)
+              : [],
+            textNotes: [],
+          })) as PdfWorkspacePageState[];
+        }
+
+        if (typeof entry[0] === 'object' && entry[0] !== null) {
+          return entry.map((page) => normalizePageState(page));
+        }
+      }
+
+      if (!entry || typeof entry !== 'object') {
+        return [createEmptyPageState()];
+      }
+
+      const candidate = entry as Record<string, unknown>;
+      if (
+        Array.isArray(candidate.strokes) ||
+        Array.isArray(candidate.textNotes)
+      ) {
+        return [normalizePageState(entry)];
+      }
+
+      return [createEmptyPageState()];
+    });
+  } catch {
+    return [];
+  }
+};
 
 const migration1 = (db: SqliteDatabaseAdapter) => {
   db.exec(`
@@ -168,6 +329,8 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
       zoom REAL NOT NULL,
       scroll_left REAL NOT NULL,
       scroll_top REAL NOT NULL,
+      undo_stack_json TEXT NOT NULL DEFAULT '[]',
+      redo_stack_json TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       UNIQUE(conference_id, talk_id, deck_id)
@@ -181,7 +344,30 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
   `);
 };
 
-const migrations = [migration1];
+const migration2 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(view_state)') as Array<{
+        columns: string[];
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!columns.has('undo_stack_json')) {
+    db.exec(
+      "ALTER TABLE view_state ADD COLUMN undo_stack_json TEXT NOT NULL DEFAULT '[]';",
+    );
+  }
+
+  if (!columns.has('redo_stack_json')) {
+    db.exec(
+      "ALTER TABLE view_state ADD COLUMN redo_stack_json TEXT NOT NULL DEFAULT '[]';",
+    );
+  }
+};
+
+const migrations = [migration1, migration2];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -256,14 +442,23 @@ const rowToAnnotation = (row: Record<string, unknown>): Annotation => {
   };
 
   if (kind === 'text') {
-    const payload = JSON.parse(String(row.payload_json)) as TextNote;
+    try {
+      const payload = JSON.parse(String(row.payload_json)) as Partial<TextNote>;
 
-    return {
-      ...base,
-      x: payload.x,
-      y: payload.y,
-      text: payload.text,
-    };
+      return {
+        ...base,
+        x: Number(payload.x ?? 0),
+        y: Number(payload.y ?? 0),
+        text: typeof payload.text === 'string' ? payload.text : '',
+      };
+    } catch {
+      return {
+        ...base,
+        x: 0,
+        y: 0,
+        text: '',
+      };
+    }
   }
 
   return {
@@ -272,7 +467,17 @@ const rowToAnnotation = (row: Record<string, unknown>): Annotation => {
   };
 };
 
-const rowToViewState = (row: Record<string, unknown>): ViewState => ({
+type StoredViewState = ViewState & {
+  undoStack: PdfWorkspacePageState[][];
+  redoStack: PdfWorkspacePageState[][];
+};
+
+type ViewStateRecord = ViewState & {
+  undoStack?: PdfWorkspacePageState[][];
+  redoStack?: PdfWorkspacePageState[][];
+};
+
+const rowToViewState = (row: Record<string, unknown>): StoredViewState => ({
   id: String(row.id),
   conferenceId: String(row.conference_id),
   talkId: String(row.talk_id),
@@ -285,6 +490,12 @@ const rowToViewState = (row: Record<string, unknown>): ViewState => ({
   zoom: Number(row.zoom),
   scrollLeft: Number(row.scroll_left),
   scrollTop: Number(row.scroll_top),
+  undoStack: deserializeWorkspaceHistory(
+    typeof row.undo_stack_json === 'string' ? row.undo_stack_json : '[]',
+  ),
+  redoStack: deserializeWorkspaceHistory(
+    typeof row.redo_stack_json === 'string' ? row.redo_stack_json : '[]',
+  ),
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -774,6 +985,7 @@ export class PersistenceStore {
       updatedAt: annotation.updatedAt,
     });
 
+    await this.refreshSlideAnnotationState(annotation.slideId);
     this.markDirty();
     await this.flushIfNeeded();
   }
@@ -799,7 +1011,11 @@ export class PersistenceStore {
 
   async deleteAnnotation(id: string) {
     const db = await this.getDb();
+    const annotation = await this.getAnnotation(id);
     db.prepare('DELETE FROM annotations WHERE id = ?').run(id);
+    if (annotation) {
+      await this.refreshSlideAnnotationState(annotation.slideId);
+    }
     this.markDirty();
     await this.flushIfNeeded();
   }
@@ -815,16 +1031,18 @@ export class PersistenceStore {
     return Number(row?.count ?? 0);
   }
 
-  async upsertViewState(viewState: ViewState): Promise<ViewState> {
+  async upsertViewState(viewState: ViewStateRecord): Promise<StoredViewState> {
     const db = await this.getDb();
     db.prepare(
       `
         INSERT INTO view_state (
           id, conference_id, talk_id, deck_id, slide_id, current_slide_number,
-          zoom, scroll_left, scroll_top, created_at, updated_at
+          zoom, scroll_left, scroll_top, undo_stack_json, redo_stack_json,
+          created_at, updated_at
         ) VALUES (
           @id, @conferenceId, @talkId, @deckId, @slideId, @currentSlideNumber,
-          @zoom, @scrollLeft, @scrollTop, @createdAt, @updatedAt
+          @zoom, @scrollLeft, @scrollTop, @undoStackJson, @redoStackJson,
+          @createdAt, @updatedAt
         )
         ON CONFLICT(conference_id, talk_id, deck_id) DO UPDATE SET
           slide_id = excluded.slide_id,
@@ -832,6 +1050,8 @@ export class PersistenceStore {
           zoom = excluded.zoom,
           scroll_left = excluded.scroll_left,
           scroll_top = excluded.scroll_top,
+          undo_stack_json = excluded.undo_stack_json,
+          redo_stack_json = excluded.redo_stack_json,
           updated_at = excluded.updated_at
       `,
     ).run({
@@ -844,14 +1064,22 @@ export class PersistenceStore {
       zoom: viewState.zoom,
       scrollLeft: viewState.scrollLeft,
       scrollTop: viewState.scrollTop,
+      undoStackJson: serializeWorkspaceHistory(viewState.undoStack ?? []),
+      redoStackJson: serializeWorkspaceHistory(viewState.redoStack ?? []),
     });
 
     this.markDirty();
     await this.flushIfNeeded();
-    return (await this.getViewState(viewState.deckId)) ?? viewState;
+    return (
+      (await this.getViewState(viewState.deckId)) ?? {
+        ...viewState,
+        undoStack: viewState.undoStack ?? [],
+        redoStack: viewState.redoStack ?? [],
+      }
+    );
   }
 
-  async getViewState(deckId: string): Promise<ViewState | null> {
+  async getViewState(deckId: string): Promise<StoredViewState | null> {
     const db = await this.getDb();
     const row = getStatementValue(
       db.prepare('SELECT * FROM view_state WHERE deck_id = ?'),
@@ -865,6 +1093,16 @@ export class PersistenceStore {
     db.prepare('DELETE FROM view_state WHERE deck_id = ?').run(deckId);
     this.markDirty();
     await this.flushIfNeeded();
+  }
+
+  private async refreshSlideAnnotationState(slideId: string) {
+    const db = await this.getDb();
+    const row = db
+      .prepare('SELECT COUNT(*) AS count FROM annotations WHERE slide_id = ?')
+      .get(slideId) as { count?: number } | undefined;
+    db.prepare(
+      'UPDATE slides SET annotated = ?, updated_at = ? WHERE id = ?',
+    ).run([Number(row?.count ?? 0) > 0 ? 1 : 0, this.now(), slideId]);
   }
 
   async loadLocalPdfWorkspace(
@@ -896,6 +1134,8 @@ export class PersistenceStore {
       talkId: talkId,
       deckId,
       pageCount: slides.length,
+      undoStack: viewState?.undoStack ?? [],
+      redoStack: viewState?.redoStack ?? [],
       strokesByPage: slides.map((slide) =>
         (annotationsBySlide.get(slide.id) ?? [])
           .filter(
@@ -906,6 +1146,25 @@ export class PersistenceStore {
             id: annotation.id,
             pageNumber: slide.slideNumber,
             points: annotation.points,
+          })),
+      ),
+      textNotesByPage: slides.map((slide) =>
+        (annotationsBySlide.get(slide.id) ?? [])
+          .filter(
+            (annotation): annotation is TextNote =>
+              !('points' in annotation) && typeof annotation.text === 'string',
+          )
+          .map((annotation) => ({
+            id: annotation.id,
+            conferenceId: annotation.conferenceId,
+            talkId: annotation.talkId,
+            deckId: annotation.deckId,
+            slideId: slide.id,
+            x: annotation.x,
+            y: annotation.y,
+            text: annotation.text,
+            createdAt: annotation.createdAt,
+            updatedAt: annotation.updatedAt,
           })),
       ),
       currentSlideNumber: viewState?.currentSlideNumber ?? 1,
@@ -945,6 +1204,8 @@ export class PersistenceStore {
       talkId: talk.id,
       deckId,
       pageCount: slides.length,
+      undoStack: viewState?.undoStack ?? [],
+      redoStack: viewState?.redoStack ?? [],
       strokesByPage: slides.map((slide) =>
         (annotationsBySlide.get(slide.id) ?? [])
           .filter(
@@ -955,6 +1216,25 @@ export class PersistenceStore {
             id: annotation.id,
             pageNumber: slide.slideNumber,
             points: annotation.points,
+          })),
+      ),
+      textNotesByPage: slides.map((slide) =>
+        (annotationsBySlide.get(slide.id) ?? [])
+          .filter(
+            (annotation): annotation is TextNote =>
+              !('points' in annotation) && typeof annotation.text === 'string',
+          )
+          .map((annotation) => ({
+            id: annotation.id,
+            conferenceId: annotation.conferenceId,
+            talkId: annotation.talkId,
+            deckId: annotation.deckId,
+            slideId: slide.id,
+            x: annotation.x,
+            y: annotation.y,
+            text: annotation.text,
+            createdAt: annotation.createdAt,
+            updatedAt: annotation.updatedAt,
           })),
       ),
       currentSlideNumber: viewState?.currentSlideNumber ?? 1,
@@ -1007,6 +1287,7 @@ export class PersistenceStore {
       createdAt: now,
       updatedAt: now,
     };
+    const textNotesByPage = state.textNotesByPage ?? [];
 
     await this.transaction(async () => {
       await this.upsertConference(conference);
@@ -1018,7 +1299,8 @@ export class PersistenceStore {
         const slideNumber = pageIndex + 1;
         const slideId = createSlideId(deckId, slideNumber);
         const pageStrokes = state.strokesByPage[pageIndex] ?? [];
-        const annotated = pageStrokes.length > 0;
+        const pageTextNotes = textNotesByPage[pageIndex] ?? [];
+        const annotated = pageStrokes.length > 0 || pageTextNotes.length > 0;
 
         await this.upsertSlide({
           id: slideId,
@@ -1043,6 +1325,21 @@ export class PersistenceStore {
             updatedAt: now,
           });
         }
+
+        for (const note of pageTextNotes) {
+          await this.upsertAnnotation({
+            id: note.id,
+            conferenceId,
+            talkId,
+            deckId,
+            slideId,
+            x: note.x,
+            y: note.y,
+            text: note.text,
+            createdAt: note.createdAt ?? now,
+            updatedAt: note.updatedAt ?? now,
+          });
+        }
       }
 
       await this.upsertViewState({
@@ -1057,6 +1354,8 @@ export class PersistenceStore {
         zoom: state.zoom,
         scrollLeft: state.scrollLeft,
         scrollTop: state.scrollTop,
+        undoStack: state.undoStack ?? [],
+        redoStack: state.redoStack ?? [],
         createdAt: now,
         updatedAt: now,
       });
@@ -1086,6 +1385,7 @@ export class PersistenceStore {
     if (!conference || !talk || !deck) {
       throw new Error('Cannot save a deck workspace for an unknown deck.');
     }
+    const textNotesByPage = state.textNotesByPage ?? [];
 
     await this.transaction(async () => {
       await this.deleteSlidesByDeck(deckId);
@@ -1094,7 +1394,8 @@ export class PersistenceStore {
         const slideNumber = pageIndex + 1;
         const slideId = createSlideId(deckId, slideNumber);
         const pageStrokes = state.strokesByPage[pageIndex] ?? [];
-        const annotated = pageStrokes.length > 0;
+        const pageTextNotes = textNotesByPage[pageIndex] ?? [];
+        const annotated = pageStrokes.length > 0 || pageTextNotes.length > 0;
 
         await this.upsertSlide({
           id: slideId,
@@ -1119,6 +1420,21 @@ export class PersistenceStore {
             updatedAt: now,
           });
         }
+
+        for (const note of pageTextNotes) {
+          await this.upsertAnnotation({
+            id: note.id,
+            conferenceId,
+            talkId,
+            deckId,
+            slideId,
+            x: note.x,
+            y: note.y,
+            text: note.text,
+            createdAt: note.createdAt ?? now,
+            updatedAt: note.updatedAt ?? now,
+          });
+        }
       }
 
       await this.upsertViewState({
@@ -1133,6 +1449,8 @@ export class PersistenceStore {
         zoom: state.zoom,
         scrollLeft: state.scrollLeft,
         scrollTop: state.scrollTop,
+        undoStack: state.undoStack ?? [],
+        redoStack: state.redoStack ?? [],
         createdAt: now,
         updatedAt: now,
       });

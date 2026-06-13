@@ -79,10 +79,12 @@ describe('pointerTools', () => {
     expect(getPointerCursor(state.renderedTool)).toBe('none');
     expect(getPointerOverlayClass(state.renderedTool)).toBe('ink-layer eraser');
     expect(getPointerInteractionMode(state.renderedTool)).toBe('erase');
+    expect(getPointerInteractionMode('text')).toBe('text');
   });
 
   it('maps mouse, pen, touch, and unknown cursor modes explicitly', () => {
     expect(getPointerCursor('mouse')).toBe('crosshair');
+    expect(getPointerCursor('text')).toBe('text');
     expect(getPointerCursor('pen')).toBe('none');
     expect(getPointerCursor('eraser')).toBe('none');
     expect(getPointerCursor('touch')).toBe('none');

@@ -24,9 +24,23 @@ import {
 } from './strokeTools';
 import { getPdfWorkerSrc } from './pdfjs';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
+import type { PdfWorkspacePageState } from './shared/pdfWorkspace';
 import type { AgendaTalkMaterialSummary } from './shared/agenda';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
-import { IconButton, PrimaryButton, SegmentedControl, StatusLabel } from './ui';
+import {
+  DialogSurface,
+  IconButton,
+  PrimaryButton,
+  SegmentedControl,
+  StatusLabel,
+} from './ui';
+import {
+  createConferenceId,
+  createDeckId,
+  createSlideId,
+  createTalkId,
+  type TextNote,
+} from './persistenceModels';
 
 type PdfPreviewState =
   | { kind: 'idle' }
@@ -68,6 +82,23 @@ type PointerMarker = {
   tool: PointerTool;
 };
 
+type TextNoteDraft = {
+  mode: 'create' | 'edit';
+  pageIndex: number;
+  noteId: string | null;
+  x: number;
+  y: number;
+  text: string;
+};
+
+type TextNoteDragState = {
+  pointerId: number;
+  noteId: string;
+  pageIndex: number;
+  startOffsetX: number;
+  startOffsetY: number;
+};
+
 type PersistenceStatus =
   | { kind: 'idle'; label: string }
   | { kind: 'loading'; label: string }
@@ -95,6 +126,11 @@ type ActiveInkAction =
       pageIndex: number;
     }
   | {
+      kind: 'text';
+      pointerId: number;
+      pageIndex: number;
+    }
+  | {
       kind: 'pan';
       pointerId: number;
       startClientX: number;
@@ -105,7 +141,7 @@ type ActiveInkAction =
   | null;
 
 type MouseMode = 'draw' | 'pan';
-type ManualTool = 'pen' | 'eraser';
+type ManualTool = 'pen' | 'text' | 'eraser';
 
 const mouseModeOptions = [
   { label: 'Draw', value: 'draw' as const },
@@ -131,14 +167,20 @@ const createPageStatuses = (pageCount: number) =>
 const createEmptyStrokePages = (pageCount: number) =>
   Array.from({ length: pageCount }, () => [] as InkStroke[]);
 
+const createEmptyTextNotePages = (pageCount: number) =>
+  Array.from({ length: pageCount }, () => [] as TextNote[]);
+
 const getRenderableStrokePoints = (stroke: InkStroke) =>
   Array.isArray(stroke.points) ? stroke.points : [];
 
-const cloneStrokePages = (pages: Array<InkStroke[]>) =>
-  pages.map((pageStrokes) =>
-    pageStrokes.map((stroke) => ({
-      ...stroke,
-      points: [...stroke.points],
+const cloneWorkspaceHistory = (history: PdfWorkspacePageState[][]) =>
+  history.map((snapshot) =>
+    snapshot.map((pageState) => ({
+      strokes: pageState.strokes.map((stroke) => ({
+        ...stroke,
+        points: [...stroke.points],
+      })),
+      textNotes: pageState.textNotes.map((note) => ({ ...note })),
     })),
   );
 
@@ -173,9 +215,11 @@ const getRenderedToolForInteraction = (
 ) =>
   interactionMode === 'erase'
     ? 'eraser'
-    : resolvedTool === 'mouse'
-      ? 'mouse'
-      : renderedTool;
+    : interactionMode === 'text'
+      ? 'text'
+      : resolvedTool === 'mouse'
+        ? 'mouse'
+        : renderedTool;
 
 const toPointerSample = (
   event: React.PointerEvent<HTMLDivElement>,
@@ -209,6 +253,11 @@ const getPagePoint = (
 
 const createStrokeId = () =>
   `stroke-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+
+const createTextNoteId = () =>
+  `text-note-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
 const formatPageSizeLabel = (pageSize: { width: number; height: number }) =>
   pageSize.width > 0 && pageSize.height > 0
@@ -263,12 +312,19 @@ export function PdfPreview({
   const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>(
     [],
   );
-  const [undoStack, setUndoStack] = React.useState<Array<Array<InkStroke[]>>>(
-    [],
-  );
-  const [redoStack, setRedoStack] = React.useState<Array<Array<InkStroke[]>>>(
-    [],
-  );
+  const [textNotesByPage, setTextNotesByPage] = React.useState<
+    Array<TextNote[]>
+  >([]);
+  const [undoStack, setUndoStack] = React.useState<
+    Array<PdfWorkspacePageState[]>
+  >([]);
+  const [redoStack, setRedoStack] = React.useState<
+    Array<PdfWorkspacePageState[]>
+  >([]);
+  const [textNoteDraft, setTextNoteDraft] =
+    React.useState<TextNoteDraft | null>(null);
+  const [textNoteDragState, setTextNoteDragState] =
+    React.useState<TextNoteDragState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
   const [persistenceStatus, setPersistenceStatus] =
@@ -328,19 +384,25 @@ export function PdfPreview({
         eventKind,
         latchedToolRef.current,
       );
+      const manualInteractionMode =
+        manualTool === 'text'
+          ? 'text'
+          : manualTool === 'eraser'
+            ? 'erase'
+            : 'draw';
 
       const interactionMode =
-        toolState.renderedTool === 'mouse'
-          ? mouseMode === 'draw'
-            ? manualTool === 'eraser'
-              ? 'erase'
-              : 'draw'
-            : 'pan'
-          : toolState.renderedTool === 'pen'
-            ? manualTool === 'eraser'
-              ? 'erase'
-              : 'draw'
-            : getPointerInteractionMode(toolState.renderedTool);
+        toolState.renderedTool === 'touch'
+          ? 'pan'
+          : manualTool === 'text'
+            ? 'text'
+            : toolState.renderedTool === 'mouse'
+              ? mouseMode === 'pan'
+                ? 'pan'
+                : manualInteractionMode
+              : toolState.renderedTool === 'pen'
+                ? manualInteractionMode
+                : getPointerInteractionMode(toolState.renderedTool);
 
       return {
         sample,
@@ -476,13 +538,35 @@ export function PdfPreview({
     [],
   );
 
-  const recordStrokeSnapshot = React.useCallback(() => {
+  const updateTextNotePage = React.useCallback(
+    (
+      pageIndex: number,
+      updater: (currentTextNotes: TextNote[]) => TextNote[],
+    ) => {
+      setTextNotesByPage((currentPages) =>
+        currentPages.map((pageTextNotes, currentIndex) =>
+          currentIndex === pageIndex ? updater(pageTextNotes) : pageTextNotes,
+        ),
+      );
+    },
+    [],
+  );
+
+  const recordWorkspaceSnapshot = React.useCallback(() => {
     setUndoStack((currentUndoStack) => [
-      cloneStrokePages(strokesByPage),
+      strokesByPage.map((pageStrokes, pageIndex) => ({
+        strokes: pageStrokes.map((stroke) => ({
+          ...stroke,
+          points: [...stroke.points],
+        })),
+        textNotes: (textNotesByPage[pageIndex] ?? []).map((note) => ({
+          ...note,
+        })),
+      })),
       ...currentUndoStack,
     ]);
     setRedoStack([]);
-  }, [strokesByPage]);
+  }, [strokesByPage, textNotesByPage]);
 
   const handleUndo = React.useCallback(() => {
     const previousPages = undoStack[0];
@@ -492,12 +576,21 @@ export function PdfPreview({
 
     const rest = undoStack.slice(1);
     setRedoStack((currentRedoStack) => [
-      cloneStrokePages(strokesByPage),
+      strokesByPage.map((pageStrokes, pageIndex) => ({
+        strokes: pageStrokes.map((stroke) => ({
+          ...stroke,
+          points: [...stroke.points],
+        })),
+        textNotes: (textNotesByPage[pageIndex] ?? []).map((note) => ({
+          ...note,
+        })),
+      })),
       ...currentRedoStack,
     ]);
     setUndoStack(rest);
-    setStrokesByPage(previousPages);
-  }, [strokesByPage, undoStack]);
+    setStrokesByPage(previousPages.map((pageState) => pageState.strokes));
+    setTextNotesByPage(previousPages.map((pageState) => pageState.textNotes));
+  }, [strokesByPage, textNotesByPage, undoStack]);
 
   const handleRedo = React.useCallback(() => {
     const nextPages = redoStack[0];
@@ -507,15 +600,164 @@ export function PdfPreview({
 
     const rest = redoStack.slice(1);
     setUndoStack((currentUndoStack) => [
-      cloneStrokePages(strokesByPage),
+      strokesByPage.map((pageStrokes, pageIndex) => ({
+        strokes: pageStrokes.map((stroke) => ({
+          ...stroke,
+          points: [...stroke.points],
+        })),
+        textNotes: (textNotesByPage[pageIndex] ?? []).map((note) => ({
+          ...note,
+        })),
+      })),
       ...currentUndoStack,
     ]);
     setRedoStack(rest);
-    setStrokesByPage(nextPages);
-  }, [redoStack, strokesByPage]);
+    setStrokesByPage(nextPages.map((pageState) => pageState.strokes));
+    setTextNotesByPage(nextPages.map((pageState) => pageState.textNotes));
+  }, [redoStack, strokesByPage, textNotesByPage]);
 
   const currentPageCount =
     state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0;
+
+  const closeTextNoteDraft = React.useCallback(() => {
+    setTextNoteDraft(null);
+    setTextNoteDragState(null);
+    activeInkActionRef.current = null;
+  }, []);
+
+  const commitTextNoteDraft = React.useCallback(() => {
+    if (!textNoteDraft) {
+      return;
+    }
+
+    const trimmedText = textNoteDraft.text.trim();
+    if (!trimmedText) {
+      closeTextNoteDraft();
+      return;
+    }
+
+    recordWorkspaceSnapshot();
+
+    const now = Date.now();
+    const noteId = textNoteDraft.noteId ?? createTextNoteId();
+    const effectiveConferenceId =
+      conferenceId ?? createConferenceId(filePath ?? 'local-pdf');
+    const effectiveTalkId =
+      talkId ?? createTalkId(effectiveConferenceId, filePath ?? 'local-pdf');
+    const effectiveDeckId =
+      workspaceDeckId ?? createDeckId(effectiveTalkId, filePath ?? 'local-pdf');
+    const nextNote: TextNote = {
+      id: noteId,
+      conferenceId: effectiveConferenceId,
+      talkId: effectiveTalkId,
+      deckId: effectiveDeckId,
+      slideId: createSlideId(effectiveDeckId, textNoteDraft.pageIndex + 1),
+      x: clamp01(textNoteDraft.x),
+      y: clamp01(textNoteDraft.y),
+      text: trimmedText,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setTextNotesByPage((currentPages) => {
+      const nextPages = currentPages.length
+        ? currentPages.map((pageNotes, pageIndex) => {
+            if (pageIndex !== textNoteDraft.pageIndex) {
+              return pageNotes;
+            }
+
+            if (textNoteDraft.mode === 'edit') {
+              return [
+                ...pageNotes.filter((note) => note.id !== noteId),
+                nextNote,
+              ];
+            }
+
+            return pageNotes.some((note) => note.id === noteId)
+              ? pageNotes.map((note) => (note.id === noteId ? nextNote : note))
+              : [...pageNotes, nextNote];
+          })
+        : createEmptyTextNotePages(currentPageCount).map(
+            (pageNotes, pageIndex) =>
+              pageIndex === textNoteDraft.pageIndex ? [nextNote] : pageNotes,
+          );
+      return nextPages;
+    });
+
+    closeTextNoteDraft();
+  }, [
+    closeTextNoteDraft,
+    conferenceId,
+    currentPageCount,
+    filePath,
+    state.kind,
+    talkId,
+    textNoteDraft,
+    recordWorkspaceSnapshot,
+    workspaceDeckId,
+  ]);
+
+  const handleDeleteTextNote = React.useCallback(
+    (pageIndex: number, noteId: string) => {
+      recordWorkspaceSnapshot();
+      updateTextNotePage(pageIndex, (currentTextNotes) =>
+        currentTextNotes.filter((note) => note.id !== noteId),
+      );
+      if (textNoteDraft?.noteId === noteId) {
+        closeTextNoteDraft();
+      }
+    },
+    [
+      closeTextNoteDraft,
+      recordWorkspaceSnapshot,
+      textNoteDraft,
+      updateTextNotePage,
+    ],
+  );
+
+  const handleEditTextNote = React.useCallback(
+    (pageIndex: number, note: TextNote) => {
+      recordWorkspaceSnapshot();
+      setTextNoteDraft({
+        mode: 'edit',
+        noteId: note.id,
+        pageIndex,
+        x: note.x,
+        y: note.y,
+        text: note.text,
+      });
+    },
+    [],
+  );
+
+  const handleTextNoteDragStart = React.useCallback(
+    (
+      pageIndex: number,
+      note: TextNote,
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      const noteElement = event.currentTarget.closest<HTMLElement>(
+        '.pdf-preview-text-note',
+      );
+      const noteRect = noteElement?.getBoundingClientRect();
+      if (!noteRect) {
+        return;
+      }
+
+      recordWorkspaceSnapshot();
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setTextNoteDragState({
+        pointerId: event.pointerId,
+        noteId: note.id,
+        pageIndex,
+        startOffsetX: event.clientX - noteRect.left,
+        startOffsetY: event.clientY - noteRect.top,
+      });
+    },
+    [recordWorkspaceSnapshot],
+  );
 
   const handleJumpToSlide = React.useCallback(() => {
     const parsed = Number(jumpToSlideValue);
@@ -579,6 +821,9 @@ export function PdfPreview({
         sourceUrl: filePath,
         pageCount: currentPageCount,
         strokesByPage,
+        textNotesByPage,
+        undoStack,
+        redoStack,
         currentSlideNumber: currentSlideNumberRef.current,
         scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
         scrollTop: stageScrollRef.current?.scrollTop ?? 0,
@@ -614,6 +859,9 @@ export function PdfPreview({
     filePath,
     state.kind,
     strokesByPage,
+    textNotesByPage,
+    undoStack,
+    redoStack,
     workspaceDeckId,
     zoomLevel,
   ]);
@@ -628,7 +876,13 @@ export function PdfPreview({
     }
 
     schedulePersistenceSave();
-  }, [filePath, schedulePersistenceSave, state.kind, strokesByPage]);
+  }, [
+    filePath,
+    schedulePersistenceSave,
+    state.kind,
+    strokesByPage,
+    textNotesByPage,
+  ]);
 
   const handleStageScroll = React.useCallback(() => {
     if (
@@ -689,9 +943,28 @@ export function PdfPreview({
         }
 
         if (eventKind === 'pointerdown') {
+          if (interactionMode === 'text' && pagePoint) {
+            event.preventDefault();
+            const noteId = createTextNoteId();
+            activeInkActionRef.current = {
+              kind: 'text',
+              pointerId: event.pointerId,
+              pageIndex,
+            };
+            setTextNoteDraft({
+              mode: 'create',
+              noteId,
+              pageIndex,
+              x: pagePoint.x,
+              y: pagePoint.y,
+              text: '',
+            });
+            return;
+          }
+
           if (interactionMode === 'draw' && pagePoint) {
             event.preventDefault();
-            recordStrokeSnapshot();
+            recordWorkspaceSnapshot();
             const strokeId = createStrokeId();
             activeInkActionRef.current = {
               kind: 'draw',
@@ -723,7 +996,7 @@ export function PdfPreview({
 
           if (interactionMode === 'erase' && pagePoint && pageSize) {
             event.preventDefault();
-            recordStrokeSnapshot();
+            recordWorkspaceSnapshot();
             activeInkActionRef.current = {
               kind: 'erase',
               pointerId: event.pointerId,
@@ -811,10 +1084,45 @@ export function PdfPreview({
           }
         }
 
+        if (
+          eventKind === 'pointermove' &&
+          textNoteDragState &&
+          textNoteDragState.pointerId === event.pointerId &&
+          textNoteDragState.pageIndex === pageIndex
+        ) {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (bounds.width <= 0 || bounds.height <= 0) {
+            return;
+          }
+          const nextX = clamp01(
+            (event.clientX - bounds.left - textNoteDragState.startOffsetX) /
+              bounds.width,
+          );
+          const nextY = clamp01(
+            (event.clientY - bounds.top - textNoteDragState.startOffsetY) /
+              bounds.height,
+          );
+
+          updateTextNotePage(pageIndex, (currentTextNotes) =>
+            currentTextNotes.map((note) =>
+              note.id === textNoteDragState.noteId
+                ? {
+                    ...note,
+                    x: nextX,
+                    y: nextY,
+                    updatedAt: Date.now(),
+                  }
+                : note,
+            ),
+          );
+          event.preventDefault();
+        }
+
         if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
           if (
             activeInkActionRef.current?.pointerId === event.pointerId &&
             (activeInkActionRef.current.kind === 'pan' ||
+              activeInkActionRef.current.kind === 'text' ||
               activeInkActionRef.current.pageIndex === pageIndex)
           ) {
             activeInkActionRef.current = null;
@@ -823,6 +1131,12 @@ export function PdfPreview({
           if (pointerMarker?.pageIndex === pageIndex) {
             setPointerMarker(null);
           }
+          if (
+            textNoteDragState?.pointerId === event.pointerId &&
+            textNoteDragState.pageIndex === pageIndex
+          ) {
+            setTextNoteDragState(null);
+          }
         }
       },
     [
@@ -830,8 +1144,10 @@ export function PdfPreview({
       pointerMarker,
       resolvePointerInteraction,
       state,
-      recordStrokeSnapshot,
+      recordWorkspaceSnapshot,
+      textNoteDragState,
       updateStrokePage,
+      updateTextNotePage,
     ],
   );
 
@@ -847,9 +1163,12 @@ export function PdfPreview({
         pageCanvasRefs.current = [];
         setState({ kind: 'idle' });
         setStrokesByPage([]);
+        setTextNotesByPage([]);
         setUndoStack([]);
         setRedoStack([]);
         setPointerMarker(null);
+        setTextNoteDraft(null);
+        setTextNoteDragState(null);
         pendingWorkspaceRestoreRef.current = null;
         persistenceHydratedRef.current = false;
         if (persistenceSaveTimerRef.current !== null) {
@@ -896,9 +1215,12 @@ export function PdfPreview({
         pageCanvasRefs.current = Array.from({ length: pageCount }, () => null);
         pageFigureRefs.current = Array.from({ length: pageCount }, () => null);
         setStrokesByPage(createEmptyStrokePages(pageCount));
+        setTextNotesByPage(createEmptyTextNotePages(pageCount));
         setUndoStack([]);
         setRedoStack([]);
         setPointerMarker(null);
+        setTextNoteDraft(null);
+        setTextNoteDragState(null);
         const pageSizes = createPageSizes(pageCount);
         const pageStatuses = createPageStatuses(pageCount);
         setState({
@@ -936,9 +1258,27 @@ export function PdfPreview({
               ? savedWorkspace.strokesByPage
               : createEmptyStrokePages(pageCount),
           );
+          setTextNotesByPage(
+            savedWorkspace.textNotesByPage?.length
+              ? savedWorkspace.textNotesByPage
+              : createEmptyTextNotePages(pageCount),
+          );
+          setUndoStack(
+            savedWorkspace.undoStack
+              ? cloneWorkspaceHistory(savedWorkspace.undoStack)
+              : [],
+          );
+          setRedoStack(
+            savedWorkspace.redoStack
+              ? cloneWorkspaceHistory(savedWorkspace.redoStack)
+              : [],
+          );
           pendingWorkspaceRestoreRef.current = savedWorkspace;
         } else {
           setStrokesByPage(createEmptyStrokePages(pageCount));
+          setTextNotesByPage(createEmptyTextNotePages(pageCount));
+          setUndoStack([]);
+          setRedoStack([]);
           pendingWorkspaceRestoreRef.current = null;
         }
 
@@ -1071,22 +1411,26 @@ export function PdfPreview({
 
   const pointerToolLabel = pointerDiagnostics.renderedTool;
   const pointerModeLabel =
-    pointerDiagnostics.resolvedTool === 'mouse'
-      ? mouseMode === 'draw'
-        ? manualTool
-        : 'pan'
-      : pointerDiagnostics.interactionMode;
+    manualTool === 'text'
+      ? 'text'
+      : pointerDiagnostics.resolvedTool === 'mouse'
+        ? mouseMode === 'draw'
+          ? manualTool
+          : 'pan'
+        : pointerDiagnostics.interactionMode;
   const pointerCursorLabel =
-    pointerDiagnostics.resolvedTool === 'mouse'
-      ? getPointerCursorForInteraction(
-          'mouse',
-          mouseMode === 'draw'
-            ? manualTool === 'eraser'
-              ? 'erase'
-              : 'draw'
-            : 'pan',
-        )
-      : pointerDiagnostics.cursor;
+    manualTool === 'text'
+      ? 'text'
+      : pointerDiagnostics.resolvedTool === 'mouse'
+        ? getPointerCursorForInteraction(
+            'mouse',
+            mouseMode === 'draw'
+              ? manualTool === 'eraser'
+                ? 'erase'
+                : 'draw'
+              : 'pan',
+          )
+        : pointerDiagnostics.cursor;
   const pressureWidthLabel = `${getStrokeWidth(pointerDiagnostics.pressure).toFixed(1)} px`;
   const pdfWorkerSrc = getPdfWorkerSrc();
   const rendererLocation = window.location.href;
@@ -1201,7 +1545,8 @@ export function PdfPreview({
         <div className="surface-panel-header">
           <h4>Annotation toolbar</h4>
           <p>
-            Draw, erase, undo, redo, zoom, and jump without leaving the roll.
+            Draw, place text, erase, undo, redo, zoom, and jump without leaving
+            the roll.
           </p>
         </div>
         <div className="pdf-preview-toolbar-row">
@@ -1211,6 +1556,12 @@ export function PdfPreview({
               icon="pen"
               onClick={() => setManualTool('pen')}
               pressed={manualTool === 'pen'}
+            />
+            <IconButton
+              label="Text"
+              icon="text"
+              onClick={() => setManualTool('text')}
+              pressed={manualTool === 'text'}
             />
             <IconButton
               label="Eraser"
@@ -1434,7 +1785,9 @@ export function PdfPreview({
         </summary>
         <div className="pdf-preview-navigator-grid">
           {Array.from({ length: currentPageCount }, (_, index) => {
-            const annotated = (strokesByPage[index]?.length ?? 0) > 0;
+            const annotated =
+              (strokesByPage[index]?.length ?? 0) > 0 ||
+              (textNotesByPage[index]?.length ?? 0) > 0;
             return (
               <button
                 key={index}
@@ -1494,6 +1847,7 @@ export function PdfPreview({
                   ? state.pageStatuses[index]
                   : undefined) ?? 'pending';
               const pageStrokes = strokesByPage[index] ?? [];
+              const pageTextNotes = textNotesByPage[index] ?? [];
               const marker =
                 pointerMarker?.pageIndex === index ? pointerMarker : null;
               const hasRenderablePageSize =
@@ -1607,6 +1961,55 @@ export function PdfPreview({
                         )
                       ) : null}
                     </svg>
+                    <div
+                      className="pdf-preview-text-notes"
+                      aria-label={`Text notes on page ${index + 1}`}
+                    >
+                      {pageTextNotes.map((note) => (
+                        <article
+                          key={note.id}
+                          className="pdf-preview-text-note"
+                          style={{
+                            left: `${clamp01(note.x) * 100}%`,
+                            top: `${clamp01(note.y) * 100}%`,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="pdf-preview-text-note-drag-handle"
+                            aria-label={`Drag note on page ${index + 1}`}
+                            onPointerDown={(event) =>
+                              handleTextNoteDragStart(index, note, event)
+                            }
+                            title="Drag note"
+                          >
+                            <span
+                              className="pdf-preview-text-note-grip"
+                              aria-hidden="true"
+                            />
+                          </button>
+                          <div className="pdf-preview-text-note-text">
+                            {note.text}
+                          </div>
+                          <div className="pdf-preview-text-note-actions">
+                            <IconButton
+                              label={`Edit note on page ${index + 1}`}
+                              icon="pen"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => handleEditTextNote(index, note)}
+                            />
+                            <IconButton
+                              label={`Delete note on page ${index + 1}`}
+                              icon="trash"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() =>
+                                handleDeleteTextNote(index, note.id)
+                              }
+                            />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
                   </div>
                 </figure>
               );
@@ -1614,6 +2017,37 @@ export function PdfPreview({
           </div>
         ) : null}
       </div>
+
+      {textNoteDraft ? (
+        <div className="pdf-preview-note-dialog">
+          <DialogSurface
+            title={textNoteDraft.mode === 'edit' ? 'Edit note' : 'Add note'}
+            body={
+              <label className="field pdf-preview-note-field">
+                <span>Note text</span>
+                <textarea
+                  value={textNoteDraft.text}
+                  onChange={(event) =>
+                    setTextNoteDraft((currentDraft) =>
+                      currentDraft
+                        ? { ...currentDraft, text: event.target.value }
+                        : currentDraft,
+                    )
+                  }
+                  rows={4}
+                  placeholder="Type your note"
+                />
+              </label>
+            }
+            primaryLabel={
+              textNoteDraft.mode === 'edit' ? 'Save note' : 'Add note'
+            }
+            secondaryLabel="Cancel"
+            onPrimary={commitTextNoteDraft}
+            onSecondary={closeTextNoteDraft}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

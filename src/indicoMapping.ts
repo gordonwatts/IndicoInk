@@ -1,7 +1,6 @@
-import { createHash } from 'node:crypto';
-
 import type { Conference, Talk } from './persistenceModels';
 import type { IndicoEventIdentity } from './indicoEvent';
+import { sha1Hex } from './stableHash';
 
 type IndicoDateValue = {
   date?: string;
@@ -274,10 +273,10 @@ const createMaterialId = (
   title: string,
   index: number,
 ) =>
-  `material_${createHash('sha1')
-    .update(`${contributionId}:${url}:${title}:${index}`)
-    .digest('hex')
-    .slice(0, 20)}`;
+  `material_${sha1Hex(`${contributionId}:${url}:${title}:${index}`).slice(
+    0,
+    20,
+  )}`;
 
 const getContributionId = (
   contribution: IndicoContributionValue,

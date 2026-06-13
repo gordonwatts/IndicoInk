@@ -1,4 +1,10 @@
 import type { InkStroke } from '../strokeTools';
+import type { TextNote } from '../persistenceModels';
+
+export type PdfWorkspacePageState = {
+  strokes: InkStroke[];
+  textNotes: TextNote[];
+};
 
 export type PdfWorkspaceSnapshot = {
   sourceUrl: string;
@@ -7,6 +13,9 @@ export type PdfWorkspaceSnapshot = {
   deckId?: string;
   pageCount: number;
   strokesByPage: InkStroke[][];
+  textNotesByPage?: TextNote[][];
+  undoStack?: PdfWorkspacePageState[][];
+  redoStack?: PdfWorkspacePageState[][];
   currentSlideNumber: number;
   scrollLeft: number;
   scrollTop: number;
