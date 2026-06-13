@@ -152,7 +152,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(3);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(4);
     versionDb.close();
     await store.close();
   });

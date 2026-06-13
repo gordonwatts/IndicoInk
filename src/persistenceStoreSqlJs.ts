@@ -1,6 +1,6 @@
 import initSqlJs from 'sql.js';
 import { mkdirSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import type { NormalizedPagePoint } from './inkGeometry';
@@ -54,7 +54,7 @@ type SqlJsModule = {
   Database: new (data?: Uint8Array | ArrayBuffer) => SqlJsDatabase;
 };
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 const getFileName = (value: string) => {
   const normalized = value.replaceAll('\\', '/');
@@ -278,6 +278,7 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
       ends_at INTEGER,
       room TEXT NOT NULL,
       bookmarked INTEGER NOT NULL DEFAULT 0,
+      upstream_status TEXT NOT NULL DEFAULT 'present',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       UNIQUE(conference_id, contribution_id)
@@ -291,6 +292,7 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
       display_name TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       selected INTEGER NOT NULL DEFAULT 0,
+      upstream_status TEXT NOT NULL DEFAULT 'present',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       UNIQUE(talk_id, source_url)
@@ -398,7 +400,39 @@ const migration3 = (db: SqliteDatabaseAdapter) => {
   `);
 };
 
-const migrations = [migration1, migration2, migration3];
+const migration4 = (db: SqliteDatabaseAdapter) => {
+  const talkColumns = new Set(
+    (
+      db.pragma('table_info(talks)') as Array<{
+        columns: string[];
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!talkColumns.has('upstream_status')) {
+    db.exec(
+      "ALTER TABLE talks ADD COLUMN upstream_status TEXT NOT NULL DEFAULT 'present';",
+    );
+  }
+
+  const deckColumns = new Set(
+    (
+      db.pragma('table_info(decks)') as Array<{
+        columns: string[];
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!deckColumns.has('upstream_status')) {
+    db.exec(
+      "ALTER TABLE decks ADD COLUMN upstream_status TEXT NOT NULL DEFAULT 'present';",
+    );
+  }
+};
+
+const migrations = [migration1, migration2, migration3, migration4];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -434,6 +468,10 @@ const rowToTalk = (row: Record<string, unknown>): Talk => ({
   bookmarked: toBoolean(row.bookmarked),
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
+  upstreamStatus: String(row.upstream_status ?? 'present') as
+    | 'present'
+    | 'changed'
+    | 'missing',
 });
 
 const rowToDeck = (row: Record<string, unknown>): Deck => ({
@@ -446,6 +484,10 @@ const rowToDeck = (row: Record<string, unknown>): Deck => ({
   selected: toBoolean(row.selected),
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
+  upstreamStatus: String(row.upstream_status ?? 'present') as
+    | 'present'
+    | 'changed'
+    | 'missing',
 });
 
 const rowToSlide = (row: Record<string, unknown>): Slide => ({
@@ -673,6 +715,22 @@ const normalizeParams = (params?: unknown) => {
   return [params];
 };
 
+const writeFileAtomically = async (filePath: string, bytes: Uint8Array) => {
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tempPath, bytes);
+  try {
+    await rename(tempPath, filePath);
+  } catch (error) {
+    try {
+      await unlink(filePath);
+      await rename(tempPath, filePath);
+    } catch {
+      await unlink(tempPath).catch(() => {});
+      throw error;
+    }
+  }
+};
+
 export class PersistenceStore {
   private db: SqliteDatabaseAdapter | null = null;
   private loadPromise: Promise<void> | null = null;
@@ -778,12 +836,12 @@ export class PersistenceStore {
       `
         INSERT INTO talks (
           id, conference_id, contribution_id, contribution_url, title, speaker,
-          session_title, starts_at, ends_at, room, bookmarked, created_at,
-          updated_at
+          session_title, starts_at, ends_at, room, bookmarked, upstream_status,
+          created_at, updated_at
         ) VALUES (
           @id, @conferenceId, @contributionId, @contributionUrl, @title,
           @speaker, @sessionTitle, @startsAt, @endsAt, @room, @bookmarked,
-          @createdAt, @updatedAt
+          @upstreamStatus, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           conference_id = excluded.conference_id,
@@ -796,6 +854,7 @@ export class PersistenceStore {
           ends_at = excluded.ends_at,
           room = excluded.room,
           bookmarked = excluded.bookmarked,
+          upstream_status = excluded.upstream_status,
           updated_at = excluded.updated_at
       `,
     ).run({
@@ -807,6 +866,7 @@ export class PersistenceStore {
       sessionTitle: talk.sessionTitle,
       startsAt: talk.startsAt,
       endsAt: talk.endsAt,
+      upstreamStatus: talk.upstreamStatus ?? 'present',
     });
 
     this.markDirty();
@@ -857,10 +917,10 @@ export class PersistenceStore {
       `
         INSERT INTO decks (
           id, conference_id, talk_id, source_url, display_name, mime_type,
-          selected, created_at, updated_at
+          selected, upstream_status, created_at, updated_at
         ) VALUES (
           @id, @conferenceId, @talkId, @sourceUrl, @displayName, @mimeType,
-          @selected, @createdAt, @updatedAt
+          @selected, @upstreamStatus, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           conference_id = excluded.conference_id,
@@ -869,6 +929,7 @@ export class PersistenceStore {
           display_name = excluded.display_name,
           mime_type = excluded.mime_type,
           selected = excluded.selected,
+          upstream_status = excluded.upstream_status,
           updated_at = excluded.updated_at
       `,
     ).run({
@@ -879,6 +940,7 @@ export class PersistenceStore {
       sourceUrl: deck.sourceUrl,
       displayName: deck.displayName,
       mimeType: deck.mimeType,
+      upstreamStatus: deck.upstreamStatus ?? 'present',
     });
 
     this.markDirty();
@@ -1576,7 +1638,7 @@ export class PersistenceStore {
       return;
     }
 
-    await writeFile(this.dbPath, this.db.export());
+    await writeFileAtomically(this.dbPath, this.db.export());
     this.dirty = false;
   }
 }

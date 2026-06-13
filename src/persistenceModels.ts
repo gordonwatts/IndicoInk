@@ -47,6 +47,7 @@ export type Talk = {
   bookmarked: boolean;
   createdAt: number;
   updatedAt: number;
+  upstreamStatus?: 'present' | 'changed' | 'missing';
 };
 
 export type Deck = {
@@ -59,6 +60,7 @@ export type Deck = {
   selected: boolean;
   createdAt: number;
   updatedAt: number;
+  upstreamStatus?: 'present' | 'changed' | 'missing';
 };
 
 export type Slide = {

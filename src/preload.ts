@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type { AppInfo } from './shared/appInfo';
 import type { PdfSelection } from './openPdf';
+import type { RefreshLibraryEventResult } from './shared/library';
 import type {
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
@@ -19,6 +20,12 @@ import type { ConferenceExportSnapshot } from './shared/exportNotes';
 
 const getAppInfo = async (): Promise<AppInfo> =>
   ipcRenderer.invoke('app:get-info');
+
+const getDataFolder = async (): Promise<string> =>
+  ipcRenderer.invoke('app:get-data-folder');
+
+const getStartupIndicoEventUrl = async (): Promise<string | null> =>
+  ipcRenderer.invoke('app:get-startup-indico-url');
 
 const openPdf = async (): Promise<PdfSelection> =>
   ipcRenderer.invoke('pdf:open');
@@ -56,6 +63,12 @@ const listAgendaTalks = async (
 
 const deleteLibraryEvent = async (conferenceId: string): Promise<void> =>
   ipcRenderer.invoke('library:delete-event', conferenceId);
+
+const refreshLibraryEvent = async (
+  eventUrl: string,
+  decision?: 'keep' | 'replace',
+): Promise<RefreshLibraryEventResult> =>
+  ipcRenderer.invoke('library:refresh-event', eventUrl, decision);
 
 const openLibraryEvent = async (
   eventUrl: string,
@@ -95,6 +108,9 @@ const cancelDeckDownload = async (operationId: string): Promise<void> =>
 const openExternalUrl = async (url: string): Promise<void> =>
   ipcRenderer.invoke('system:open-external-url', url);
 
+const openDataFolder = async (): Promise<void> =>
+  ipcRenderer.invoke('system:open-data-folder');
+
 const getConferenceExportSnapshot = async (
   conferenceId: string,
 ): Promise<ConferenceExportSnapshot | null> =>
@@ -116,6 +132,8 @@ const openExportFileLocation = async (filePath: string): Promise<void> =>
 
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
+  getDataFolder,
+  getStartupIndicoEventUrl,
   openPdf,
   readPdfBytes,
   loadPdfWorkspaceState,
@@ -125,6 +143,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   listLibraryEvents,
   listAgendaTalks,
   deleteLibraryEvent,
+  refreshLibraryEvent,
   openLibraryEvent,
   saveIndicoApiKey,
   setTalkBookmarked,
@@ -133,6 +152,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   getDeckDownloadStatus,
   cancelDeckDownload,
   openExternalUrl,
+  openDataFolder,
   getConferenceExportSnapshot,
   showExportSaveDialog,
   writeExportFile,
@@ -141,6 +161,8 @@ contextBridge.exposeInMainWorld('indicoInk', {
 
 export type IndicoInkApi = {
   getAppInfo: () => Promise<AppInfo>;
+  getDataFolder: () => Promise<string>;
+  getStartupIndicoEventUrl: () => Promise<string | null>;
   openPdf: () => Promise<PdfSelection>;
   readPdfBytes: (filePath: string) => Promise<Uint8Array>;
   loadPdfWorkspaceState: (
@@ -158,6 +180,10 @@ export type IndicoInkApi = {
   listLibraryEvents: () => Promise<LibraryEventSummary[]>;
   listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
   deleteLibraryEvent: (conferenceId: string) => Promise<void>;
+  refreshLibraryEvent: (
+    eventUrl: string,
+    decision?: 'keep' | 'replace',
+  ) => Promise<RefreshLibraryEventResult>;
   openLibraryEvent: (
     eventUrl: string,
     apiKey?: string,
@@ -175,6 +201,7 @@ export type IndicoInkApi = {
   ) => Promise<DeckCacheDownloadStatus | null>;
   cancelDeckDownload: (operationId: string) => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
+  openDataFolder: () => Promise<void>;
   getConferenceExportSnapshot: (
     conferenceId: string,
   ) => Promise<ConferenceExportSnapshot | null>;

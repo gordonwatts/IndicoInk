@@ -1753,6 +1753,38 @@ input:focus-visible {
   border: 1px solid rgba(58, 67, 81, 0.08);
 }
 
+.settings-row-stack {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  min-width: 0;
+}
+
+.settings-row-stack strong {
+  word-break: break-word;
+  text-align: right;
+}
+
+.settings-row-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.refresh-conflict-list {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 8px;
+}
+
+.refresh-conflict {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-panel-muted);
+  border: 1px solid rgba(58, 67, 81, 0.08);
+}
+
 .event-context {
   display: grid;
   gap: 8px;

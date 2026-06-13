@@ -100,6 +100,17 @@ export const buildAgendaTalkSummaries = async (
         timeRangeLabel: formatAgendaTimeRange(talk.startsAt, talk.endsAt),
         room: talk.room,
         bookmarked: talk.bookmarked,
+        ...(talk.upstreamStatus
+          ? { upstreamStatus: talk.upstreamStatus }
+          : {}),
+        ...(talk.upstreamStatus
+          ? {
+              upstreamSummary:
+                talk.upstreamStatus === 'missing'
+                  ? 'Removed upstream'
+                  : 'Changed upstream',
+            }
+          : {}),
         materialSummary: formatMaterialSummary(pdfDecks.length),
         materials: await Promise.all(
           decks.map(async (deck) => ({
@@ -108,6 +119,9 @@ export const buildAgendaTalkSummaries = async (
             sourceUrl: deck.sourceUrl,
             mimeType: deck.mimeType,
             selected: deck.selected,
+            ...(deck.upstreamStatus
+              ? { upstreamStatus: deck.upstreamStatus }
+              : {}),
             pageCount:
               deck.mimeType === 'application/pdf'
                 ? (await store.listSlidesByDeck(deck.id)).length

@@ -45,6 +45,8 @@ describe('App', () => {
         appVersion: '0.1.0',
         electronVersion: '42.3.2',
       }),
+      getDataFolder: vi.fn().mockResolvedValue('C:/Users/test/AppData/Roaming/IndicoInk'),
+      getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       openPdf: vi.fn().mockResolvedValue({
         canceled: true,
         filePath: null,
@@ -65,6 +67,16 @@ describe('App', () => {
       listLibraryEvents: vi.fn().mockResolvedValue([]),
       listAgendaTalks: vi.fn().mockResolvedValue([]),
       deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
+      refreshLibraryEvent: vi.fn().mockResolvedValue({
+        kind: 'refreshed',
+        conferenceId: 'conference-opened',
+        title: 'Opened Indico Event',
+        talkCount: 5,
+        deckCount: 0,
+        changedTalkCount: 0,
+        removedTalkCount: 0,
+        newlyAvailableDeckCount: 0,
+      }),
       openLibraryEvent: vi.fn().mockResolvedValue({
         kind: 'opened',
         result: {
@@ -91,6 +103,7 @@ describe('App', () => {
       getDeckDownloadStatus: vi.fn().mockResolvedValue(null),
       cancelDeckDownload: vi.fn().mockResolvedValue(undefined),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      openDataFolder: vi.fn().mockResolvedValue(undefined),
       getConferenceExportSnapshot: vi.fn().mockResolvedValue(null),
       showExportSaveDialog: vi.fn().mockResolvedValue({
         canceled: true,

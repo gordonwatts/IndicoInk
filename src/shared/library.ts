@@ -31,3 +31,30 @@ export type OpenLibraryEventApiKeyRequired = {
 export type OpenLibraryEventResult =
   | OpenLibraryEventSuccess
   | OpenLibraryEventApiKeyRequired;
+
+export type RefreshConflict = {
+  talkId: string;
+  contributionId: string;
+  talkTitle: string;
+  selectedDeckId: string | null;
+  selectedDeckTitle: string | null;
+  message: string;
+};
+
+export type RefreshLibraryEventResult =
+  | {
+      kind: 'refreshed';
+      conferenceId: string;
+      title: string;
+      talkCount: number;
+      deckCount: number;
+      changedTalkCount: number;
+      removedTalkCount: number;
+      newlyAvailableDeckCount: number;
+    }
+  | {
+      kind: 'conflict';
+      conferenceId: string;
+      title: string;
+      conflicts: RefreshConflict[];
+    };

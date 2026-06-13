@@ -19,6 +19,8 @@ declare global {
   interface Window {
     indicoInk: {
       getAppInfo: () => Promise<AppInfo>;
+      getDataFolder: () => Promise<string>;
+      getStartupIndicoEventUrl: () => Promise<string | null>;
       openPdf: () => Promise<PdfSelection>;
       readPdfBytes: (filePath: string) => Promise<Uint8Array>;
       loadPdfWorkspaceState: (
@@ -36,6 +38,10 @@ declare global {
       listLibraryEvents: () => Promise<LibraryEventSummary[]>;
       listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
       deleteLibraryEvent: (conferenceId: string) => Promise<void>;
+      refreshLibraryEvent: (
+        eventUrl: string,
+        decision?: 'keep' | 'replace',
+      ) => Promise<import('./shared/library').RefreshLibraryEventResult>;
       openLibraryEvent: (
         eventUrl: string,
         apiKey?: string,
@@ -53,6 +59,7 @@ declare global {
       ) => Promise<DeckCacheDownloadStatus | null>;
       cancelDeckDownload: (operationId: string) => Promise<void>;
       openExternalUrl: (url: string) => Promise<void>;
+      openDataFolder: () => Promise<void>;
       getConferenceExportSnapshot: (
         conferenceId: string,
       ) => Promise<ConferenceExportSnapshot | null>;

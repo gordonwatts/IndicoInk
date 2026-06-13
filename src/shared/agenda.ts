@@ -13,6 +13,8 @@ export type AgendaTalkSummary = {
   materialSummary: string;
   materials: AgendaTalkMaterialSummary[];
   annotatedSlideCount: number;
+  upstreamStatus?: 'present' | 'changed' | 'missing';
+  upstreamSummary?: string;
 };
 
 export type AgendaTalkMaterialSummary = {
@@ -22,4 +24,5 @@ export type AgendaTalkMaterialSummary = {
   mimeType: string;
   selected: boolean;
   pageCount: number | null;
+  upstreamStatus?: 'present' | 'changed' | 'missing';
 };

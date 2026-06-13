@@ -19,6 +19,7 @@ import {
 } from './libraryData';
 import { buildAgendaTalkSummaries } from './agendaData';
 import { importIndicoEvent } from './indicoImport';
+import { refreshIndicoEvent } from './indicoRefresh';
 import { IndicoHttpError } from './indicoHttp';
 import { IndicoCredentialStore } from './indicoCredentials';
 import { isLikelyIndicoApiKeyError } from './indicoHttp';
@@ -68,7 +69,7 @@ const getMainWindowDevServerUrl = () =>
 const getPackagedRendererPath = () =>
   join(__dirname, '../renderer/', MAIN_WINDOW_VITE_NAME, 'index.html');
 
-const logStartupEvent = (source: string, detail: string) => {
+const logStartupEvent = (source: string, detail: unknown) => {
   appendStartupLogEntry(app.getPath('userData'), source, detail);
 };
 
@@ -220,6 +221,28 @@ function getImportFixtureName(argv: string[]) {
   return argv[index + 1]?.trim() || null;
 }
 
+function getStartupIndicoEventUrl(argv: string[]) {
+  const explicitArg = argv.find(
+    (value) => value === '--indico-url' || value.startsWith('--indico-url='),
+  );
+
+  if (explicitArg) {
+    if (explicitArg.includes('=')) {
+      const [, value] = explicitArg.split('=', 2);
+      return value?.trim() || null;
+    }
+
+    const index = argv.indexOf(explicitArg);
+    return argv[index + 1]?.trim() || null;
+  }
+
+  const directUrl = argv.find((value) =>
+    /^https:\/\/[^ ]+\/event\/[^ ]+/.test(value),
+  );
+
+  return directUrl?.trim() || null;
+}
+
 const createWindow = () => {
   const packagedRendererPath = getPackagedRendererPath();
   const hasPackagedRenderer = existsSync(packagedRendererPath);
@@ -316,6 +339,10 @@ logStartupEvent(
     gpuDisabled: shouldDisableGpu(),
   }),
 );
+const startupIndicoEventUrl = getStartupIndicoEventUrl(process.argv);
+if (startupIndicoEventUrl) {
+  logStartupEvent('launch:indico-url', { present: true });
+}
 
 const logStartupError = (source: string) => (error: unknown) => {
   appendStartupLogEntry(app.getPath('userData'), source, error);
@@ -333,9 +360,21 @@ ipcMain.handle(
   }),
 );
 
+ipcMain.handle('app:get-data-folder', async (): Promise<string> =>
+  app.getPath('userData'),
+);
+
+ipcMain.handle('app:get-startup-indico-url', async (): Promise<string | null> =>
+  getStartupIndicoEventUrl(process.argv),
+);
+
 ipcMain.handle('pdf:open', async () =>
   openPdfSelection((options) => dialog.showOpenDialog(options)),
 );
+
+ipcMain.handle('system:open-data-folder', async (): Promise<void> => {
+  await shell.openPath(app.getPath('userData'));
+});
 
 ipcMain.handle(
   'pdf:read',
@@ -372,6 +411,19 @@ ipcMain.handle(
 ipcMain.handle('library:delete-event', async (_event, conferenceId: string) => {
   await getPersistenceStore().deleteConference(conferenceId);
 });
+
+ipcMain.handle(
+  'library:refresh-event',
+  async (
+    _event,
+    eventUrl: string,
+    decision?: 'keep' | 'replace',
+  ): Promise<unknown> =>
+    refreshIndicoEvent(getPersistenceStore(), eventUrl, {
+      fetchImpl: session.defaultSession.fetch.bind(session.defaultSession),
+      ...(decision ? { decision } : {}),
+    }),
+);
 
 ipcMain.handle(
   'library:open-event',

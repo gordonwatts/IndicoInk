@@ -1,9 +1,13 @@
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const getIsolatedUserDataPath = (appName: string) =>
   process.env.INDICOINK_USER_DATA_DIR?.trim() ||
-  join(tmpdir(), `${appName}-user-data`);
+  join(
+    process.env.LOCALAPPDATA?.trim() ||
+      process.env.APPDATA?.trim() ||
+      process.cwd(),
+    appName,
+  );
 
 export const shouldUseIsolatedUserData = () =>
   process.env.INDICOINK_ISOLATED_USER_DATA === '1';

@@ -18,6 +18,10 @@ import type {
   ConferenceExportSnapshot,
   ExportRenderedSlide,
 } from './shared/exportNotes';
+import type {
+  RefreshConflict,
+  RefreshLibraryEventResult,
+} from './shared/library';
 import {
   CommandBar,
   DetailsSurface,
@@ -29,7 +33,6 @@ import {
   Row,
   SegmentedControl,
   StatusLabel,
-  ThemePreview,
 } from './ui';
 import { PdfPreview } from './PdfPreview';
 import {
@@ -536,119 +539,6 @@ function AgendaTimelineCanvas({
   );
 }
 
-function ComponentGallery() {
-  const [galleryFilter, setGalleryFilter] =
-    React.useState<GalleryFilter>('all');
-
-  return (
-    <div className="gallery-grid">
-      <ThemePreview theme="light">
-        <DetailsSurface
-          title="Light theme preview"
-          subtitle="Reusable primitives rendered in a calm, bright surface."
-        >
-          <div className="gallery-stack">
-            <CommandBar
-              kicker="Preview"
-              title="Command bar"
-              status={
-                <StatusLabel
-                  label="Light theme active"
-                  tone="success"
-                  icon="check"
-                />
-              }
-              leading={<IconButton label="Back" icon="back" />}
-              actions={
-                <>
-                  <IconButton label="Search" icon="search" />
-                  <IconButton label="Refresh" icon="refresh" />
-                  <PrimaryButton icon="export">Export notes</PrimaryButton>
-                </>
-              }
-            />
-            <SegmentedControl
-              options={filterOptions}
-              value={galleryFilter}
-              onChange={setGalleryFilter}
-            />
-            <Row
-              title="Talk row"
-              meta="Start time - title - speaker"
-              detail={
-                <StatusLabel
-                  label="3 annotated slides"
-                  tone="warning"
-                  icon="annotated"
-                />
-              }
-              action={<PrimaryButton>Open slides</PrimaryButton>}
-            />
-            <DialogSurface
-              title="Delete event"
-              body="This dialog pattern is reserved for destructive actions and other important decisions."
-              primaryLabel="Delete event"
-              secondaryLabel="Cancel"
-            />
-          </div>
-        </DetailsSurface>
-      </ThemePreview>
-
-      <ThemePreview theme="dark">
-        <DetailsSurface
-          title="Dark theme preview"
-          subtitle="The same primitives under the system dark palette."
-        >
-          <div className="gallery-stack">
-            <CommandBar
-              kicker="Preview"
-              title="Command bar"
-              status={
-                <StatusLabel
-                  label="Dark theme active"
-                  tone="success"
-                  icon="check"
-                />
-              }
-              leading={<IconButton label="Back" icon="back" />}
-              actions={
-                <>
-                  <IconButton label="Search" icon="search" />
-                  <IconButton label="Refresh" icon="refresh" />
-                  <PrimaryButton icon="export">Export notes</PrimaryButton>
-                </>
-              }
-            />
-            <SegmentedControl
-              options={filterOptions}
-              value={galleryFilter}
-              onChange={setGalleryFilter}
-            />
-            <Row
-              title="Details surface"
-              meta="Supports metadata and decision-making content"
-              detail={
-                <StatusLabel
-                  label="Cached for offline use"
-                  tone="neutral"
-                  icon="info"
-                />
-              }
-              action={<PrimaryButton>Open event</PrimaryButton>}
-            />
-            <DialogSurface
-              title="Import API key"
-              body="The dialog layout keeps credentials focused and separate from ordinary navigation."
-              primaryLabel="Save key"
-              secondaryLabel="Cancel"
-            />
-          </div>
-        </DetailsSurface>
-      </ThemePreview>
-    </div>
-  );
-}
-
 export function App() {
   const [destination, setDestination] = React.useState<Destination>('library');
   const [eventUrl, setEventUrl] = React.useState('');
@@ -665,6 +555,7 @@ export function App() {
   const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
+  const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
   const [libraryEvents, setLibraryEvents] = React.useState<EventSummary[]>([]);
   const [selectedEventId, setSelectedEventId] = React.useState<string | null>(
     null,
@@ -685,6 +576,14 @@ export function App() {
   const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
     null,
   );
+  const [refreshState, setRefreshState] = React.useState<
+    | { kind: 'idle' }
+    | { kind: 'checking'; message: string }
+    | { kind: 'conflict'; message: string; conflicts: RefreshConflict[] }
+    | { kind: 'refreshing'; message: string }
+    | { kind: 'done'; message: string }
+    | { kind: 'error'; message: string }
+  >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
   const agendaScrollPositionsRef = React.useRef<Record<string, number>>({});
@@ -702,10 +601,123 @@ export function App() {
     void window.indicoInk.getAppInfo().then(setInfo);
   }, []);
 
+  React.useEffect(() => {
+    void window.indicoInk.getDataFolder().then(setDataFolderPath);
+  }, []);
+
   const refreshLibraryEvents = React.useCallback(async () => {
     const events = await window.indicoInk.listLibraryEvents();
     setLibraryEvents(events);
   }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    void window.indicoInk.getStartupIndicoEventUrl().then(async (launchUrl) => {
+      if (cancelled || !launchUrl) {
+        return;
+      }
+
+      setEventUrl(launchUrl);
+      setEventUrlTouched(true);
+      setIsOpeningEvent(true);
+      setOpenEventFeedback({
+        tone: 'neutral',
+        message: 'Opening event from the launch request...',
+      });
+
+      try {
+        const openedEvent = await window.indicoInk.openLibraryEvent(launchUrl);
+        if (cancelled) {
+          return;
+        }
+
+        if (openedEvent.kind === 'api-key-required') {
+          setApiKeyDialogOrigin(openedEvent.origin);
+          setApiKeyValue('');
+          setApiKeyError(openedEvent.message);
+          setOpenEventFeedback({
+            tone: 'warning',
+            message: openedEvent.message,
+          });
+          return;
+        }
+
+        await refreshLibraryEvents();
+        setSelectedEventId(openedEvent.result.conferenceId);
+        setDestination('agenda');
+        setOpenEventFeedback({
+          tone: 'success',
+          message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setOpenEventFeedback({
+            tone: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Failed to open the launch event.',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsOpeningEvent(false);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshLibraryEvents]);
+
+  const refreshSelectedEvent = React.useCallback(
+    async (decision?: 'keep' | 'replace') => {
+      const event = libraryEvents.find((item) => item.id === selectedEventId);
+      if (!event) {
+        setRefreshState({
+          kind: 'error',
+          message: 'Open an event before refreshing it.',
+        });
+        return;
+      }
+
+      setRefreshState({
+        kind: 'checking',
+        message: `Checking ${event.title} for upstream changes...`,
+      });
+
+      try {
+        const result: RefreshLibraryEventResult =
+          await window.indicoInk.refreshLibraryEvent(event.sourceUrl, decision);
+
+        if (result.kind === 'conflict') {
+          setRefreshState({
+            kind: 'conflict',
+            message: 'The upstream PDF changed for an annotated deck.',
+            conflicts: result.conflicts,
+          });
+          return;
+        }
+
+        await refreshLibraryEvents();
+        setRefreshState({
+          kind: 'done',
+          message: `Refreshed ${result.title}: ${result.changedTalkCount} changed, ${result.removedTalkCount} removed, ${result.newlyAvailableDeckCount} new PDF${result.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
+        });
+      } catch (error) {
+        setRefreshState({
+          kind: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Failed to refresh the event.',
+        });
+      }
+    },
+    [libraryEvents, refreshLibraryEvents, selectedEventId],
+  );
 
   React.useEffect(() => {
     void refreshLibraryEvents();
@@ -1046,6 +1058,16 @@ export function App() {
     if (exportCancellationRef.current) {
       exportCancellationRef.current.cancelled = true;
     }
+  };
+  const handleRefreshAction = async () => {
+    if (refreshState.kind === 'conflict') {
+      return;
+    }
+
+    await refreshSelectedEvent();
+  };
+  const handleResolveRefreshConflict = async (decision: 'keep' | 'replace') => {
+    await refreshSelectedEvent(decision);
   };
   const handleExportNotes = async () => {
     if (!selectedEventId) {
@@ -1479,6 +1501,8 @@ export function App() {
           kicker={
             destination === 'library'
               ? 'Library'
+              : destination === 'settings'
+                ? 'Settings'
               : destination === 'slides'
                 ? (selectedAgendaTalk?.title ?? activeEvent.title)
                 : activeEvent.title
@@ -1499,7 +1523,32 @@ export function App() {
                         : 'Settings'
           }
           status={
-            exportState.kind === 'preparing' ||
+            refreshState.kind === 'checking' ||
+            refreshState.kind === 'refreshing' ? (
+              <StatusLabel
+                label={refreshState.message}
+                tone="neutral"
+                icon="refresh"
+              />
+            ) : refreshState.kind === 'done' ? (
+              <StatusLabel
+                label={refreshState.message}
+                tone="success"
+                icon="check"
+              />
+            ) : refreshState.kind === 'error' ? (
+              <StatusLabel
+                label={refreshState.message}
+                tone="error"
+                icon="info"
+              />
+            ) : refreshState.kind === 'conflict' ? (
+              <StatusLabel
+                label={refreshState.message}
+                tone="warning"
+                icon="info"
+              />
+            ) : exportState.kind === 'preparing' ||
             exportState.kind === 'rendering' ||
             exportState.kind === 'writing' ? (
               <StatusLabel
@@ -1564,10 +1613,19 @@ export function App() {
               <>
                 <IconButton
                   label="Search"
+                  title="Search Event"
                   icon="search"
                   onClick={() => setDestination('search')}
                 />
-                <IconButton label="Refresh" icon="refresh" />
+                <IconButton
+                  label="Refresh"
+                  title="Refresh Event from Indico"
+                  icon="refresh"
+                  onClick={() => {
+                    void handleRefreshAction();
+                  }}
+                  disabled={!selectedEventId}
+                />
                 <PrimaryButton
                   icon="export"
                   onClick={() => {
@@ -1859,6 +1917,18 @@ export function App() {
                                       tone="neutral"
                                       icon="agenda"
                                     />
+                                    {selectedAgendaTalk.upstreamSummary ? (
+                                      <StatusLabel
+                                        label={selectedAgendaTalk.upstreamSummary}
+                                        tone={
+                                          selectedAgendaTalk.upstreamStatus ===
+                                          'missing'
+                                            ? 'warning'
+                                            : 'neutral'
+                                        }
+                                        icon="info"
+                                      />
+                                    ) : null}
                                   </div>
                                   <div className="agenda-talk-detail-facts">
                                     <div className="agenda-talk-detail-fact">
@@ -1929,6 +1999,31 @@ export function App() {
                                                       : 'open'
                                                   }
                                                 />
+                                              }
+                                              detail={
+                                                material.upstreamStatus ? (
+                                                  <StatusLabel
+                                                    label={
+                                                      material.upstreamStatus ===
+                                                      'missing'
+                                                        ? 'Removed upstream'
+                                                        : material.upstreamStatus ===
+                                                            'changed'
+                                                          ? 'Changed upstream'
+                                                          : 'Available upstream'
+                                                    }
+                                                    tone={
+                                                      material.upstreamStatus ===
+                                                      'missing'
+                                                        ? 'warning'
+                                                        : material.upstreamStatus ===
+                                                            'changed'
+                                                          ? 'neutral'
+                                                          : 'success'
+                                                    }
+                                                    icon="info"
+                                                  />
+                                                ) : null
                                               }
                                             />
                                           ),
@@ -2081,6 +2176,17 @@ export function App() {
                               tone="warning"
                               icon="annotated"
                             />
+                            {talk.upstreamSummary ? (
+                              <StatusLabel
+                                label={talk.upstreamSummary}
+                                tone={
+                                  talk.upstreamStatus === 'missing'
+                                    ? 'warning'
+                                    : 'neutral'
+                                }
+                                icon="info"
+                              />
+                            ) : null}
                           </div>
                         }
                         action={
@@ -2196,6 +2302,17 @@ export function App() {
                               tone="warning"
                               icon="annotated"
                             />
+                            {talk.upstreamSummary ? (
+                              <StatusLabel
+                                label={talk.upstreamSummary}
+                                tone={
+                                  talk.upstreamStatus === 'missing'
+                                    ? 'warning'
+                                    : 'neutral'
+                                }
+                                icon="info"
+                              />
+                            ) : null}
                           </div>
                         }
                         action={
@@ -2331,6 +2448,17 @@ export function App() {
                                   tone="warning"
                                   icon="annotated"
                                 />
+                                {talk.upstreamSummary ? (
+                                  <StatusLabel
+                                    label={talk.upstreamSummary}
+                                    tone={
+                                      talk.upstreamStatus === 'missing'
+                                        ? 'warning'
+                                        : 'neutral'
+                                    }
+                                    icon="info"
+                                  />
+                                ) : null}
                               </div>
                             }
                             action={
@@ -2391,43 +2519,31 @@ export function App() {
 
           {destination === 'settings' && (
             <section className="page-stack">
-              <div className="overview-grid">
+              <div className="settings-panel">
                 <DetailsSurface
                   title="Application settings"
-                  subtitle="Placeholder surface for app-wide preferences."
+                  subtitle="Local data access."
                 >
                   <div className="settings-list">
                     <div className="settings-row">
-                      <span>Theme</span>
-                      <strong>System aware, later in the plan</strong>
-                    </div>
-                    <div className="settings-row">
                       <span>Data folder</span>
-                      <strong>Local app data, later in the plan</strong>
+                      <div className="settings-row-stack">
+                        <strong>{dataFolderPath || 'Loading...'}</strong>
+                        <div className="settings-row-actions">
+                          <IconButton
+                            label="Open data folder"
+                            icon="open"
+                            onClick={() => {
+                              void window.indicoInk.openDataFolder();
+                            }}
+                            disabled={!dataFolderPath}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="settings-row">
-                      <span>Runtime</span>
-                      <strong>
-                        {info
-                          ? `${info.appName} - ${info.electronVersion}`
-                          : 'Loading...'}
-                      </strong>
-                    </div>
-                  </div>
-                </DetailsSurface>
-                <DetailsSurface
-                  title="Current event context"
-                  subtitle="Event ownership persists while moving between agenda-related views."
-                >
-                  <div className="event-context">
-                    <strong>{activeEvent.title}</strong>
-                    <span>{activeEvent.dates}</span>
-                    <span>{activeEvent.host}</span>
                   </div>
                 </DetailsSurface>
               </div>
-
-              <ComponentGallery />
             </section>
           )}
 
@@ -2501,6 +2617,51 @@ export function App() {
                   setApiKeyDialogOrigin(null);
                   setApiKeyValue('');
                   setApiKeyError(null);
+                }}
+              />
+            </div>
+          ) : null}
+
+          {refreshState.kind === 'conflict' ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title="Refresh conflict"
+                body={
+                  <div className="dialog-copy">
+                    <p>{refreshState.message}</p>
+                    <div className="refresh-conflict-list">
+                      {refreshState.conflicts.map((conflict) => (
+                        <div key={conflict.talkId} className="refresh-conflict">
+                          <strong>{conflict.talkTitle}</strong>
+                          <span>{conflict.message}</span>
+                          <span>
+                            {conflict.selectedDeckTitle ?? 'Selected deck'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p>
+                      Keeping the current deck preserves the cached PDF and its
+                      annotations. Replacing it updates the cache from the
+                      refreshed event.
+                    </p>
+                  </div>
+                }
+                primaryLabel="Replace deck"
+                secondaryLabel="Keep deck"
+                onPrimary={() => {
+                  setRefreshState({
+                    kind: 'refreshing',
+                    message: 'Replacing the cached deck and refreshing the event...',
+                  });
+                  void handleResolveRefreshConflict('replace');
+                }}
+                onSecondary={() => {
+                  setRefreshState({
+                    kind: 'refreshing',
+                    message: 'Refreshing while keeping the existing deck cache...',
+                  });
+                  void handleResolveRefreshConflict('keep');
                 }}
               />
             </div>
