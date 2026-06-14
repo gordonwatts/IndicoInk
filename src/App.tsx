@@ -127,9 +127,14 @@ const validateEventUrl = (value: string) => {
 };
 
 const sanitizeFileName = (value: string) =>
-  value
-    .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, ' ')
+  Array.from(value.trim())
+    .map((character) =>
+      character.codePointAt(0) !== undefined && character.codePointAt(0)! < 32
+        ? ' '
+        : character,
+    )
+    .join('')
+    .replace(/[<>:"/\\|?*]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -1503,9 +1508,9 @@ export function App() {
               ? 'Library'
               : destination === 'settings'
                 ? 'Settings'
-              : destination === 'slides'
-                ? (selectedAgendaTalk?.title ?? activeEvent.title)
-                : activeEvent.title
+                : destination === 'slides'
+                  ? (selectedAgendaTalk?.title ?? activeEvent.title)
+                  : activeEvent.title
           }
           title={
             destination === 'library'
@@ -1549,8 +1554,8 @@ export function App() {
                 icon="info"
               />
             ) : exportState.kind === 'preparing' ||
-            exportState.kind === 'rendering' ||
-            exportState.kind === 'writing' ? (
+              exportState.kind === 'rendering' ||
+              exportState.kind === 'writing' ? (
               <StatusLabel
                 label={exportState.label}
                 tone="neutral"
@@ -1919,7 +1924,9 @@ export function App() {
                                     />
                                     {selectedAgendaTalk.upstreamSummary ? (
                                       <StatusLabel
-                                        label={selectedAgendaTalk.upstreamSummary}
+                                        label={
+                                          selectedAgendaTalk.upstreamSummary
+                                        }
                                         tone={
                                           selectedAgendaTalk.upstreamStatus ===
                                           'missing'
@@ -2652,14 +2659,16 @@ export function App() {
                 onPrimary={() => {
                   setRefreshState({
                     kind: 'refreshing',
-                    message: 'Replacing the cached deck and refreshing the event...',
+                    message:
+                      'Replacing the cached deck and refreshing the event...',
                   });
                   void handleResolveRefreshConflict('replace');
                 }}
                 onSecondary={() => {
                   setRefreshState({
                     kind: 'refreshing',
-                    message: 'Refreshing while keeping the existing deck cache...',
+                    message:
+                      'Refreshing while keeping the existing deck cache...',
                   });
                   void handleResolveRefreshConflict('keep');
                 }}

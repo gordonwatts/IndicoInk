@@ -1,0 +1,40 @@
+name: Build Windows installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-installers:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --cache .npm-cache
+
+      - name: Build installers
+        run: npm run make
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: indicoink-windows-installers
+          path: out/make/squirrel.windows/x64/*
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/make/squirrel.windows/x64/*

@@ -45,7 +45,9 @@ describe('App', () => {
         appVersion: '0.1.0',
         electronVersion: '42.3.2',
       }),
-      getDataFolder: vi.fn().mockResolvedValue('C:/Users/test/AppData/Roaming/IndicoInk'),
+      getDataFolder: vi
+        .fn()
+        .mockResolvedValue('C:/Users/test/AppData/Roaming/IndicoInk'),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       openPdf: vi.fn().mockResolvedValue({
         canceled: true,

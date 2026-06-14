@@ -14,6 +14,13 @@ npm install --cache .npm-cache
 npm start
 ```
 
+## Open Packaged
+
+```powershell
+npm run package
+npm run open:packaged
+```
+
 ## Build
 
 ```powershell

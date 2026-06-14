@@ -15,11 +15,6 @@ import type {
 
 type RefreshDecision = 'keep' | 'replace';
 
-type TalkComparison = {
-  changed: boolean;
-  selectedDeckChanged: boolean;
-};
-
 const getConferenceDecksByTalk = async (
   store: PersistenceStore,
   talkId: string,
@@ -49,7 +44,9 @@ const getDeckAnnotationCount = async (
 ) => {
   const slides = await store.listSlidesByDeck(deckId);
   const annotationCounts = await Promise.all(
-    slides.map(async (slide) => (await store.listAnnotationsBySlide(slide.id)).length),
+    slides.map(
+      async (slide) => (await store.listAnnotationsBySlide(slide.id)).length,
+    ),
   );
   return annotationCounts.reduce((total, count) => total + count, 0);
 };
@@ -60,7 +57,7 @@ const buildConflict = (
   talkTitle: string,
   selectedDeckId: string | null,
   selectedDeckTitle: string | null,
-) : RefreshConflict => ({
+): RefreshConflict => ({
   talkId,
   contributionId,
   talkTitle,
@@ -127,9 +124,6 @@ export const refreshIndicoEvent = async (
     const currentDecks = await getConferenceDecksByTalk(store, currentTalk.id);
     const incomingDecks = incomingTalk.materials.filter(
       (material) => material.kind === 'pdf',
-    );
-    const currentDeckBySourceUrl = new Map(
-      currentDecks.map((deck) => [deck.sourceUrl, deck] as const),
     );
     const incomingDeckBySourceUrl = new Map(
       incomingDecks.map((material) => [material.url, material] as const),
@@ -253,7 +247,10 @@ export const refreshIndicoEvent = async (
         upstreamStatus,
       });
 
-      const currentDecks = await getConferenceDecksByTalk(transactionStore, talkId);
+      const currentDecks = await getConferenceDecksByTalk(
+        transactionStore,
+        talkId,
+      );
       const currentDeckBySourceUrl = new Map(
         currentDecks.map((deck) => [deck.sourceUrl, deck] as const),
       );
@@ -317,7 +314,12 @@ export const refreshIndicoEvent = async (
       }
 
       for (const currentDeck of currentDecks) {
-        if (incomingTalk.materials.some((material) => material.kind === 'pdf' && material.url === currentDeck.sourceUrl)) {
+        if (
+          incomingTalk.materials.some(
+            (material) =>
+              material.kind === 'pdf' && material.url === currentDeck.sourceUrl,
+          )
+        ) {
           continue;
         }
 

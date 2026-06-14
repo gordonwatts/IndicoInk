@@ -15,7 +15,9 @@ import { PersistenceStore } from './persistenceStore';
 import { refreshIndicoEvent } from './indicoRefresh';
 
 const makeStore = () =>
-  new PersistenceStore(join(mkdtempSync(join(tmpdir(), 'indicoink-refresh-')), 'db.sqlite3'));
+  new PersistenceStore(
+    join(mkdtempSync(join(tmpdir(), 'indicoink-refresh-')), 'db.sqlite3'),
+  );
 
 const buildRefreshEvent = () => ({
   results: [
@@ -170,9 +172,8 @@ describe('refreshIndicoEvent', () => {
       'Slides v1',
     );
     expect(
-      decks.find((deck) =>
-        deck.sourceUrl.endsWith('/materials/extras.pdf'),
-      )?.displayName,
+      decks.find((deck) => deck.sourceUrl.endsWith('/materials/extras.pdf'))
+        ?.displayName,
     ).toBe('Extra appendix');
 
     const talk = await store.getTalk(talkId);

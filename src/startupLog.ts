@@ -54,7 +54,10 @@ export const appendStartupLogEntry = (
   detail: unknown,
 ) => {
   try {
-    appendFileSync(join(logDir, 'startup.log'), formatStartupLogEntry(source, detail));
+    appendFileSync(
+      join(logDir, 'startup.log'),
+      formatStartupLogEntry(source, detail),
+    );
   } catch {
     // Logging must never block startup or crash reporting.
   }

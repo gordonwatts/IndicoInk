@@ -659,30 +659,71 @@ export function PdfPreview({
       updatedAt: now,
     };
 
-    setTextNotesByPage((currentPages) => {
-      const nextPages = currentPages.length
-        ? currentPages.map((pageNotes, pageIndex) => {
-            if (pageIndex !== textNoteDraft.pageIndex) {
-              return pageNotes;
-            }
+    const nextTextNotesByPage = textNotesByPage.length
+      ? textNotesByPage.map((pageNotes, pageIndex) => {
+          if (pageIndex !== textNoteDraft.pageIndex) {
+            return pageNotes;
+          }
 
-            if (textNoteDraft.mode === 'edit') {
-              return [
-                ...pageNotes.filter((note) => note.id !== noteId),
-                nextNote,
-              ];
-            }
+          if (textNoteDraft.mode === 'edit') {
+            return [
+              ...pageNotes.filter((note) => note.id !== noteId),
+              nextNote,
+            ];
+          }
 
-            return pageNotes.some((note) => note.id === noteId)
-              ? pageNotes.map((note) => (note.id === noteId ? nextNote : note))
-              : [...pageNotes, nextNote];
-          })
-        : createEmptyTextNotePages(currentPageCount).map(
-            (pageNotes, pageIndex) =>
-              pageIndex === textNoteDraft.pageIndex ? [nextNote] : pageNotes,
-          );
-      return nextPages;
+          return pageNotes.some((note) => note.id === noteId)
+            ? pageNotes.map((note) => (note.id === noteId ? nextNote : note))
+            : [...pageNotes, nextNote];
+        })
+      : createEmptyTextNotePages(currentPageCount).map(
+          (pageNotes, pageIndex) =>
+            pageIndex === textNoteDraft.pageIndex ? [nextNote] : pageNotes,
+        );
+
+    setTextNotesByPage(nextTextNotesByPage);
+
+    const nextSnapshot: PdfWorkspaceSnapshot = {
+      sourceUrl: filePath ?? '',
+      pageCount: currentPageCount,
+      strokesByPage,
+      textNotesByPage: nextTextNotesByPage,
+      undoStack,
+      redoStack,
+      currentSlideNumber: currentSlideNumberRef.current,
+      scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
+      scrollTop: stageScrollRef.current?.scrollTop ?? 0,
+      zoom: zoomLevel,
+      ...(workspaceDeckId && conferenceId ? { conferenceId } : {}),
+      ...(workspaceDeckId && talkId ? { talkId } : {}),
+      ...(workspaceDeckId ? { deckId: workspaceDeckId } : {}),
+    };
+
+    setPersistenceStatus({
+      kind: 'saving',
+      label: 'Saving workspace...',
     });
+
+    const saveWorkspace = workspaceDeckId
+      ? window.indicoInk.saveDeckWorkspaceState(nextSnapshot)
+      : window.indicoInk.savePdfWorkspaceState(nextSnapshot);
+
+    void saveWorkspace
+      .then((result) => {
+        setPersistenceStatus({
+          kind: 'saved',
+          label: `Saved ${getFileName(result.sourceUrl)}`,
+        });
+      })
+      .catch((error) => {
+        setPersistenceStatus({
+          kind: 'error',
+          label:
+            error instanceof Error
+              ? error.message
+              : 'Failed to save workspace.',
+        });
+      });
 
     closeTextNoteDraft();
   }, [
@@ -690,10 +731,15 @@ export function PdfPreview({
     conferenceId,
     currentPageCount,
     filePath,
+    redoStack,
     state.kind,
+    strokesByPage,
     talkId,
     textNoteDraft,
     recordWorkspaceSnapshot,
+    textNotesByPage,
+    undoStack,
+    zoomLevel,
     workspaceDeckId,
   ]);
 

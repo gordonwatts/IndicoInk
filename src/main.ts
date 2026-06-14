@@ -360,12 +360,14 @@ ipcMain.handle(
   }),
 );
 
-ipcMain.handle('app:get-data-folder', async (): Promise<string> =>
-  app.getPath('userData'),
+ipcMain.handle(
+  'app:get-data-folder',
+  async (): Promise<string> => app.getPath('userData'),
 );
 
-ipcMain.handle('app:get-startup-indico-url', async (): Promise<string | null> =>
-  getStartupIndicoEventUrl(process.argv),
+ipcMain.handle(
+  'app:get-startup-indico-url',
+  async (): Promise<string | null> => getStartupIndicoEventUrl(process.argv),
 );
 
 ipcMain.handle('pdf:open', async () =>
@@ -548,6 +550,14 @@ ipcMain.handle(
       title: string;
     },
   ) => {
+    const testExportPath = process.env.INDICOINK_EXPORT_TEST_PATH?.trim();
+    if (testExportPath) {
+      return {
+        canceled: false,
+        filePath: testExportPath,
+      };
+    }
+
     const result = mainWindow
       ? await dialog.showSaveDialog(mainWindow, {
           title: options.title,

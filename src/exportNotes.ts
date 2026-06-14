@@ -64,8 +64,6 @@ export const collectExportRenderJobs = (
     ),
   );
 
-const formatDateTime = (value: number) => new Date(value).toISOString();
-
 const formatDateTimeParts = (value: number) =>
   new Intl.DateTimeFormat('en-US', {
     year: 'numeric',

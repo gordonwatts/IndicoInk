@@ -2,6 +2,7 @@
   "name": "indicoink",
   "version": "0.1.0",
   "private": true,
+  "author": "IndicoInk",
   "description": "Indico slide notes app",
   "main": ".vite/build/main.js",
   "scripts": {
@@ -9,6 +10,7 @@
     "import:fixture": "node scripts/ensure-electron-path.mjs && cross-env INDICOINK_ISOLATED_USER_DATA=1 ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
     "start:gpu": "node scripts/ensure-electron-path.mjs && cross-env INDICOINK_ISOLATED_USER_DATA=1 INDICOINK_DISABLE_GPU=1 ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
     "dev": "node scripts/ensure-electron-path.mjs && cross-env INDICOINK_ISOLATED_USER_DATA=1 ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge start",
+    "open:packaged": "node scripts/open-packaged.mjs",
     "package": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge package",
     "make": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge make",
     "build": "node scripts/ensure-electron-path.mjs && cross-env ELECTRON_CONFIG_CACHE=.electron-cache electron_config_cache=.electron-cache ELECTRON_CACHE=.electron-cache ELECTRON_OVERRIDE_DIST_PATH=node_modules/electron/dist electron-forge package",
@@ -19,6 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:packaged": "playwright test --config playwright.packaged.config.ts",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run test:e2e"
   },
   "dependencies": {

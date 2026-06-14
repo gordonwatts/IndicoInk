@@ -100,9 +100,7 @@ export const buildAgendaTalkSummaries = async (
         timeRangeLabel: formatAgendaTimeRange(talk.startsAt, talk.endsAt),
         room: talk.room,
         bookmarked: talk.bookmarked,
-        ...(talk.upstreamStatus
-          ? { upstreamStatus: talk.upstreamStatus }
-          : {}),
+        ...(talk.upstreamStatus ? { upstreamStatus: talk.upstreamStatus } : {}),
         ...(talk.upstreamStatus
           ? {
               upstreamSummary:

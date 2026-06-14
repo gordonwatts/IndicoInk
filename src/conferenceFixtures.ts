@@ -48,6 +48,49 @@ export type MaterialFixture =
     };
 
 export const conferenceFixtures = {
+  packaged: {
+    sourceUrl:
+      'https://packaged.indico.example.org/event/indicoink-packaged-2026',
+    title: 'IndicoInk Packaged Acceptance 2026',
+    dates: 'June 12, 2026',
+    host: 'packaged.indico.example.org',
+    lastOpenedAt: 1_749_721_200_000,
+    days: [
+      {
+        label: 'Friday, June 12, 2026',
+        sessions: [
+          {
+            title: 'Acceptance session',
+            room: 'Room 101',
+            startsAt: '09:00',
+            endsAt: '10:00',
+            talks: [
+              {
+                contributionId: 'packaged-1001',
+                title: 'Packaging acceptance flow',
+                speaker: 'Grace Hopper',
+                startsAt: '09:00',
+                endsAt: '09:30',
+                room: 'Room 101',
+                bookmarked: true,
+                materials: [
+                  {
+                    kind: 'pdf',
+                    sourceUrl:
+                      'https://packaged.indico.example.org/event/indicoink-packaged-2026/materials/packaged-1001-slides.pdf',
+                    displayName: 'Slides',
+                    pageCount: 3,
+                    selected: true,
+                    annotatedSlides: [1],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  } satisfies ConferenceFixture,
   small: {
     sourceUrl: 'https://small.indico.example.org/event/indicoink-small-2026',
     title: 'IndicoInk Small Event 2026',

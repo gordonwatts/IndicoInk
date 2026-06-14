@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -9,12 +9,111 @@ const electronPath = resolve('node_modules/electron/dist/electron.exe');
 const electronCacheRoot = resolve('.electron-cache');
 const electronDistPath = resolve('node_modules/electron/dist');
 const remoteDebuggingPort = 9222;
+const packagedOutRoot = resolve('out');
+const packagedAppAsarPath = resolve(
+  packagedOutRoot,
+  'indicoink-win32-x64',
+  'resources',
+  'app.asar',
+);
 const pickEnv = (keys: string[]) =>
   Object.fromEntries(
     keys
       .map((key) => [key, process.env[key]])
       .filter((entry): entry is [string, string] => Boolean(entry[1])),
   );
+
+const isPackagedAppBinary = (filePath: string) => {
+  const normalized = filePath.replaceAll('\\', '/').toLowerCase();
+  const fileName = normalized.slice(normalized.lastIndexOf('/') + 1);
+
+  return (
+    fileName.endsWith('.exe') &&
+    !normalized.includes('/make/') &&
+    !fileName.startsWith('setup') &&
+    !fileName.startsWith('update') &&
+    !fileName.startsWith('unins')
+  );
+};
+
+export const resolvePackagedElectronBinary = () => {
+  const explicitPath = process.env.INDICOINK_PACKAGED_EXE_PATH?.trim();
+  if (explicitPath) {
+    if (!existsSync(explicitPath)) {
+      throw new Error(
+        `INDICOINK_PACKAGED_EXE_PATH points to a missing file: ${explicitPath}`,
+      );
+    }
+
+    return explicitPath;
+  }
+
+  if (!existsSync(packagedOutRoot)) {
+    throw new Error(
+      'Packaged output was not found. Run `npm run package` before launching the packaged app.',
+    );
+  }
+
+  const candidates: string[] = [];
+  const stack = [packagedOutRoot];
+  while (stack.length > 0) {
+    const currentDir = stack.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
+      const entryPath = join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name.toLowerCase() !== 'make') {
+          stack.push(entryPath);
+        }
+        continue;
+      }
+
+      if (entry.isFile() && isPackagedAppBinary(entryPath)) {
+        candidates.push(entryPath);
+      }
+    }
+  }
+
+  const exactMatch = candidates.find((candidate) =>
+    /(?:^|\\|\/)indicoink\.exe$/i.test(candidate),
+  );
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const fallback = candidates[0];
+  if (fallback) {
+    return fallback;
+  }
+
+  throw new Error(
+    'No packaged app executable was found under out/. Run `npm run package` first.',
+  );
+};
+
+export const resolvePackagedAppAsarPath = () => {
+  const explicitPath = process.env.INDICOINK_PACKAGED_ASAR_PATH?.trim();
+  if (explicitPath) {
+    if (!existsSync(explicitPath)) {
+      throw new Error(
+        `INDICOINK_PACKAGED_ASAR_PATH points to a missing file: ${explicitPath}`,
+      );
+    }
+
+    return explicitPath;
+  }
+
+  if (existsSync(packagedAppAsarPath)) {
+    return packagedAppAsarPath;
+  }
+
+  throw new Error(
+    'Packaged app.asar was not found. Run `npm run package` before launching the packaged app.',
+  );
+};
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds));
@@ -69,24 +168,36 @@ export type LaunchElectronHarnessOptions = {
 
 export type ImportFixtureOptions = {
   userDataDir: string;
-  fixtureName: 'small' | 'large';
+  fixtureName: 'small' | 'large' | 'packaged';
 };
 
-export const launchElectronHarness = async (
-  options: LaunchElectronHarnessOptions = {},
-): Promise<ElectronHarness> => {
+type LaunchBinaryHarnessOptions = {
+  binaryPath: string;
+  launchArgs: string[];
+  userDataDir?: string;
+  extraEnv?: NodeJS.ProcessEnv;
+  useElectronDevEnv?: boolean;
+};
+
+const launchBinaryHarness = async ({
+  binaryPath,
+  launchArgs,
+  userDataDir: userDataDirOverride,
+  extraEnv,
+  useElectronDevEnv = true,
+}: LaunchBinaryHarnessOptions): Promise<ElectronHarness> => {
   const userDataDir =
-    options.userDataDir ?? mkdtempSync(resolve(tmpdir(), 'indicoink-e2e-'));
+    userDataDirOverride ?? mkdtempSync(resolve(tmpdir(), 'indicoink-e2e-'));
   const startupLogPath = join(userDataDir, 'startup.log');
 
   const child = spawn(
-    electronPath,
+    binaryPath,
     [
       `--remote-debugging-port=${remoteDebuggingPort}`,
       '--disable-gpu',
       '--disable-software-rasterizer',
       `--user-data-dir=${userDataDir}`,
-      '.vite/build/main.js',
+      ...launchArgs,
     ],
     {
       env: {
@@ -108,10 +219,15 @@ export const launchElectronHarness = async (
         INDICOINK_ISOLATED_USER_DATA: '1',
         INDICOINK_USER_DATA_DIR: userDataDir,
         INDICOINK_DISABLE_GPU: '1',
-        ELECTRON_CONFIG_CACHE: electronCacheRoot,
-        electron_config_cache: electronCacheRoot,
-        ELECTRON_CACHE: electronCacheRoot,
-        ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+        ...(useElectronDevEnv
+          ? {
+              ELECTRON_CONFIG_CACHE: electronCacheRoot,
+              electron_config_cache: electronCacheRoot,
+              ELECTRON_CACHE: electronCacheRoot,
+              ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+            }
+          : {}),
+        ...extraEnv,
       },
       stdio: 'ignore',
       windowsHide: true,
@@ -164,18 +280,65 @@ export const launchElectronHarness = async (
   };
 };
 
+export const launchElectronHarness = async (
+  options: LaunchElectronHarnessOptions = {},
+): Promise<ElectronHarness> => {
+  return launchBinaryHarness({
+    binaryPath: electronPath,
+    launchArgs: ['.vite/build/main.js'],
+    userDataDir: options.userDataDir,
+  });
+};
+
+export const launchPackagedElectronHarness = async (
+  options: LaunchElectronHarnessOptions & { extraEnv?: NodeJS.ProcessEnv } = {},
+): Promise<ElectronHarness> => {
+  return launchBinaryHarness({
+    binaryPath: electronPath,
+    launchArgs: [`--app=${resolvePackagedAppAsarPath()}`],
+    userDataDir: options.userDataDir,
+    extraEnv: options.extraEnv,
+    useElectronDevEnv: true,
+  });
+};
+
 export const runElectronImportFixtureCommand = async ({
   userDataDir,
   fixtureName,
 }: ImportFixtureOptions) => {
-  const startupLogPath = join(userDataDir, 'startup.log');
-  const child = spawn(
-    electronPath,
-    [
-      `--user-data-dir=${userDataDir}`,
-      '.vite/build/main.js',
+  await runImportFixtureCommand({
+    binaryPath: electronPath,
+    launchArgs: ['.vite/build/main.js', `--import-fixture=${fixtureName}`],
+    userDataDir,
+  });
+};
+
+export const runPackagedImportFixtureCommand = async ({
+  userDataDir,
+  fixtureName,
+}: ImportFixtureOptions) => {
+  await runImportFixtureCommand({
+    binaryPath: electronPath,
+    launchArgs: [
+      `--app=${resolvePackagedAppAsarPath()}`,
       `--import-fixture=${fixtureName}`,
     ],
+    userDataDir,
+    useElectronDevEnv: true,
+  });
+};
+
+const runImportFixtureCommand = async ({
+  binaryPath,
+  launchArgs,
+  userDataDir,
+  extraEnv,
+  useElectronDevEnv = true,
+}: LaunchBinaryHarnessOptions) => {
+  const startupLogPath = join(userDataDir, 'startup.log');
+  const child = spawn(
+    binaryPath,
+    [`--user-data-dir=${userDataDir}`, ...launchArgs],
     {
       env: {
         ...pickEnv([
@@ -196,10 +359,15 @@ export const runElectronImportFixtureCommand = async ({
         INDICOINK_ISOLATED_USER_DATA: '1',
         INDICOINK_USER_DATA_DIR: userDataDir,
         INDICOINK_DISABLE_GPU: '1',
-        ELECTRON_CONFIG_CACHE: electronCacheRoot,
-        electron_config_cache: electronCacheRoot,
-        ELECTRON_CACHE: electronCacheRoot,
-        ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+        ...(useElectronDevEnv
+          ? {
+              ELECTRON_CONFIG_CACHE: electronCacheRoot,
+              electron_config_cache: electronCacheRoot,
+              ELECTRON_CACHE: electronCacheRoot,
+              ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+            }
+          : {}),
+        ...extraEnv,
       },
       stdio: 'ignore',
       windowsHide: true,
