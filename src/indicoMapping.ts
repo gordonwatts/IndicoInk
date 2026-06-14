@@ -90,6 +90,10 @@ type IndicoEventValue = {
   sessions?: IndicoSessionValue[];
 };
 
+type IndicoContributionSource = {
+  contribution: IndicoContributionValue;
+};
+
 export type IndicoHierarchySession = {
   title: string;
   room: string;
@@ -322,6 +326,60 @@ const collectNestedContributions = (
     ...collectNestedContributions(contribution.subContributions),
   ]) ?? [];
 
+const createSessionFallbackContribution = (
+  session: IndicoSessionValue,
+  contribution: IndicoContributionValue,
+): IndicoContributionValue => {
+  const next: IndicoContributionValue = { ...contribution };
+
+  if (contribution.session == null) {
+    next.session = {
+      title: getString(session.title, 'Unscheduled'),
+      room:
+        getString(session.roomFullname) ||
+        getString(session.room) ||
+        getString(session.location) ||
+        'Room unavailable',
+    };
+  }
+
+  if (contribution.roomFullname === undefined && session.roomFullname) {
+    next.roomFullname = session.roomFullname;
+  }
+
+  if (contribution.room === undefined && session.room) {
+    next.room = session.room;
+  }
+
+  if (contribution.location === undefined && session.location) {
+    next.location = session.location;
+  }
+
+  return next;
+};
+
+const collectContributionSources = (
+  event: IndicoEventValue,
+): IndicoContributionSource[] => {
+  const sessionSources = asArray<IndicoSessionValue>(event.sessions).flatMap(
+    (session) =>
+      collectNestedContributions(session.contributions).map((contribution) => ({
+        contribution: createSessionFallbackContribution(session, contribution),
+      })),
+  );
+
+  if (sessionSources.length > 0) {
+    return sessionSources;
+  }
+
+  const contributions = collectNestedContributions(event.contributions);
+  if (contributions.length > 0) {
+    return contributions.map((contribution) => ({ contribution }));
+  }
+
+  return [];
+};
+
 const createHierarchyBucket = (
   map: Map<string, IndicoHierarchyDay>,
   dayKey: string,
@@ -446,14 +504,15 @@ export const mapIndicoExportEnvelope = (
 ): IndicoImportData => {
   const event = pickFirstResult(envelope);
   const eventTitle = getString(event?.title, 'Untitled Indico event');
-  const contributions = collectNestedContributions(event?.contributions);
   const sessions = asArray<IndicoSessionValue>(event?.sessions);
+  const contributionSources = collectContributionSources(event ?? {});
+  const contributionTalks = contributionSources.map((source, index) =>
+    mapContribution(identity, source.contribution, index),
+  );
 
   const talks =
-    contributions.length > 0
-      ? contributions.map((contribution, index) =>
-          mapContribution(identity, contribution, index),
-        )
+    contributionTalks.length > 0
+      ? contributionTalks
       : sessions.map((session, index) =>
           mapSessionTalk(identity, session, index),
         );
@@ -464,7 +523,9 @@ export const mapIndicoExportEnvelope = (
 
   const hierarchyByDay = new Map<string, IndicoHierarchyDay>();
 
-  for (const contribution of contributions) {
+  for (const contribution of contributionSources.map(
+    (source) => source.contribution,
+  )) {
     const contributionId =
       getNumberLike(contribution.friendly_id) || getNumberLike(contribution.id);
     const startsAt = parseDateTime(contribution.startDate);
@@ -512,7 +573,11 @@ export const mapIndicoExportEnvelope = (
     }
   }
 
-  if (hierarchyByDay.size === 0 && sessions.length > 0) {
+  if (
+    hierarchyByDay.size === 0 &&
+    sessions.length > 0 &&
+    contributionSources.length === 0
+  ) {
     for (const session of sessions) {
       const sessionDateKey =
         session.startDate?.date ?? event?.startDate?.date ?? 'unknown';

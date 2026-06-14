@@ -82,6 +82,70 @@ describe('mapIndicoExportEnvelope', () => {
     );
   });
 
+  it('maps talks nested under sessions instead of treating sessions as talks', () => {
+    const mapped = mapIndicoExportEnvelope(
+      {
+        results: [
+          {
+            id: '1000',
+            title: 'Nested session event',
+            startDate: { date: '2025-09-08', time: '09:00:00' },
+            endDate: { date: '2025-09-12', time: '18:00:00' },
+            contributions: [],
+            sessions: [
+              {
+                id: 'session-1',
+                title: 'Track 1: Computing Technology for Physics Research',
+                startDate: { date: '2025-09-08', time: '14:30:00' },
+                endDate: { date: '2025-09-08', time: '18:00:00' },
+                room: 'ESA M',
+                contributions: [
+                  {
+                    id: 'track-1-talk-1',
+                    title: 'Live editing in a large conference agenda',
+                    startDate: { date: '2025-09-08', time: '14:30:00' },
+                    endDate: { date: '2025-09-08', time: '14:50:00' },
+                    material: [
+                      {
+                        title: 'Slides',
+                        url: 'https://indico.example.org/slides/track-1-talk-1.pdf',
+                        mimetype: 'application/pdf',
+                        selected: true,
+                      },
+                    ],
+                  },
+                  {
+                    id: 'track-1-talk-2',
+                    title: 'Parallel sessions without losing the talks',
+                    startDate: { date: '2025-09-08', time: '15:00:00' },
+                    endDate: { date: '2025-09-08', time: '15:20:00' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      identity,
+    );
+
+    expect(mapped.talks).toHaveLength(2);
+    expect(mapped.talks[0]?.title).toBe(
+      'Live editing in a large conference agenda',
+    );
+    expect(mapped.talks[0]?.sessionTitle).toBe(
+      'Track 1: Computing Technology for Physics Research',
+    );
+    expect(mapped.talks[0]?.room).toBe('ESA M');
+    expect(mapped.hierarchy[0]?.sessions[0]?.contributionIds).toEqual([
+      'track-1-talk-1',
+      'track-1-talk-2',
+    ]);
+    expect(mapped.materials[0]?.url).toBe(
+      'https://indico.example.org/slides/track-1-talk-1.pdf',
+    );
+  });
+
   it('reads PDF attachments from contribution folders', () => {
     const mapped = mapIndicoExportEnvelope(
       {
