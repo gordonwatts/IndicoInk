@@ -1303,8 +1303,10 @@ input:focus-visible {
 }
 
 .agenda-shell-grid {
-  position: relative;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+  gap: 20px;
+  align-items: start;
 }
 
 .agenda-shell-main {
@@ -1312,13 +1314,9 @@ input:focus-visible {
 }
 
 .agenda-talk-detail-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: min(360px, 32vw);
   display: grid;
   min-width: 0;
-  z-index: 1;
+  width: auto;
 }
 
 .agenda-talk-detail-panel .details-surface {
@@ -1908,6 +1906,10 @@ input:focus-visible {
   .pdf-preview-topbar,
   .agenda-shell-grid {
     display: grid;
+  }
+
+  .agenda-shell-grid {
+    grid-template-columns: 1fr;
   }
 
   .pdf-preview-topbar-actions {

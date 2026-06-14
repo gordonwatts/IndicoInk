@@ -111,3 +111,33 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     await harness.close();
   }
 });
+
+test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
+  const harness = await openLiveEvent('https://indico.cern.ch/event/1488410/');
+
+  try {
+    await harness.page
+      .locator('.segmented-control-option', {
+        hasText: 'Tuesday, September 9, 2025',
+      })
+      .click();
+
+    const geometry = await harness.page.evaluate(() => {
+      const canvas = document
+        .querySelector('.agenda-canvas-scroll')
+        ?.getBoundingClientRect();
+      const panel = document
+        .querySelector('.agenda-talk-detail-panel')
+        ?.getBoundingClientRect();
+
+      return {
+        canvasRight: canvas?.right ?? 0,
+        panelLeft: panel?.left ?? 0,
+      };
+    });
+
+    expect(geometry.canvasRight).toBeLessThan(geometry.panelLeft);
+  } finally {
+    await harness.close();
+  }
+});
