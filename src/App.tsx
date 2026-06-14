@@ -237,6 +237,18 @@ function getSelectedTalkDeck(talk: AgendaTalkSummary) {
   );
 }
 
+function getAgendaDefaultScrollTop(visibleAgendaTalks: AgendaTalkSummary[]) {
+  const layout = buildAgendaCanvasLayout(visibleAgendaTalks);
+  const firstSessionBlock = layout.columns.find(
+    (block) => !block.spanFullWidth,
+  );
+  if (!firstSessionBlock) {
+    return 0;
+  }
+
+  return Math.max(0, firstSessionBlock.blockTopPx - 24);
+}
+
 function formatMaterialLabel(material: AgendaTalkMaterialSummary) {
   if (material.mimeType === 'application/pdf') {
     const pageLabel =
@@ -759,6 +771,10 @@ export function App() {
 
     return matchesDay && matchesFilter;
   });
+  const visibleAgendaTalksLayoutDefaultScrollTop = React.useMemo(
+    () => getAgendaDefaultScrollTop(visibleAgendaTalks),
+    [visibleAgendaTalks],
+  );
   const bookmarkedAgendaTalks = agendaTalks.filter((talk) => talk.bookmarked);
   const annotatedAgendaTalks = agendaTalks.filter(
     (talk) => talk.annotatedSlideCount > 0,
@@ -1426,7 +1442,9 @@ export function App() {
     }
 
     const scrollKey = `${selectedEventId}:${selectedAgendaDay ?? '__all__'}`;
-    const targetScrollTop = agendaScrollPositionsRef.current[scrollKey] ?? 0;
+    const targetScrollTop =
+      agendaScrollPositionsRef.current[scrollKey] ??
+      visibleAgendaTalksLayoutDefaultScrollTop;
     const scrollContainer = agendaCanvasScrollRef.current;
     if (!scrollContainer) {
       return undefined;
@@ -1469,7 +1487,13 @@ export function App() {
         agendaScrollFrameRef.current = null;
       }
     };
-  }, [destination, selectedEventId, selectedAgendaDay, agendaTalks.length]);
+  }, [
+    destination,
+    selectedEventId,
+    selectedAgendaDay,
+    agendaTalks.length,
+    visibleAgendaTalksLayoutDefaultScrollTop,
+  ]);
 
   return (
     <div className="app-frame">

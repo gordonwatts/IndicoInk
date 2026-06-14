@@ -129,14 +129,29 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
       const panel = document
         .querySelector('.agenda-talk-detail-panel')
         ?.getBoundingClientRect();
+      const trackBlocks = [
+        ...document.querySelectorAll('.agenda-session-block--absolute'),
+      ];
+      const firstTrackBlock = trackBlocks.find((block) =>
+        (block.getAttribute('aria-label') || '').includes('Track 1'),
+      );
+      const firstTrackCard =
+        firstTrackBlock?.querySelector('.agenda-talk-card');
+      const firstTrackCardRect = firstTrackCard?.getBoundingClientRect();
 
       return {
         canvasRight: canvas?.right ?? 0,
         panelLeft: panel?.left ?? 0,
+        cardTop: firstTrackCardRect?.top ?? 0,
+        cardBottom: firstTrackCardRect?.bottom ?? 0,
+        scrollTop: canvas?.top ?? 0,
+        scrollBottom: canvas?.bottom ?? 0,
       };
     });
 
     expect(geometry.canvasRight).toBeLessThan(geometry.panelLeft);
+    expect(geometry.cardTop).toBeGreaterThan(geometry.scrollTop);
+    expect(geometry.cardBottom).toBeLessThan(geometry.scrollBottom);
   } finally {
     await harness.close();
   }
