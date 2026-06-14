@@ -594,18 +594,17 @@ export function buildAgendaCanvasLayout(
   );
 
   const columnLayouts = allBlocks.map((block) => {
-    const blockTopPx = block.spanFullWidth
-      ? agendaCanvasHeaderHeight +
-        agendaCanvasTrackPadding +
-        Math.round(
-          ((block.startMinutes - globalStartMinutes) / 30) *
-            agendaCanvasRowHeight,
-        )
-      : 0;
+    const blockTopPx =
+      agendaCanvasHeaderHeight +
+      agendaCanvasTrackPadding +
+      Math.round(
+        ((block.startMinutes - globalStartMinutes) / 30) *
+          agendaCanvasRowHeight,
+      );
     const solved = buildColumnPlacements(
       block.talks,
-      block.spanFullWidth ? block.startMinutes : globalStartMinutes,
-      block.spanFullWidth ? block.endMinutes : globalEndMinutes,
+      block.startMinutes,
+      block.endMinutes,
       block.spanFullWidth
         ? Math.max(240, canvasWidthPx - agendaTimeGutterWidth - 24)
         : Math.max(240, columnWidthPx - 24),

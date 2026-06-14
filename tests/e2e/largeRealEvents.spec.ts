@@ -52,6 +52,36 @@ test('renders the FNAL Energy Frontier workshop talks', async () => {
   }
 });
 
+test('separates Wednesday Energy Frontier session blocks vertically', async () => {
+  const harness = await openLiveEvent('https://indico.fnal.gov/event/52465');
+
+  try {
+    await harness.page
+      .locator('.segmented-control-option', {
+        hasText: 'Wednesday, March 30, 2022',
+      })
+      .click();
+
+    await expect(harness.page.getByText('38 talks shown')).toBeVisible();
+
+    const blockTops = await harness.page.evaluate(() =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '.agenda-session-block--absolute',
+        ),
+      ]
+        .map((block) => Math.round(block.getBoundingClientRect().top))
+        .slice(0, 3),
+    );
+
+    expect(blockTops).toHaveLength(3);
+    expect(blockTops[0]).toBeLessThan(blockTops[1] ?? 0);
+    expect(blockTops[1]).toBeLessThan(blockTops[2] ?? 0);
+  } finally {
+    await harness.close();
+  }
+});
+
 test('renders the ACAT 2025 parallel-session agenda', async () => {
   const harness = await openLiveEvent('https://indico.cern.ch/event/1488410/');
 

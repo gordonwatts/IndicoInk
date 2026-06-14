@@ -89,6 +89,32 @@ describe('agenda canvas layout', () => {
     expect(sharedBlock?.columnIndex).toBe(-1);
   });
 
+  it('positions sequential same-column sessions at their own start times', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk('morning-talk', 9, 0, 30, 'Morning talk', 'Morning session'),
+      makeTalk('midday-talk', 12, 0, 30, 'Midday talk', 'Midday session'),
+      makeTalk(
+        'afternoon-talk',
+        15,
+        0,
+        30,
+        'Afternoon talk',
+        'Afternoon session',
+      ),
+    ]);
+
+    const sessionBlocks = layout.columns.filter(
+      (block) => !block.spanFullWidth,
+    );
+    expect(sessionBlocks).toHaveLength(3);
+    expect(sessionBlocks[0]?.blockTopPx).toBeLessThan(
+      sessionBlocks[1]?.blockTopPx ?? 0,
+    );
+    expect(sessionBlocks[1]?.blockTopPx).toBeLessThan(
+      sessionBlocks[2]?.blockTopPx ?? 0,
+    );
+  });
+
   it('widens a single-column day and tightens multi-column days responsively', () => {
     expect(getResponsiveAgendaColumnWidth(1500, 1)).toBeGreaterThan(
       getResponsiveAgendaColumnWidth(1500, 3),
