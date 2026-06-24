@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   agendaCanvasHeaderHeight,
+  agendaCanvasRowHeight,
   agendaTimeGutterWidth,
   buildAgendaCanvasLayout,
   getResponsiveAgendaColumnWidth,
@@ -39,7 +40,7 @@ function makeTalk(
 }
 
 describe('agenda canvas layout', () => {
-  it('derives half-hour markers from the solved talk stack instead of a fixed scale', () => {
+  it('expands crowded half-hour intervals beyond the fixed base scale', () => {
     const layout = buildAgendaCanvasLayout([
       makeTalk('talk-1', 8, 30, 10, 'Talk 1'),
       makeTalk('talk-2', 8, 40, 10, 'Talk 2'),
@@ -54,7 +55,8 @@ describe('agenda canvas layout', () => {
 
     const firstDelta = layout.timeMarkerTopPx[1]! - layout.timeMarkerTopPx[0]!;
     const secondDelta = layout.timeMarkerTopPx[2]! - layout.timeMarkerTopPx[1]!;
-    expect(firstDelta).not.toBe(secondDelta);
+    expect(firstDelta).toBeGreaterThan(agendaCanvasRowHeight);
+    expect(secondDelta).toBeGreaterThanOrEqual(agendaCanvasRowHeight);
   });
 
   it('ignores later columns when placing earlier time markers', () => {
@@ -112,6 +114,45 @@ describe('agenda canvas layout', () => {
     );
     expect(sessionBlocks[1]?.blockTopPx).toBeLessThan(
       sessionBlocks[2]?.blockTopPx ?? 0,
+    );
+  });
+
+  it('keeps repeated parallel session slots separate after a break', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk('track-1-a', 14, 30, 20, 'Track 1 first talk', 'Track 1'),
+      makeTalk('track-1-b', 15, 0, 20, 'Track 1 second talk', 'Track 1'),
+      makeTalk('track-2-a', 14, 30, 20, 'Track 2 first talk', 'Track 2'),
+      makeTalk('track-2-b', 15, 0, 20, 'Track 2 second talk', 'Track 2'),
+      makeTalk('track-3-a', 14, 30, 20, 'Track 3 first talk', 'Track 3'),
+      makeTalk('track-3-b', 15, 0, 20, 'Track 3 second talk', 'Track 3'),
+      makeTalk('track-1-c', 16, 40, 20, 'Track 1 third talk', 'Track 1'),
+      makeTalk('track-2-c', 16, 40, 20, 'Track 2 third talk', 'Track 2'),
+      makeTalk('track-3-c', 16, 40, 20, 'Track 3 third talk', 'Track 3'),
+    ]);
+
+    const trackBlocks = layout.columns.filter((block) =>
+      block.title.startsWith('Track'),
+    );
+
+    expect(trackBlocks).toHaveLength(6);
+    expect(
+      trackBlocks.filter((block) => block.startMinutes === 14 * 60 + 30),
+    ).toHaveLength(3);
+    expect(
+      trackBlocks.filter((block) => block.startMinutes === 16 * 60 + 40),
+    ).toHaveLength(3);
+    expect(layout.columnCount).toBe(3);
+    expect(
+      trackBlocks.every((block) => block.trackHeightPx < layout.canvasHeightPx),
+    ).toBe(true);
+
+    const firstSlotTrackBlock = trackBlocks.find(
+      (block) => block.startMinutes === 14 * 60 + 30,
+    );
+    const firstSlotMarkerIndex = layout.timeMarkers.indexOf(14 * 60 + 30);
+    expect(firstSlotMarkerIndex).toBeGreaterThanOrEqual(0);
+    expect(Math.round(firstSlotTrackBlock?.blockTopPx ?? -1)).toBe(
+      Math.round(layout.timeMarkerTopPx[firstSlotMarkerIndex] ?? -2),
     );
   });
 

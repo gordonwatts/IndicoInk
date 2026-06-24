@@ -246,7 +246,11 @@ function getAgendaDefaultScrollTop(visibleAgendaTalks: AgendaTalkSummary[]) {
     return 0;
   }
 
-  return Math.max(0, firstSessionBlock.blockTopPx - 24);
+  const firstTalkTopPx =
+    firstSessionBlock.talkPlacements[0]?.topPx ??
+    firstSessionBlock.trackHeightPx;
+
+  return Math.max(0, firstSessionBlock.blockTopPx + firstTalkTopPx - 24);
 }
 
 function formatMaterialLabel(material: AgendaTalkMaterialSummary) {
@@ -447,7 +451,7 @@ function AgendaTimelineCanvas({
                   top: `${block.blockTopPx}px`,
                   left: `${layoutAgendaTimeGutterWidth + (block.spanFullWidth ? 0 : Math.max(0, block.columnIndex) * layout.columnWidthPx)}px`,
                   width: `${block.spanFullWidth ? layout.canvasWidthPx - layoutAgendaTimeGutterWidth : layout.columnWidthPx}px`,
-                  height: `${layout.canvasHeightPx}px`,
+                  height: `${block.trackHeightPx}px`,
                 }}
                 aria-label={`${block.title} session on ${block.dayLabel}`}
               >
@@ -463,7 +467,7 @@ function AgendaTimelineCanvas({
                 <div
                   className="agenda-session-track"
                   style={{
-                    height: `${layout.canvasHeightPx}px`,
+                    height: `${block.trackHeightPx}px`,
                   }}
                 >
                   {block.talkPlacements.map(({ talk, topPx, heightPx }) => (
@@ -1473,7 +1477,6 @@ export function App() {
       agendaScrollPositionsRef.current[scrollKey] = scrollContainer.scrollTop;
     };
 
-    captureScrollPosition();
     scrollContainer.addEventListener('scroll', captureScrollPosition, {
       passive: true,
     });

@@ -121,6 +121,7 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
         hasText: 'Tuesday, September 9, 2025',
       })
       .click();
+    await harness.page.waitForTimeout(250);
 
     const geometry = await harness.page.evaluate(() => {
       const canvas = document
@@ -132,26 +133,93 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
       const trackBlocks = [
         ...document.querySelectorAll('.agenda-session-block--absolute'),
       ];
+      const trackBlockRects = trackBlocks
+        .filter((block) =>
+          (block.getAttribute('aria-label') || '').includes('Track'),
+        )
+        .map((block) => {
+          const blockRect = block.getBoundingClientRect();
+          const firstCardRect = block
+            .querySelector('.agenda-talk-card')
+            ?.getBoundingClientRect();
+
+          return {
+            title:
+              block.querySelector('.agenda-session-block-heading h4')
+                ?.textContent ?? '',
+            timeRange:
+              block.querySelector('.agenda-session-block-heading p')
+                ?.textContent ?? '',
+            top: Math.round(blockRect.top),
+            firstCardTop: Math.round(firstCardRect?.top ?? 0),
+            firstCardBottom: Math.round(firstCardRect?.bottom ?? 0),
+          };
+        });
       const firstTrackBlock = trackBlocks.find((block) =>
         (block.getAttribute('aria-label') || '').includes('Track 1'),
       );
       const firstTrackCard =
         firstTrackBlock?.querySelector('.agenda-talk-card');
       const firstTrackCardRect = firstTrackCard?.getBoundingClientRect();
+      const firstTrackCardHit =
+        firstTrackCardRect &&
+        document.elementFromPoint(
+          firstTrackCardRect.left + firstTrackCardRect.width / 2,
+          firstTrackCardRect.top + firstTrackCardRect.height / 2,
+        );
 
       return {
         canvasRight: canvas?.right ?? 0,
         panelLeft: panel?.left ?? 0,
+        marker1430Top:
+          [...document.querySelectorAll('.agenda-time-marker')]
+            .find((marker) => marker.textContent?.trim() === '14:30')
+            ?.getBoundingClientRect().top ?? 0,
+        cardLeft: firstTrackCardRect?.left ?? 0,
+        cardRight: firstTrackCardRect?.right ?? 0,
         cardTop: firstTrackCardRect?.top ?? 0,
         cardBottom: firstTrackCardRect?.bottom ?? 0,
+        viewportBottom: window.innerHeight,
         scrollTop: canvas?.top ?? 0,
         scrollBottom: canvas?.bottom ?? 0,
+        firstTrackCardHitIsClickable: Boolean(
+          firstTrackCardHit?.closest('.agenda-talk-card'),
+        ),
+        trackBlockRects,
       };
     });
 
     expect(geometry.canvasRight).toBeLessThan(geometry.panelLeft);
+    expect(geometry.trackBlockRects).toHaveLength(6);
+    expect(
+      geometry.trackBlockRects.filter((block) =>
+        block.title.includes('Track 1'),
+      ),
+    ).toHaveLength(2);
+    expect(
+      geometry.trackBlockRects.filter((block) =>
+        block.title.includes('Track 2'),
+      ),
+    ).toHaveLength(2);
+    expect(
+      geometry.trackBlockRects.filter((block) =>
+        block.title.includes('Track 3'),
+      ),
+    ).toHaveLength(2);
+    const firstSlotTrackBlocks = geometry.trackBlockRects.filter((block) =>
+      block.timeRange.startsWith('14:30'),
+    );
+    expect(firstSlotTrackBlocks).toHaveLength(3);
+    firstSlotTrackBlocks.forEach((block) => {
+      expect(Math.abs(block.top - geometry.marker1430Top)).toBeLessThanOrEqual(
+        2,
+      );
+    });
+    expect(geometry.cardLeft).toBeGreaterThan(0);
+    expect(geometry.cardRight).toBeLessThan(geometry.panelLeft);
     expect(geometry.cardTop).toBeGreaterThan(geometry.scrollTop);
-    expect(geometry.cardBottom).toBeLessThan(geometry.scrollBottom);
+    expect(geometry.cardTop).toBeLessThan(geometry.viewportBottom);
+    expect(geometry.firstTrackCardHitIsClickable).toBe(true);
   } finally {
     await harness.close();
   }
