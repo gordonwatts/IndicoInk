@@ -1,9 +1,16 @@
 import { expect, test } from '@playwright/test';
+import { performance } from 'node:perf_hooks';
+import { copyFileSync, mkdirSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 
+import {
+  createConferenceId,
+  createDeckId,
+  createTalkId,
+} from '../../src/persistenceModels';
 import {
   launchElectronHarness,
   runElectronImportFixtureCommand,
@@ -16,6 +23,49 @@ async function openLargeAgenda() {
     userDataDir,
     fixtureName: 'large',
   });
+
+  const harness = await launchElectronHarness({ userDataDir });
+
+  await harness.page
+    .getByRole('button', {
+      name: 'Open IndicoInk Grand Symposium 2026',
+    })
+    .click();
+
+  await expect(
+    harness.page.getByRole('heading', {
+      name: 'Event agenda',
+    }),
+  ).toBeVisible();
+  await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
+
+  return harness;
+}
+
+async function openLargeAgendaWithCachedDeck() {
+  const userDataDir = mkdtempSync(resolve(tmpdir(), 'indicoink-agenda-perf-'));
+
+  await runElectronImportFixtureCommand({
+    userDataDir,
+    fixtureName: 'large',
+  });
+
+  const conferenceSourceUrl =
+    'https://symposium.indico.example.org/event/indicoink-2026';
+  const conferenceId = createConferenceId(conferenceSourceUrl);
+  const talkContributionId = 'large-1001';
+  const deckSourceUrl =
+    'https://symposium.indico.example.org/event/indicoink-2026/materials/large-1001-slides.pdf';
+  const talkId = createTalkId(conferenceId, talkContributionId);
+  const deckId = createDeckId(talkId, deckSourceUrl);
+  const cacheFilePath = resolve(
+    userDataDir,
+    'deck-cache',
+    conferenceId,
+    `${deckId}.pdf`,
+  );
+  mkdirSync(dirname(cacheFilePath), { recursive: true });
+  copyFileSync(resolve('tests/fixtures/pdfs/multi-page.pdf'), cacheFilePath);
 
   const harness = await launchElectronHarness({ userDataDir });
 
@@ -255,6 +305,50 @@ test('keeps agenda controls reachable by keyboard and names status indicators', 
     const firstTalkCard = harness.page.locator('.agenda-talk-card').first();
     await expect(firstTalkCard.getByText('PDF')).toBeVisible();
     await expect(firstTalkCard.getByText('3 annotated slides')).toBeVisible();
+  } finally {
+    await harness.close();
+  }
+});
+
+test('keeps large agenda and long deck navigation responsive enough', async () => {
+  const harness = await openLargeAgendaWithCachedDeck();
+
+  try {
+    await harness.page.setViewportSize({ width: 1220, height: 900 });
+
+    const openTalkStart = performance.now();
+    await harness.page
+      .getByRole('button', {
+        name: 'Open talk for Conference notes in the flow of the talk',
+      })
+      .click();
+
+    await expect(
+      harness.page.getByRole('heading', {
+        name: 'Conference notes in the flow of the talk',
+      }),
+    ).toBeVisible();
+    await expect(harness.page.getByText('Slides ready.')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const openTalkElapsed = performance.now() - openTalkStart;
+    expect(
+      openTalkElapsed,
+      `opening the long deck took ${openTalkElapsed.toFixed(0)}ms`,
+    ).toBeLessThan(20_000);
+
+    const jumpStart = performance.now();
+    await harness.page.getByLabel('Jump to slide').fill('3');
+    await harness.page.getByRole('button', { name: 'Go' }).click();
+
+    await expect(harness.page.getByText('3 / 3 slides')).toBeVisible();
+
+    const jumpElapsed = performance.now() - jumpStart;
+    expect(
+      jumpElapsed,
+      `jumping within the long deck took ${jumpElapsed.toFixed(0)}ms`,
+    ).toBeLessThan(5_000);
   } finally {
     await harness.close();
   }

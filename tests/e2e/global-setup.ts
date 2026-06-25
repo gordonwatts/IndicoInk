@@ -1,12 +1,22 @@
-import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { build } from 'vite';
 
 const electronCacheRoot = resolve('.electron-cache');
 const electronDistPath = resolve('node_modules/electron/dist');
 
 export default async function globalSetup() {
+  const [{ default: mainConfig }, { default: preloadConfig }, { default: rendererConfig }] =
+    await Promise.all([
+      import('../../vite.main.config.mjs'),
+      import('../../vite.preload.config.mjs'),
+      import('../../vite.renderer.config.mjs'),
+    ]);
+
   const buildEnv = {
+    command: 'build' as const,
+    mode: 'production',
+    root: process.cwd(),
     ...process.env,
     ELECTRON_CONFIG_CACHE: electronCacheRoot,
     electron_config_cache: electronCacheRoot,
@@ -14,18 +24,9 @@ export default async function globalSetup() {
     ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
   };
 
-  execSync('npx vite build --config vite.main.config.mjs', {
-    stdio: 'inherit',
-    env: buildEnv,
-  });
-  execSync('npx vite build --config vite.preload.config.mjs', {
-    stdio: 'inherit',
-    env: buildEnv,
-  });
-  execSync('npx vite build --config vite.renderer.config.mjs', {
-    stdio: 'inherit',
-    env: buildEnv,
-  });
+  await build(mainConfig(buildEnv));
+  await build(preloadConfig(buildEnv));
+  await build(rendererConfig(buildEnv));
 
   const rendererDir = resolve('.vite/renderer/main_window');
   const assetsDir = resolve(rendererDir, 'assets');

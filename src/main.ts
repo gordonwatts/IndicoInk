@@ -10,7 +10,6 @@ import {
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
 import {
@@ -267,15 +266,13 @@ const createWindow = () => {
   });
 
   if (hasPackagedRenderer) {
-    void mainWindow
-      .loadURL(pathToFileURL(packagedRendererPath).toString())
-      .catch((error) => {
-        appendStartupLogEntry(
-          app.getPath('userData'),
-          'window:load-file',
-          error,
-        );
-      });
+    void mainWindow.loadFile(packagedRendererPath).catch((error) => {
+      appendStartupLogEntry(
+        app.getPath('userData'),
+        'window:load-file',
+        error,
+      );
+    });
   } else {
     const loadUrl = devServerUrl || 'http://localhost:5173';
     void mainWindow.loadURL(loadUrl).catch((error) => {

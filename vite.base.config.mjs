@@ -1,7 +1,10 @@
 import { builtinModules } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 
-import packageJson from './package.json' with { type: 'json' };
+const packageJson = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+);
 
 const builtins = [
   'electron',
