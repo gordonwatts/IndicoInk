@@ -18,11 +18,9 @@ import {
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
   createStrokeSegmentList,
-  getStrokeWidth,
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
-import { getPdfWorkerSrc } from './pdfjs';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import type { PdfWorkspacePageState } from './shared/pdfWorkspace';
 import type { AgendaTalkMaterialSummary } from './shared/agenda';
@@ -148,11 +146,6 @@ const mouseModeOptions = [
   { label: 'Pan', value: 'pan' as const },
 ];
 
-const getFileName = (filePath: string) => {
-  const normalized = filePath.replaceAll('\\', '/');
-  return normalized.slice(normalized.lastIndexOf('/') + 1);
-};
-
 const waitForNextFrame = () =>
   new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 
@@ -259,11 +252,6 @@ const createTextNoteId = () =>
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
-const formatPageSizeLabel = (pageSize: { width: number; height: number }) =>
-  pageSize.width > 0 && pageSize.height > 0
-    ? `${Math.round(pageSize.width)} x ${Math.round(pageSize.height)} px`
-    : 'pending';
-
 const createIdlePersistenceStatus = (): PersistenceStatus => ({
   kind: 'idle',
   label: 'No saved workspace',
@@ -353,9 +341,13 @@ export function PdfPreview({
     }
 
     const updateWidth = () => {
+      const style = window.getComputedStyle(viewportElement);
+      const horizontalPadding =
+        Number.parseFloat(style.paddingLeft) +
+        Number.parseFloat(style.paddingRight);
       const nextWidth = Math.max(
         0,
-        Math.floor(viewportElement.getBoundingClientRect().width - 36),
+        Math.floor(viewportElement.clientWidth - horizontalPadding),
       );
       setPreviewViewportWidth((currentWidth) =>
         currentWidth === nextWidth ? currentWidth : nextWidth,
@@ -487,7 +479,6 @@ export function PdfPreview({
         cursor: getPointerCursorForInteraction(renderedTool, interactionMode),
         overlayClass: getPointerOverlayClass(renderedTool),
       };
-
       if (
         eventKind === 'pointerdown' ||
         eventKind === 'pointerup' ||
@@ -618,6 +609,8 @@ export function PdfPreview({
 
   const currentPageCount =
     state.kind === 'loading' || state.kind === 'ready' ? state.pageCount : 0;
+  const readyPageStatuses =
+    state.kind === 'ready' ? state.pageStatuses : undefined;
 
   const closeTextNoteDraft = React.useCallback(() => {
     setTextNoteDraft(null);
@@ -712,7 +705,7 @@ export function PdfPreview({
       .then((result) => {
         setPersistenceStatus({
           kind: 'saved',
-          label: `Saved ${getFileName(result.sourceUrl)}`,
+          label: 'Workspace saved.',
         });
       })
       .catch((error) => {
@@ -887,7 +880,7 @@ export function PdfPreview({
         .then((result) => {
           setPersistenceStatus({
             kind: 'saved',
-            label: `Saved ${getFileName(result.sourceUrl)}`,
+            label: 'Workspace saved.',
           });
         })
         .catch((error) => {
@@ -1201,6 +1194,55 @@ export function PdfPreview({
     let cancelled = false;
     let loadingTask: PDFDocumentLoadingTask | null = null;
 
+    if (!filePath) {
+      pageCanvasRefs.current = [];
+      setState({ kind: 'idle' });
+      setStrokesByPage([]);
+      setTextNotesByPage([]);
+      setUndoStack([]);
+      setRedoStack([]);
+      setPointerMarker(null);
+      setTextNoteDraft(null);
+      setTextNoteDragState(null);
+      pendingWorkspaceRestoreRef.current = null;
+      persistenceHydratedRef.current = false;
+      if (persistenceSaveTimerRef.current !== null) {
+        window.clearTimeout(persistenceSaveTimerRef.current);
+        persistenceSaveTimerRef.current = null;
+      }
+      setPersistenceStatus(createIdlePersistenceStatus());
+      return () => {
+        cancelled = true;
+        if (pointerDiagnosticsFrameRef.current !== null) {
+          window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
+        }
+        if (persistenceSaveTimerRef.current !== null) {
+          window.clearTimeout(persistenceSaveTimerRef.current);
+        }
+        void loadingTask?.destroy?.();
+      };
+    }
+
+    if (previewViewportWidth <= 0) {
+      setState({
+        kind: 'loading',
+        label: 'Loading PDF...',
+        pageCount: 0,
+        pageSizes: [],
+        pageStatuses: [],
+      });
+      return () => {
+        cancelled = true;
+        if (pointerDiagnosticsFrameRef.current !== null) {
+          window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
+        }
+        if (persistenceSaveTimerRef.current !== null) {
+          window.clearTimeout(persistenceSaveTimerRef.current);
+        }
+        void loadingTask?.destroy?.();
+      };
+    }
+
     const renderPreview = async () => {
       latchedToolRef.current = null;
       setPointerDiagnostics(createIdlePointerDiagnostics());
@@ -1227,7 +1269,7 @@ export function PdfPreview({
 
       setState({
         kind: 'loading',
-        label: `Loading ${getFileName(filePath)} with PDF.js print intent`,
+        label: 'Loading PDF...',
         pageCount: 0,
         pageSizes: [],
         pageStatuses: [],
@@ -1271,7 +1313,7 @@ export function PdfPreview({
         const pageStatuses = createPageStatuses(pageCount);
         setState({
           kind: 'loading',
-          label: `Rendering ${pageCount} pages from ${getFileName(filePath)}`,
+          label: 'Preparing slides...',
           pageCount,
           pageSizes,
           pageStatuses,
@@ -1280,16 +1322,15 @@ export function PdfPreview({
 
         setState({
           kind: 'ready',
-          label: `Rendering ${pageCount} pages from ${getFileName(filePath)}`,
+          label: 'Slides ready.',
           pageCount,
           pageSizes,
           pageStatuses,
         });
-
         persistenceHydratedRef.current = false;
         setPersistenceStatus({
           kind: 'loading',
-          label: `Loading saved workspace for ${getFileName(filePath)}`,
+          label: 'Restoring your notes...',
         });
         const savedWorkspace = workspaceDeckId
           ? await window.indicoInk.loadDeckWorkspaceState(workspaceDeckId)
@@ -1386,7 +1427,7 @@ export function PdfPreview({
         if (!cancelled) {
           setState({
             kind: 'ready',
-            label: `Rendered ${pageCount} pages from ${getFileName(filePath)}`,
+            label: 'Slides ready.',
             pageCount,
             pageSizes,
             pageStatuses,
@@ -1425,6 +1466,15 @@ export function PdfPreview({
       return;
     }
 
+    const pageStatuses = readyPageStatuses;
+    if (!pageStatuses) {
+      return;
+    }
+
+    if (pageStatuses.some((pageStatus) => pageStatus !== 'ready')) {
+      return;
+    }
+
     const restore = pendingWorkspaceRestoreRef.current;
     if (!restore) {
       persistenceHydratedRef.current = true;
@@ -1446,61 +1496,15 @@ export function PdfPreview({
       persistenceHydratedRef.current = true;
       setPersistenceStatus({
         kind: 'saved',
-        label: `Restored ${getFileName(filePath)}`,
+        label: 'Workspace restored.',
       });
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [filePath, state.kind]);
+  }, [filePath, readyPageStatuses, state.kind]);
 
-  const pointerToolLabel = pointerDiagnostics.renderedTool;
-  const pointerModeLabel =
-    manualTool === 'text'
-      ? 'text'
-      : pointerDiagnostics.resolvedTool === 'mouse'
-        ? mouseMode === 'draw'
-          ? manualTool
-          : 'pan'
-        : pointerDiagnostics.interactionMode;
-  const pointerCursorLabel =
-    manualTool === 'text'
-      ? 'text'
-      : pointerDiagnostics.resolvedTool === 'mouse'
-        ? getPointerCursorForInteraction(
-            'mouse',
-            mouseMode === 'draw'
-              ? manualTool === 'eraser'
-                ? 'erase'
-                : 'draw'
-              : 'pan',
-          )
-        : pointerDiagnostics.cursor;
-  const pressureWidthLabel = `${getStrokeWidth(pointerDiagnostics.pressure).toFixed(1)} px`;
-  const pdfWorkerSrc = getPdfWorkerSrc();
-  const rendererLocation = window.location.href;
-  const rendererBaseUri = document.baseURI;
-  const rendererPath = window.location.pathname;
-  const renderedPageCount =
-    state.kind === 'loading' || state.kind === 'ready'
-      ? state.pageStatuses.filter((pageStatus) => pageStatus === 'ready').length
-      : 0;
-  const pageDiagnostics =
-    state.kind === 'loading' || state.kind === 'ready'
-      ? {
-          pageCount: state.pageCount,
-          renderedPageCount,
-          firstPageStatus: state.pageStatuses[0] ?? 'pending',
-          lastPageStatus:
-            state.pageStatuses[state.pageStatuses.length - 1] ?? 'pending',
-          firstPageSize: state.pageSizes[0] ?? { width: 0, height: 0 },
-          lastPageSize: state.pageSizes[state.pageSizes.length - 1] ?? {
-            width: 0,
-            height: 0,
-          },
-        }
-      : null;
   const pdfMaterials = materials.filter(
     (material) => material.mimeType === 'application/pdf',
   );
@@ -1521,7 +1525,7 @@ export function PdfPreview({
       <div className="pdf-preview-topbar">
         <div className="surface-panel-header">
           <h3>{title ?? 'Selected PDF'}</h3>
-          <p>Continuous vertical roll rendered with PDF.js print intent.</p>
+          <p>Open and annotate the selected PDF deck.</p>
         </div>
         <div className="pdf-preview-topbar-actions">
           {onBack ? (
@@ -1680,140 +1684,6 @@ export function PdfPreview({
         </div>
       </div>
 
-      <div className="pdf-preview-diagnostics" aria-label="Pointer diagnostics">
-        <div className="pdf-preview-diagnostics-row">
-          <StatusLabel
-            label={`Rendered tool: ${pointerToolLabel}`}
-            tone={pointerToolLabel === 'eraser' ? 'warning' : 'neutral'}
-            icon={pointerToolLabel === 'eraser' ? 'annotated' : 'info'}
-          />
-          <StatusLabel label={`Mode: ${pointerModeLabel}`} icon="info" />
-          <StatusLabel label={`Cursor: ${pointerCursorLabel}`} icon="info" />
-          <StatusLabel
-            label={`SVG class: ${pointerDiagnostics.overlayClass}`}
-            icon="info"
-          />
-        </div>
-        <div className="pdf-preview-diagnostics-grid">
-          <div>
-            <span>Event</span>
-            <strong>{pointerDiagnostics.eventKind}</strong>
-          </div>
-          <div>
-            <span>Pointer id</span>
-            <strong>{pointerDiagnostics.pointerId ?? 'none'}</strong>
-          </div>
-          <div>
-            <span>Pointer type</span>
-            <strong>{pointerDiagnostics.pointerType}</strong>
-          </div>
-          <div>
-            <span>Button</span>
-            <strong>{pointerDiagnostics.button}</strong>
-          </div>
-          <div>
-            <span>Buttons</span>
-            <strong>{pointerDiagnostics.buttons}</strong>
-          </div>
-          <div>
-            <span>Pressure</span>
-            <strong>{pointerDiagnostics.pressure.toFixed(3)}</strong>
-          </div>
-          <div>
-            <span>Width</span>
-            <strong>{pressureWidthLabel}</strong>
-          </div>
-          <div>
-            <span>Primary</span>
-            <strong>{pointerDiagnostics.isPrimary ? 'yes' : 'no'}</strong>
-          </div>
-          <div>
-            <span>Resolved</span>
-            <strong>{pointerDiagnostics.resolvedTool}</strong>
-          </div>
-          <div>
-            <span>Latched</span>
-            <strong>{pointerDiagnostics.latchedTool ?? 'none'}</strong>
-          </div>
-          <div>
-            <span>Mode</span>
-            <strong>{pointerModeLabel}</strong>
-          </div>
-        </div>
-        <div className="pdf-preview-pressure-meter" aria-hidden="true">
-          <span className="pdf-preview-pressure-meter-label">
-            Pressure preview
-          </span>
-          <div className="pdf-preview-pressure-track">
-            <div
-              className="pdf-preview-pressure-fill"
-              style={{
-                width: `${Math.max(0, Math.min(pointerDiagnostics.pressure, 1)) * 100}%`,
-              }}
-            />
-          </div>
-        </div>
-        <div className="pdf-preview-render-diagnostics">
-          <span className="pdf-preview-render-diagnostics-label">
-            PDF render diagnostics
-          </span>
-          <div className="pdf-preview-render-diagnostics-grid">
-            <div>
-              <span>Worker</span>
-              <strong>{getFileName(pdfWorkerSrc)}</strong>
-            </div>
-            <div>
-              <span>Renderer</span>
-              <strong>{rendererLocation}</strong>
-            </div>
-            <div>
-              <span>Base URI</span>
-              <strong>{rendererBaseUri}</strong>
-            </div>
-            <div>
-              <span>Path</span>
-              <strong>{rendererPath}</strong>
-            </div>
-            <div>
-              <span>File</span>
-              <strong>{filePath ? getFileName(filePath) : 'none'}</strong>
-            </div>
-            <div>
-              <span>Page count</span>
-              <strong>{pageDiagnostics?.pageCount ?? 0}</strong>
-            </div>
-            <div>
-              <span>Rendered</span>
-              <strong>
-                {pageDiagnostics
-                  ? `${pageDiagnostics.renderedPageCount}/${pageDiagnostics.pageCount}`
-                  : '0/0'}
-              </strong>
-            </div>
-            <div>
-              <span>First page</span>
-              <strong>
-                {pageDiagnostics
-                  ? `${pageDiagnostics.firstPageStatus} / ${formatPageSizeLabel(pageDiagnostics.firstPageSize)}`
-                  : 'idle'}
-              </strong>
-            </div>
-            <div>
-              <span>Last page</span>
-              <strong>
-                {pageDiagnostics
-                  ? `${pageDiagnostics.lastPageStatus} / ${formatPageSizeLabel(pageDiagnostics.lastPageSize)}`
-                  : 'idle'}
-              </strong>
-            </div>
-            <div>
-              <span>Render label</span>
-              <strong>{state.kind === 'idle' ? 'idle' : state.label}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <details
         className="pdf-preview-navigator"
         open={!isNavigatorCollapsed}
@@ -1955,20 +1825,12 @@ export function PdfPreview({
                     data-rendered-tool={pointerDiagnostics.renderedTool}
                     draggable={false}
                     style={{ cursor: pointerDiagnostics.cursor }}
-                    onPointerEnter={handlePagePointerEvent(
-                      index,
-                      'pointerenter',
-                    )}
                     onPointerMove={handlePagePointerEvent(index, 'pointermove')}
                     onPointerDown={handlePagePointerEvent(index, 'pointerdown')}
                     onPointerUp={handlePagePointerEvent(index, 'pointerup')}
                     onPointerCancel={handlePagePointerEvent(
                       index,
                       'pointercancel',
-                    )}
-                    onPointerLeave={handlePagePointerEvent(
-                      index,
-                      'pointerleave',
                     )}
                   >
                     <canvas
