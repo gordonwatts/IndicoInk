@@ -345,8 +345,7 @@ export function PdfPreview({
 
   React.useEffect(() => {
     const viewportElement =
-      stageViewportRef.current ??
-      getScrollViewportElement(scrollContainerRef);
+      stageViewportRef.current ?? getScrollViewportElement(scrollContainerRef);
     if (!viewportElement) {
       return;
     }
@@ -947,9 +946,6 @@ export function PdfPreview({
   const handlePagePointerEvent = React.useCallback(
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
-        currentSlideNumberRef.current = pageIndex + 1;
-        setCurrentSlideNumber(pageIndex + 1);
-        setJumpToSlideValue(String(pageIndex + 1));
         const pageSize =
           state.kind === 'loading' || state.kind === 'ready'
             ? state.pageSizes[pageIndex]
@@ -981,6 +977,8 @@ export function PdfPreview({
         }
 
         if (eventKind === 'pointerdown') {
+          currentSlideNumberRef.current = pageIndex + 1;
+
           if (interactionMode === 'text' && pagePoint) {
             event.preventDefault();
             const noteId = createTextNoteId();
@@ -1110,7 +1108,8 @@ export function PdfPreview({
             activeInkActionRef.current.pointerId === event.pointerId &&
             getScrollViewportElement(scrollContainerRef)
           ) {
-            const scrollContainer = getScrollViewportElement(scrollContainerRef);
+            const scrollContainer =
+              getScrollViewportElement(scrollContainerRef);
             const deltaX =
               event.clientX - activeInkActionRef.current.startClientX;
             const deltaY =
@@ -1159,13 +1158,24 @@ export function PdfPreview({
         }
 
         if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+          const activeInkAction = activeInkActionRef.current;
           if (
-            activeInkActionRef.current?.pointerId === event.pointerId &&
-            (activeInkActionRef.current.kind === 'pan' ||
-              activeInkActionRef.current.kind === 'text' ||
-              activeInkActionRef.current.pageIndex === pageIndex)
+            activeInkAction?.pointerId === event.pointerId &&
+            (activeInkAction.kind === 'pan' ||
+              activeInkAction.kind === 'text' ||
+              activeInkAction.pageIndex === pageIndex)
           ) {
             activeInkActionRef.current = null;
+          }
+
+          if (
+            eventKind === 'pointerup' &&
+            activeInkAction &&
+            activeInkAction.kind !== 'pan' &&
+            activeInkAction.pageIndex === pageIndex
+          ) {
+            setCurrentSlideNumber(pageIndex + 1);
+            setJumpToSlideValue(String(pageIndex + 1));
           }
 
           if (pointerMarker?.pageIndex === pageIndex) {
