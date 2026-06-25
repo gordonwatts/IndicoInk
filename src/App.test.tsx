@@ -469,29 +469,32 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open details for Designing a calm note-taking workflow',
+        name: 'Open talk for Designing a calm note-taking workflow',
       }),
     ).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Open details for Tracking talks across a conference',
+        name: 'Open slides for Designing a calm note-taking workflow',
       }),
     );
 
     expect(
-      screen.getByRole('heading', {
-        name: 'Talk details',
-        level: 2,
+      await screen.findByRole('heading', {
+        name: 'Designing a calm note-taking workflow',
       }),
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open slides',
+        name: 'Back',
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/Main deck/)).toBeTruthy();
-    expect(screen.getByText(/Supplementary deck/)).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Back',
+      }),
+    );
 
     const firstBookmarkButton = screen.getAllByRole('button', {
       name: 'Bookmark talk',
@@ -563,7 +566,7 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open details for Tracking talks across a conference',
+        name: 'Open talk for Tracking talks across a conference',
       }),
     ).toBeTruthy();
 
@@ -585,7 +588,7 @@ describe('App', () => {
     ).toBeTruthy();
   });
 
-  it('keeps non-PDF materials in talk details and opens the selected PDF deck', async () => {
+  it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-chooser',
@@ -654,14 +657,14 @@ describe('App', () => {
     );
     await user.click(
       screen.getByRole('button', {
-        name: 'Open details for Opening the right deck',
+        name: 'Materials for Opening the right deck',
       }),
     );
 
     expect(
       screen.getByRole('heading', {
-        name: 'Talk details',
-        level: 2,
+        name: 'Materials for Opening the right deck',
+        level: 3,
       }),
     ).toBeTruthy();
     expect(screen.getByText('Main deck · 10 pages')).toBeTruthy();
@@ -680,16 +683,11 @@ describe('App', () => {
     );
 
     await user.click(
-      screen.getByRole('button', {
+      within(screen.getByRole('dialog')).getByRole('button', {
         name: 'Open slides',
       }),
     );
 
-    expect(window.indicoInk.openTalkDeck).toHaveBeenCalledWith(
-      libraryEvent.id,
-      'talk-chooser',
-      'deck-alt',
-    );
     expect(
       await screen.findByRole('heading', {
         name: 'Opening the right deck',
@@ -700,6 +698,11 @@ describe('App', () => {
         name: 'Alternate deck',
       }),
     ).toBeTruthy();
+    expect(window.indicoInk.openTalkDeck).toHaveBeenCalledWith(
+      libraryEvent.id,
+      'talk-chooser',
+      'deck-alt',
+    );
   });
 
   it('preserves the approximate scroll position for each agenda day', async () => {

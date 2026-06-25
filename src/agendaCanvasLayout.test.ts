@@ -5,6 +5,7 @@ import {
   agendaCanvasRowHeight,
   agendaTimeGutterWidth,
   buildAgendaCanvasLayout,
+  estimateAgendaTalkCardHeightForWidth,
   getResponsiveAgendaColumnWidth,
 } from './agendaCanvasLayout';
 import type { AgendaTalkSummary } from './shared/agenda';
@@ -165,5 +166,39 @@ describe('agenda canvas layout', () => {
     expect(getResponsiveAgendaColumnWidth(700, 2)).toBeGreaterThanOrEqual(
       agendaTimeGutterWidth / 2,
     );
+  });
+
+  it('keeps compact card actions within the agenda height budget', () => {
+    const talk = makeTalk(
+      'materials-talk',
+      9,
+      0,
+      30,
+      'A talk with extra material controls',
+    );
+    talk.materialSummary = '2 PDFs';
+    talk.materials = [
+      {
+        id: 'deck-main',
+        title: 'Main deck',
+        sourceUrl: 'https://indico.example.org/materials/main.pdf',
+        mimeType: 'application/pdf',
+        selected: true,
+        pageCount: 8,
+      },
+      {
+        id: 'deck-alt',
+        title: 'Alternate deck',
+        sourceUrl: 'https://indico.example.org/materials/alt.pdf',
+        mimeType: 'application/pdf',
+        selected: false,
+        pageCount: 4,
+      },
+    ];
+
+    const height = estimateAgendaTalkCardHeightForWidth(talk, 320);
+
+    expect(height).toBeGreaterThanOrEqual(160);
+    expect(height).toBeLessThan(220);
   });
 });

@@ -44,6 +44,7 @@ export const agendaCanvasTrackPadding = 12;
 export const agendaCanvasTalkMinHeight = 156;
 export const agendaCanvasTalkGap = 12;
 export const agendaCanvasHeaderHeight = 72;
+const agendaCanvasTalkActionRowHeight = 40;
 
 type TalkRange = {
   startMinutes: number | null;
@@ -125,12 +126,15 @@ export function estimateAgendaTalkCardHeightForWidth(
   const summaryLineCount =
     talk.materialSummary.length > approximateCharactersPerLine * 0.8 ? 2 : 1;
 
+  const hasMaterialActions = talk.materials.length > 0;
+
   return Math.max(
     agendaCanvasTalkMinHeight,
     122 +
       (titleLineCount - 1) * 22 +
       (speakerLineCount - 1) * 18 +
-      (summaryLineCount - 1) * 16,
+      (summaryLineCount - 1) * 16 +
+      (hasMaterialActions ? agendaCanvasTalkActionRowHeight : 0),
   );
 }
 
