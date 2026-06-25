@@ -446,6 +446,7 @@ input:focus-visible {
   min-width: 0;
   padding: 0 24px 24px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .page-stack {
@@ -916,12 +917,14 @@ input:focus-visible {
 }
 
 .pdf-preview-stage {
-  height: clamp(320px, 72vh, 780px);
+  position: relative;
+  min-height: clamp(320px, 56vh, 640px);
   display: grid;
-  place-items: center;
+  gap: 18px;
+  align-content: start;
+  justify-items: center;
   padding: 18px;
-  overflow: auto;
-  scrollbar-gutter: stable both-edges;
+  overflow: visible;
   border-radius: 18px;
   background: var(--surface-panel-muted);
   border: 1px solid rgba(58, 67, 81, 0.08);
@@ -950,6 +953,13 @@ input:focus-visible {
   gap: 18px;
   width: 100%;
   max-width: 100%;
+}
+
+.pdf-preview-pages.is-rendering {
+  position: absolute;
+  inset: 18px;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .pdf-preview-page {

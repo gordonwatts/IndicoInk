@@ -610,6 +610,7 @@ export function App() {
   const agendaScrollPositionsRef = React.useRef<Record<string, number>>({});
   const agendaScrollFrameRef = React.useRef<number | null>(null);
   const agendaCanvasScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const deckDownloadPollRef = React.useRef<number | null>(null);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
     null,
@@ -1685,7 +1686,7 @@ export function App() {
           }
         />
 
-        <main className="page-surface" aria-live="polite">
+        <main ref={pageSurfaceRef} className="page-surface" aria-live="polite">
           {destination === 'library' && (
             <section className="page-stack">
               <div className="hero-panel">
@@ -2284,6 +2285,7 @@ export function App() {
                     void handleExportNotes();
                   }}
                   workspaceDeckId={activeSlideDeckId}
+                  scrollContainerRef={pageSurfaceRef}
                 />
               ) : (
                 <div className="empty-state">

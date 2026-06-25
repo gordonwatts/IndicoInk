@@ -257,6 +257,13 @@ const createIdlePersistenceStatus = (): PersistenceStatus => ({
   label: 'No saved workspace',
 });
 
+const getScrollViewportElement = (
+  scrollContainerRef?: React.RefObject<HTMLElement | null>,
+) =>
+  scrollContainerRef?.current ??
+  document.querySelector<HTMLElement>('.page-surface') ??
+  document.documentElement;
+
 type PdfPreviewProps = {
   filePath: string | null;
   title?: string;
@@ -271,6 +278,7 @@ type PdfPreviewProps = {
   onCancelDownload?: () => void;
   onRetryDownload?: () => void;
   onExportNotes?: () => void;
+  scrollContainerRef?: React.RefObject<HTMLElement | null>;
 };
 
 export function PdfPreview({
@@ -287,6 +295,7 @@ export function PdfPreview({
   onCancelDownload,
   onRetryDownload,
   onExportNotes,
+  scrollContainerRef,
 }: PdfPreviewProps) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
@@ -294,7 +303,7 @@ export function PdfPreview({
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
-  const stageScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const stageViewportRef = React.useRef<HTMLDivElement | null>(null);
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
   const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>(
@@ -335,7 +344,9 @@ export function PdfPreview({
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(false);
 
   React.useEffect(() => {
-    const viewportElement = stageScrollRef.current;
+    const viewportElement =
+      stageViewportRef.current ??
+      getScrollViewportElement(scrollContainerRef);
     if (!viewportElement) {
       return;
     }
@@ -363,7 +374,7 @@ export function PdfPreview({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [scrollContainerRef]);
 
   const resolvePointerInteraction = React.useCallback(
     (
@@ -684,8 +695,8 @@ export function PdfPreview({
       undoStack,
       redoStack,
       currentSlideNumber: currentSlideNumberRef.current,
-      scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
-      scrollTop: stageScrollRef.current?.scrollTop ?? 0,
+      scrollLeft: getScrollViewportElement(scrollContainerRef).scrollLeft,
+      scrollTop: getScrollViewportElement(scrollContainerRef).scrollTop,
       zoom: zoomLevel,
       ...(workspaceDeckId && conferenceId ? { conferenceId } : {}),
       ...(workspaceDeckId && talkId ? { talkId } : {}),
@@ -702,7 +713,7 @@ export function PdfPreview({
       : window.indicoInk.savePdfWorkspaceState(nextSnapshot);
 
     void saveWorkspace
-      .then((result) => {
+      .then(() => {
         setPersistenceStatus({
           kind: 'saved',
           label: 'Workspace saved.',
@@ -864,8 +875,8 @@ export function PdfPreview({
         undoStack,
         redoStack,
         currentSlideNumber: currentSlideNumberRef.current,
-        scrollLeft: stageScrollRef.current?.scrollLeft ?? 0,
-        scrollTop: stageScrollRef.current?.scrollTop ?? 0,
+        scrollLeft: getScrollViewportElement(scrollContainerRef).scrollLeft,
+        scrollTop: getScrollViewportElement(scrollContainerRef).scrollTop,
         zoom: zoomLevel,
         ...(workspaceDeckId && conferenceId ? { conferenceId } : {}),
         ...(workspaceDeckId && talkId ? { talkId } : {}),
@@ -877,7 +888,7 @@ export function PdfPreview({
         : window.indicoInk.savePdfWorkspaceState(snapshot);
 
       void saveWorkspace
-        .then((result) => {
+        .then(() => {
           setPersistenceStatus({
             kind: 'saved',
             label: 'Workspace saved.',
@@ -922,18 +933,6 @@ export function PdfPreview({
     strokesByPage,
     textNotesByPage,
   ]);
-
-  const handleStageScroll = React.useCallback(() => {
-    if (
-      !filePath ||
-      state.kind !== 'ready' ||
-      !persistenceHydratedRef.current
-    ) {
-      return;
-    }
-
-    schedulePersistenceSave();
-  }, [filePath, schedulePersistenceSave, state.kind]);
 
   React.useEffect(
     () => () => {
@@ -1057,14 +1056,15 @@ export function PdfPreview({
             return;
           }
 
-          if (interactionMode === 'pan' && stageScrollRef.current) {
+          const scrollContainer = getScrollViewportElement(scrollContainerRef);
+          if (interactionMode === 'pan' && scrollContainer) {
             activeInkActionRef.current = {
               kind: 'pan',
               pointerId: event.pointerId,
               startClientX: event.clientX,
               startClientY: event.clientY,
-              startScrollLeft: stageScrollRef.current.scrollLeft,
-              startScrollTop: stageScrollRef.current.scrollTop,
+              startScrollLeft: scrollContainer.scrollLeft,
+              startScrollTop: scrollContainer.scrollTop,
             };
             event.preventDefault();
           }
@@ -1108,16 +1108,17 @@ export function PdfPreview({
           if (
             activeInkActionRef.current.kind === 'pan' &&
             activeInkActionRef.current.pointerId === event.pointerId &&
-            stageScrollRef.current
+            getScrollViewportElement(scrollContainerRef)
           ) {
+            const scrollContainer = getScrollViewportElement(scrollContainerRef);
             const deltaX =
               event.clientX - activeInkActionRef.current.startClientX;
             const deltaY =
               event.clientY - activeInkActionRef.current.startClientY;
 
-            stageScrollRef.current.scrollLeft =
+            scrollContainer.scrollLeft =
               activeInkActionRef.current.startScrollLeft - deltaX;
-            stageScrollRef.current.scrollTop =
+            scrollContainer.scrollTop =
               activeInkActionRef.current.startScrollTop - deltaY;
             event.preventDefault();
           }
@@ -1187,8 +1188,36 @@ export function PdfPreview({
       textNoteDragState,
       updateStrokePage,
       updateTextNotePage,
+      scrollContainerRef,
     ],
   );
+
+  React.useEffect(() => {
+    const scrollContainer = getScrollViewportElement(scrollContainerRef);
+    if (!scrollContainer) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (
+        !filePath ||
+        state.kind !== 'ready' ||
+        !persistenceHydratedRef.current
+      ) {
+        return;
+      }
+
+      schedulePersistenceSave();
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll, {
+      passive: true,
+    });
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+    };
+  }, [filePath, schedulePersistenceSave, scrollContainerRef, state.kind]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1320,13 +1349,6 @@ export function PdfPreview({
         });
         await waitForNextFrame();
 
-        setState({
-          kind: 'ready',
-          label: 'Slides ready.',
-          pageCount,
-          pageSizes,
-          pageStatuses,
-        });
         persistenceHydratedRef.current = false;
         setPersistenceStatus({
           kind: 'loading',
@@ -1413,15 +1435,6 @@ export function PdfPreview({
 
           pageSizes[pageNumber - 1] = { width, height };
           pageStatuses[pageNumber - 1] = 'ready';
-          setState((currentState) =>
-            currentState.kind === 'loading' || currentState.kind === 'ready'
-              ? {
-                  ...currentState,
-                  pageSizes: [...pageSizes],
-                  pageStatuses: [...pageStatuses],
-                }
-              : currentState,
-          );
         }
 
         if (!cancelled) {
@@ -1483,9 +1496,10 @@ export function PdfPreview({
     }
 
     const frame = window.requestAnimationFrame(() => {
-      if (stageScrollRef.current) {
-        stageScrollRef.current.scrollLeft = restore.scrollLeft;
-        stageScrollRef.current.scrollTop = restore.scrollTop;
+      const scrollContainer = getScrollViewportElement(scrollContainerRef);
+      if (scrollContainer) {
+        scrollContainer.scrollLeft = restore.scrollLeft;
+        scrollContainer.scrollTop = restore.scrollTop;
       }
 
       currentSlideNumberRef.current = restore.currentSlideNumber;
@@ -1503,7 +1517,7 @@ export function PdfPreview({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [filePath, readyPageStatuses, state.kind]);
+  }, [filePath, readyPageStatuses, scrollContainerRef, state.kind]);
 
   const pdfMaterials = materials.filter(
     (material) => material.mimeType === 'application/pdf',
@@ -1735,9 +1749,8 @@ export function PdfPreview({
       </details>
 
       <div
-        ref={stageScrollRef}
+        ref={stageViewportRef}
         className="pdf-preview-stage"
-        onScroll={handleStageScroll}
         onWheel={(event) => {
           if (!event.ctrlKey) {
             return;
@@ -1752,7 +1765,11 @@ export function PdfPreview({
         }}
       >
         {state.kind === 'ready' || state.kind === 'loading' ? (
-          <div className="pdf-preview-pages">
+          <div
+            className={`pdf-preview-pages${
+              state.kind === 'loading' ? ' is-rendering' : ''
+            }`}
+          >
             {Array.from({ length: currentPageCount }, (_, index) => {
               const pageSize = state.pageSizes[index] ?? {
                 width: 1,

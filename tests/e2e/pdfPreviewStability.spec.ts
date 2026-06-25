@@ -57,6 +57,44 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       })
       .click();
 
+    await harness.page.evaluate(() => {
+      const state = window as typeof window & {
+        __pdfPreviewVisibleIncompleteFrames?: number;
+        __pdfPreviewStopFrameWatch?: () => void;
+      };
+      state.__pdfPreviewVisibleIncompleteFrames = 0;
+
+      let frameId = 0;
+      const watchFrame = () => {
+        const pages = document.querySelector<HTMLElement>('.pdf-preview-pages');
+        const canvases = Array.from(
+          document.querySelectorAll<HTMLCanvasElement>('.pdf-preview-canvas'),
+        );
+        const visiblePageRoll =
+          pages &&
+          !pages.classList.contains('is-rendering') &&
+          window.getComputedStyle(pages).visibility !== 'hidden';
+        const incompleteCanvases =
+          canvases.length === 0 ||
+          canvases.some(
+            (canvas) => !canvas.style.width || !canvas.style.height,
+          );
+        const loadingCaptions = document.body.textContent?.includes('Loading');
+
+        if (visiblePageRoll && (incompleteCanvases || loadingCaptions)) {
+          state.__pdfPreviewVisibleIncompleteFrames =
+            (state.__pdfPreviewVisibleIncompleteFrames ?? 0) + 1;
+        }
+
+        frameId = window.requestAnimationFrame(watchFrame);
+      };
+
+      frameId = window.requestAnimationFrame(watchFrame);
+      state.__pdfPreviewStopFrameWatch = () => {
+        window.cancelAnimationFrame(frameId);
+      };
+    });
+
     await harness.page.getByRole('button', { name: 'Open slides' }).click();
     await expect(
       harness.page.getByRole('heading', {
@@ -67,49 +105,19 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       timeout: 30_000,
     });
     await harness.page.waitForTimeout(750);
-
-    await harness.page.evaluate(() => {
-      const root = document.querySelector('.pdf-preview-pages');
-      (
-        window as typeof window & {
-          __pdfPreviewMutationCount?: number;
-          __pdfPreviewStopObserver?: () => void;
-        }
-      ).__pdfPreviewMutationCount = 0;
-
-      const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-          const target = mutation.target;
-          if (
-            target instanceof HTMLCanvasElement ||
-            (target instanceof HTMLElement &&
-              target.classList.contains('pdf-preview-sheet')) ||
-            (target instanceof SVGElement &&
-              target.classList.contains('pdf-preview-overlay'))
-          ) {
-            (
-              window as typeof window & { __pdfPreviewMutationCount: number }
-            ).__pdfPreviewMutationCount += 1;
-          }
-        }
-      });
-
-      if (root) {
-        observer.observe(root, {
-          attributes: true,
-          childList: true,
-          subtree: true,
-        });
-      }
-
-      (
-        window as typeof window & { __pdfPreviewStopObserver?: () => void }
-      ).__pdfPreviewStopObserver = () => observer.disconnect();
+    const visibleIncompleteFrames = await harness.page.evaluate(() => {
+      const state = window as typeof window & {
+        __pdfPreviewVisibleIncompleteFrames?: number;
+        __pdfPreviewStopFrameWatch?: () => void;
+      };
+      state.__pdfPreviewStopFrameWatch?.();
+      return state.__pdfPreviewVisibleIncompleteFrames ?? 0;
     });
 
     const samples: Array<{
       stageClientWidth: number;
       stageClientHeight: number;
+      stageScrollHeight: number;
       firstCanvasWidth: string;
       firstCanvasHeight: string;
     }> = [];
@@ -123,6 +131,7 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
           return {
             stageClientWidth: stage?.clientWidth ?? 0,
             stageClientHeight: stage?.clientHeight ?? 0,
+            stageScrollHeight: stage?.scrollHeight ?? 0,
             firstCanvasWidth: firstCanvas?.style.width ?? '',
             firstCanvasHeight: firstCanvas?.style.height ?? '',
           };
@@ -131,20 +140,13 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       await harness.page.waitForTimeout(250);
     }
 
-    const mutationCount = await harness.page.evaluate(() => {
-      const state = window as typeof window & {
-        __pdfPreviewMutationCount?: number;
-        __pdfPreviewStopObserver?: () => void;
-      };
-      state.__pdfPreviewStopObserver?.();
-      return state.__pdfPreviewMutationCount ?? 0;
-    });
     const uniqueSamples = new Set(
       samples.map((sample) => JSON.stringify(sample)),
     );
 
-    expect(mutationCount).toBe(0);
+    expect(visibleIncompleteFrames).toBe(0);
     expect(uniqueSamples.size).toBe(1);
+    expect(samples[0]?.stageScrollHeight).toBe(samples[0]?.stageClientHeight);
   } finally {
     await harness.close().catch(() => {});
   }
