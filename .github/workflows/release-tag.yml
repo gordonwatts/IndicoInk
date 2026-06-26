@@ -55,9 +55,26 @@ jobs:
         with:
           pattern: indicoink-windows-installers-*
           path: release-assets
-          merge-multiple: true
+
+      - name: Package installers for release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets/published | Out-Null
+
+          Get-ChildItem -Path release-assets -Directory |
+            Where-Object { $_.Name -like 'indicoink-windows-installers-*' } |
+            ForEach-Object {
+              $arch = $_.Name.Replace('indicoink-windows-installers-', '')
+              $zipPath = Join-Path 'release-assets/published' "indicoink-windows-installers-$arch.zip"
+
+              if (Test-Path $zipPath) {
+                Remove-Item $zipPath -Force
+              }
+
+              Compress-Archive -Path (Join-Path $_.FullName '*') -DestinationPath $zipPath
+            }
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/**/*
+          files: release-assets/published/*.zip
