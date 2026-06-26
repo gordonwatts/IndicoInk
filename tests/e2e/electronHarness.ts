@@ -2,13 +2,13 @@ import { chromium, type Browser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
 const electronPath = resolve('node_modules/electron/dist/electron.exe');
 const electronCacheRoot = resolve('.electron-cache');
 const electronDistPath = resolve('node_modules/electron/dist');
-const remoteDebuggingPort = 9222;
 const packagedOutRoot = resolve('out');
 const packagedAppAsarPath = resolve(
   packagedOutRoot,
@@ -118,6 +118,34 @@ export const resolvePackagedAppAsarPath = () => {
 const wait = (milliseconds: number) =>
   new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds));
 
+const reserveFreePort = async () => {
+  const server = createServer();
+  await new Promise<void>((resolveReserve, rejectReserve) => {
+    server.once('error', rejectReserve);
+    server.listen(0, '127.0.0.1', () => resolveReserve());
+  });
+
+  const address = server.address();
+  if (typeof address !== 'object' || !address || typeof address.port !== 'number') {
+    server.close();
+    throw new Error('Failed to reserve a debugging port.');
+  }
+
+  const port = address.port;
+  await new Promise<void>((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error) {
+        rejectClose(error);
+        return;
+      }
+
+      resolveClose();
+    });
+  });
+
+  return port;
+};
+
 const waitFor = async (
   check: () => boolean,
   timeoutMilliseconds: number,
@@ -134,8 +162,8 @@ const waitFor = async (
   throw new Error('Timed out waiting for Electron startup.');
 };
 
-const waitForCdpEndpoint = async () => {
-  const endpoint = `http://127.0.0.1:${remoteDebuggingPort}/json/version`;
+const waitForCdpEndpoint = async (port: number) => {
+  const endpoint = `http://127.0.0.1:${port}/json/version`;
   const deadline = Date.now() + 30_000;
 
   while (Date.now() < deadline) {
@@ -189,6 +217,7 @@ const launchBinaryHarness = async ({
   const userDataDir =
     userDataDirOverride ?? mkdtempSync(resolve(tmpdir(), 'indicoink-e2e-'));
   const startupLogPath = join(userDataDir, 'startup.log');
+  const remoteDebuggingPort = await reserveFreePort();
 
   const child = spawn(
     binaryPath,
@@ -234,6 +263,11 @@ const launchBinaryHarness = async ({
     },
   );
   let exitCode: number | null = null;
+  const exitPromise = new Promise<void>((resolveExit) => {
+    child.once('exit', () => {
+      resolveExit();
+    });
+  });
   child.on('exit', (code) => {
     exitCode = code;
   });
@@ -254,10 +288,18 @@ const launchBinaryHarness = async ({
     );
   }, 30_000);
 
-  await waitForCdpEndpoint();
-  const browser = await chromium.connectOverCDP(
-    `http://127.0.0.1:${remoteDebuggingPort}`,
+  await waitForCdpEndpoint(remoteDebuggingPort);
+  const versionResponse = await fetch(
+    `http://127.0.0.1:${remoteDebuggingPort}/json/version`,
   );
+  if (!versionResponse.ok) {
+    throw new Error('Electron exposed the CDP port but not the browser target.');
+  }
+
+  const version = (await versionResponse.json()) as {
+    webSocketDebuggerUrl: string;
+  };
+  const browser = await chromium.connectOverCDP(version.webSocketDebuggerUrl);
   const context = browser.contexts()[0];
   if (!context) {
     throw new Error('Electron did not expose a browser context.');
@@ -274,8 +316,9 @@ const launchBinaryHarness = async ({
     close: async () => {
       await browser.close().catch(() => {});
       if (!child.killed) {
-        child.kill('SIGKILL');
+        child.kill();
       }
+      await exitPromise.catch(() => {});
     },
   };
 };
