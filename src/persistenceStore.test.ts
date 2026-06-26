@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
@@ -16,6 +16,14 @@ const createTempDbPath = (name: string) =>
     mkdtempSync(join(tmpdir(), 'indicoink-persistence-')),
     `${name}.sqlite3`,
   );
+
+const getSqlWasmPath = () => {
+  if (sqlWasmUrl.startsWith('/node_modules/')) {
+    return join(process.cwd(), sqlWasmUrl.slice(1));
+  }
+
+  return isAbsolute(sqlWasmUrl) ? sqlWasmUrl : join(process.cwd(), sqlWasmUrl);
+};
 
 describe('persistence store', () => {
   it('creates a fresh schema and supports repository CRUD and transactions', async () => {
@@ -137,7 +145,7 @@ describe('persistence store', () => {
   it('upgrades a legacy schema fixture to the current version', async () => {
     const dbPath = createTempDbPath('legacy');
     const SQL = await initSqlJs({
-      locateFile: () => sqlWasmUrl,
+      locateFile: () => getSqlWasmPath(),
     });
     const legacyDb = new SQL.Database();
     legacyDb.exec(`
@@ -389,7 +397,7 @@ describe('persistence store', () => {
     await firstStore.close();
 
     const SQL = await initSqlJs({
-      locateFile: () => sqlWasmUrl,
+      locateFile: () => getSqlWasmPath(),
     });
     const corruptedDb = new SQL.Database(
       new Uint8Array(await readFile(dbPath)),

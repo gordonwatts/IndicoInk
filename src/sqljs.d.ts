@@ -35,3 +35,8 @@ declare module 'sql.js/dist/sql-wasm.wasm?url' {
   const url: string;
   export default url;
 }
+
+declare module 'sql.js/dist/sql-wasm.js?raw' {
+  const source: string;
+  export default source;
+}

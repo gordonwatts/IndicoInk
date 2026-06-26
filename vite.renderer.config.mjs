@@ -12,6 +12,12 @@ export default defineConfig((env) => {
     base: './',
     build: {
       outDir: `.vite/renderer/${name}`,
+      target: 'es2022',
+    },
+    optimizeDeps: {
+      esbuildOptions: {
+        target: 'es2022',
+      },
     },
     plugins: [pluginExposeRenderer(name)],
     resolve: {

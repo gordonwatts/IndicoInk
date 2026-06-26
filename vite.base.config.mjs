@@ -1,19 +1,11 @@
 import { builtinModules } from 'node:module';
-import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
-
-const packageJson = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
-);
 
 const builtins = [
   'electron',
   ...builtinModules.flatMap((mod) => [mod, `node:${mod}`]),
 ];
-export const external = [
-  ...builtins,
-  ...Object.keys(packageJson.dependencies || {}),
-];
+export const external = [...builtins];
 
 const viteDevServerUrls = {};
 
@@ -25,6 +17,7 @@ export const getBuildConfig = (env) => {
     build: {
       emptyOutDir: false,
       outDir: '.vite/build',
+      target: 'es2022',
       watch: command === 'serve' ? {} : null,
       minify: command === 'build',
     },

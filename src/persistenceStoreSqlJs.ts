@@ -1,7 +1,8 @@
-import initSqlJs from 'sql.js';
+import sqlJsSource from 'sql.js/dist/sql-wasm.js?raw';
+import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { mkdirSync } from 'node:fs';
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
 import type { NormalizedPagePoint } from './inkGeometry';
 import type { InkStroke } from './strokeTools';
@@ -54,7 +55,82 @@ type SqlJsModule = {
   Database: new (data?: Uint8Array | ArrayBuffer) => SqlJsDatabase;
 };
 
+type InitSqlJs = (config?: {
+  locateFile?: (file: string) => string;
+  wasmBinary?: Uint8Array;
+}) => Promise<SqlJsModule>;
+
 const CURRENT_SCHEMA_VERSION = 4;
+
+let initSqlJsLoader: InitSqlJs | null = null;
+
+const getSqlWasmPath = () => {
+  if (sqlWasmUrl.startsWith('/node_modules/')) {
+    return join(process.cwd(), sqlWasmUrl.slice(1));
+  }
+
+  if (isAbsolute(sqlWasmUrl) || /^[a-z]+:/i.test(sqlWasmUrl)) {
+    return sqlWasmUrl;
+  }
+
+  const baseDir = typeof __dirname === 'string' ? __dirname : process.cwd();
+  return join(baseDir, sqlWasmUrl);
+};
+
+const getSqlJsConfig = () => {
+  const dataUrlPrefix = 'data:application/wasm;base64,';
+
+  if (sqlWasmUrl.startsWith(dataUrlPrefix)) {
+    return {
+      wasmBinary: new Uint8Array(
+        Buffer.from(sqlWasmUrl.slice(dataUrlPrefix.length), 'base64'),
+      ),
+    };
+  }
+
+  return {
+    locateFile: (file: string) =>
+      file === 'sql-wasm.wasm' ? getSqlWasmPath() : file,
+  };
+};
+
+const getInitSqlJs = (): InitSqlJs => {
+  if (initSqlJsLoader) {
+    return initSqlJsLoader;
+  }
+
+  const module = {
+    exports: {},
+  } as {
+    exports: InitSqlJs | { default?: InitSqlJs };
+  };
+
+  const loadSqlJs = new Function(
+    'module',
+    'exports',
+    'require',
+    '__dirname',
+    '__filename',
+    `${sqlJsSource}
+return module.exports.default || module.exports;`,
+  ) as (
+    module: { exports: InitSqlJs | { default?: InitSqlJs } },
+    exports: InitSqlJs | { default?: InitSqlJs },
+    require: NodeJS.Require,
+    __dirname: string,
+    __filename: string,
+  ) => InitSqlJs;
+
+  const sqlWasmPath = getSqlWasmPath();
+  initSqlJsLoader = loadSqlJs(
+    module,
+    module.exports,
+    require,
+    dirname(sqlWasmPath),
+    join(dirname(sqlWasmPath), 'sql-wasm.js'),
+  );
+  return initSqlJsLoader;
+};
 
 const getFileName = (value: string) => {
   const normalized = value.replaceAll('\\', '/');
@@ -1583,7 +1659,8 @@ export class PersistenceStore {
 
   private async initialize() {
     mkdirSync(dirname(this.dbPath), { recursive: true });
-    const SQL = (await initSqlJs()) as SqlJsModule;
+    const initSqlJs = getInitSqlJs();
+    const SQL = (await initSqlJs(getSqlJsConfig())) as SqlJsModule;
 
     let bytes: Uint8Array | undefined;
     try {

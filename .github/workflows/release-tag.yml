@@ -32,7 +32,7 @@ jobs:
           npm_config_arch: ${{ matrix.arch }}
 
       - name: Build installers
-        run: npm run make -- --arch=${{ matrix.arch }}
+        run: npm run make -- --platform=win32 --arch=${{ matrix.arch }}
         env:
           ELECTRON_INSTALL_ARCH: ${{ matrix.arch }}
           npm_config_arch: ${{ matrix.arch }}
@@ -42,6 +42,7 @@ jobs:
         with:
           name: indicoink-windows-installers-${{ matrix.arch }}
           path: out/make/squirrel.windows/${{ matrix.arch }}/*
+          if-no-files-found: error
 
   publish-release-assets:
     runs-on: windows-latest
@@ -50,6 +51,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download installers
         uses: actions/download-artifact@v4
         with:
@@ -60,21 +64,30 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-assets/published | Out-Null
+          $version = (Get-Content package.json | ConvertFrom-Json).version
 
           Get-ChildItem -Path release-assets -Directory |
             Where-Object { $_.Name -like 'indicoink-windows-installers-*' } |
             ForEach-Object {
               $arch = $_.Name.Replace('indicoink-windows-installers-', '')
-              $zipPath = Join-Path 'release-assets/published' "indicoink-windows-installers-$arch.zip"
+              $zipPath = Join-Path 'release-assets/published' "IndicoInk-$version-win32-$arch-squirrel.zip"
 
               if (Test-Path $zipPath) {
                 Remove-Item $zipPath -Force
               }
 
               Compress-Archive -Path (Join-Path $_.FullName '*') -DestinationPath $zipPath
+
+              $setupExe = Get-ChildItem -Path $_.FullName -Filter "IndicoInk-Setup-$arch.exe" -File | Select-Object -First 1
+              if (-not $setupExe) {
+                throw "Missing IndicoInk-Setup-$arch.exe in $($_.FullName)"
+              }
+              Copy-Item -Path $setupExe.FullName -Destination (Join-Path 'release-assets/published' $setupExe.Name) -Force
             }
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/published/*.zip
+          files: |
+            release-assets/published/*.exe
+            release-assets/published/*.zip
