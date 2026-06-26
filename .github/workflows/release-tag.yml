@@ -1,9 +1,9 @@
 name: Build Windows installers
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
@@ -11,6 +11,9 @@ permissions:
 jobs:
   build-windows-installers:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
 
     steps:
       - name: Checkout
@@ -27,14 +30,30 @@ jobs:
 
       - name: Build installers
         run: npm run make
+        env:
+          npm_config_arch: ${{ matrix.arch }}
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: indicoink-windows-installers
-          path: out/make/squirrel.windows/x64/*
+          name: indicoink-windows-installers-${{ matrix.arch }}
+          path: out/make/squirrel.windows/${{ matrix.arch }}/*
+
+  publish-release-assets:
+    runs-on: windows-latest
+    needs: build-windows-installers
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: indicoink-windows-installers-*
+          path: release-assets
+          merge-multiple: true
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: out/make/squirrel.windows/x64/*
+          files: release-assets/**/*
