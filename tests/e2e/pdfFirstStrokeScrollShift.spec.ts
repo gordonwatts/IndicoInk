@@ -53,11 +53,9 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
 
     await harness.page
       .getByRole('button', {
-        name: 'Open details for Designing a calm note-taking workflow',
+        name: 'Open talk for Designing a calm note-taking workflow',
       })
       .click();
-
-    await harness.page.getByRole('button', { name: 'Open slides' }).click();
 
     await expect(
       harness.page.getByRole('heading', {

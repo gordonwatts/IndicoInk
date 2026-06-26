@@ -53,7 +53,7 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
 
     await harness.page
       .getByRole('button', {
-        name: 'Open details for Designing a calm note-taking workflow',
+        name: 'Open talk for Designing a calm note-taking workflow',
       })
       .click();
 
@@ -94,8 +94,6 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
         window.cancelAnimationFrame(frameId);
       };
     });
-
-    await harness.page.getByRole('button', { name: 'Open slides' }).click();
     await expect(
       harness.page.getByRole('heading', {
         name: 'Designing a calm note-taking workflow',

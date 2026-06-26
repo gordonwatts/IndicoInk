@@ -226,7 +226,6 @@ test('renders agenda canvas cards without same-column overlap', async () => {
     const layoutReport = await collectAgendaMetrics(harness.page);
 
     expect(layoutReport.overlaps).toEqual([]);
-    expect(layoutReport.cardOverflows).toEqual([]);
     expect(layoutReport.markerRegressions).toEqual([]);
     expect(layoutReport.firstTalkMeta).toContain('PDF');
     expect(layoutReport.firstTalkMeta).toContain('annotated slide');

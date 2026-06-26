@@ -10,12 +10,6 @@ const electronPath = resolve('node_modules/electron/dist/electron.exe');
 const electronCacheRoot = resolve('.electron-cache');
 const electronDistPath = resolve('node_modules/electron/dist');
 const packagedOutRoot = resolve('out');
-const packagedAppAsarPath = resolve(
-  packagedOutRoot,
-  'indicoink-win32-x64',
-  'resources',
-  'app.asar',
-);
 const pickEnv = (keys: string[]) =>
   Object.fromEntries(
     keys
@@ -106,8 +100,45 @@ export const resolvePackagedAppAsarPath = () => {
     return explicitPath;
   }
 
-  if (existsSync(packagedAppAsarPath)) {
-    return packagedAppAsarPath;
+  if (!existsSync(packagedOutRoot)) {
+    throw new Error(
+      'Packaged output was not found. Run `npm run package` before launching the packaged app.',
+    );
+  }
+
+  const stack = [packagedOutRoot];
+  const candidates: string[] = [];
+  while (stack.length > 0) {
+    const currentDir = stack.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
+      const entryPath = join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.toLowerCase() === 'app.asar') {
+        candidates.push(entryPath);
+      }
+    }
+  }
+
+  const preferredCandidate = candidates.find((candidate) =>
+    /(?:^|\\|\/)indicoink-win32-(?:x64|arm64)(?:\\|\/)resources(?:\\|\/)app\.asar$/i.test(
+      candidate,
+    ),
+  );
+  if (preferredCandidate) {
+    return preferredCandidate;
+  }
+
+  const fallback = candidates[0];
+  if (fallback) {
+    return fallback;
   }
 
   throw new Error(
@@ -126,7 +157,11 @@ const reserveFreePort = async () => {
   });
 
   const address = server.address();
-  if (typeof address !== 'object' || !address || typeof address.port !== 'number') {
+  if (
+    typeof address !== 'object' ||
+    !address ||
+    typeof address.port !== 'number'
+  ) {
     server.close();
     throw new Error('Failed to reserve a debugging port.');
   }
@@ -192,6 +227,7 @@ export type ElectronHarness = {
 
 export type LaunchElectronHarnessOptions = {
   userDataDir?: string;
+  extraEnv?: NodeJS.ProcessEnv;
 };
 
 export type ImportFixtureOptions = {
@@ -293,7 +329,9 @@ const launchBinaryHarness = async ({
     `http://127.0.0.1:${remoteDebuggingPort}/json/version`,
   );
   if (!versionResponse.ok) {
-    throw new Error('Electron exposed the CDP port but not the browser target.');
+    throw new Error(
+      'Electron exposed the CDP port but not the browser target.',
+    );
   }
 
   const version = (await versionResponse.json()) as {
@@ -330,6 +368,7 @@ export const launchElectronHarness = async (
     binaryPath: electronPath,
     launchArgs: ['.vite/build/main.js'],
     userDataDir: options.userDataDir,
+    extraEnv: options.extraEnv,
   });
 };
 

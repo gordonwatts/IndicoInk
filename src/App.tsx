@@ -699,6 +699,10 @@ export function App() {
   const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
+  const runtimeInfoText = info
+    ? `${info.appName} - Electron ${info.electronVersion}`
+    : 'Loading...';
+  const runtimeInfoLabel = `Runtime information: ${runtimeInfoText}`;
   const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
   const [libraryEvents, setLibraryEvents] = React.useState<EventSummary[]>([]);
   const [selectedEventId, setSelectedEventId] = React.useState<string | null>(
@@ -1784,13 +1788,8 @@ export function App() {
           }
           actions={
             destination === 'slides' ? (
-              <div className="runtime-pill" aria-label="Runtime information">
-                <span className="runtime-pill-label">Runtime</span>
-                <span className="runtime-pill-value">
-                  {info
-                    ? `${info.appName} - Electron ${info.electronVersion}`
-                    : 'Loading...'}
-                </span>
+              <div className="runtime-pill" aria-label={runtimeInfoLabel}>
+                <span className="runtime-pill-value">{runtimeInfoText}</span>
               </div>
             ) : (
               <>
@@ -1823,13 +1822,8 @@ export function App() {
                 >
                   Export notes
                 </PrimaryButton>
-                <div className="runtime-pill" aria-label="Runtime information">
-                  <span className="runtime-pill-label">Runtime</span>
-                  <span className="runtime-pill-value">
-                    {info
-                      ? `${info.appName} - Electron ${info.electronVersion}`
-                      : 'Loading...'}
-                  </span>
+                <div className="runtime-pill" aria-label={runtimeInfoLabel}>
+                  <span className="runtime-pill-value">{runtimeInfoText}</span>
                 </div>
               </>
             )
@@ -1873,7 +1867,7 @@ export function App() {
                     />
                   </label>
                   <div className="field-help" id="event-url-help">
-                    Use a full Indico event URL such as
+                    <span>Use a full Indico event URL, for example:</span>
                     <code>https://indico.example.org/event/...</code>
                   </div>
                   {eventUrlError ? (
@@ -2170,11 +2164,11 @@ export function App() {
                                                     label={
                                                       material.upstreamStatus ===
                                                       'missing'
-                                                        ? 'Removed upstream'
+                                                        ? 'Removed from Indico'
                                                         : material.upstreamStatus ===
                                                             'changed'
-                                                          ? 'Changed upstream'
-                                                          : 'Available upstream'
+                                                          ? 'Updated on Indico'
+                                                          : 'Still on Indico'
                                                     }
                                                     tone={
                                                       material.upstreamStatus ===

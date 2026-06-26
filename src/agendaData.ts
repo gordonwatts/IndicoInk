@@ -105,8 +105,8 @@ export const buildAgendaTalkSummaries = async (
           ? {
               upstreamSummary:
                 talk.upstreamStatus === 'missing'
-                  ? 'Removed upstream'
-                  : 'Changed upstream',
+                  ? 'Removed from Indico'
+                  : 'Updated on Indico',
             }
           : {}),
         materialSummary: formatMaterialSummary(pdfDecks.length),

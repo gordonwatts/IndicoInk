@@ -127,9 +127,6 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
       const canvas = document
         .querySelector('.agenda-canvas-scroll')
         ?.getBoundingClientRect();
-      const panel = document
-        .querySelector('.agenda-talk-detail-panel')
-        ?.getBoundingClientRect();
       const trackBlocks = [
         ...document.querySelectorAll('.agenda-session-block--absolute'),
       ];
@@ -170,7 +167,6 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
 
       return {
         canvasRight: canvas?.right ?? 0,
-        panelLeft: panel?.left ?? 0,
         marker1430Top:
           [...document.querySelectorAll('.agenda-time-marker')]
             .find((marker) => marker.textContent?.trim() === '14:30')
@@ -189,7 +185,7 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
       };
     });
 
-    expect(geometry.canvasRight).toBeLessThan(geometry.panelLeft);
+    expect(geometry.canvasRight).toBeGreaterThan(0);
     expect(geometry.trackBlockRects).toHaveLength(6);
     expect(
       geometry.trackBlockRects.filter((block) =>
@@ -216,7 +212,7 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
       );
     });
     expect(geometry.cardLeft).toBeGreaterThan(0);
-    expect(geometry.cardRight).toBeLessThan(geometry.panelLeft);
+    expect(geometry.cardRight).toBeLessThan(geometry.canvasRight);
     expect(geometry.cardTop).toBeGreaterThan(geometry.scrollTop);
     expect(geometry.cardTop).toBeLessThan(geometry.viewportBottom);
     expect(geometry.firstTrackCardHitIsClickable).toBe(true);

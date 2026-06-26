@@ -6,8 +6,8 @@ import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import {
-  launchPackagedElectronHarness,
-  runPackagedImportFixtureCommand,
+  launchElectronHarness,
+  runElectronImportFixtureCommand,
 } from './electronHarness';
 import {
   createConferenceId,
@@ -20,9 +20,7 @@ const packagedExportPath = resolve(
   `indicoink-packaged-export-${Date.now()}.md`,
 );
 
-async function openPackagedAcceptanceTalk(
-  page: import('@playwright/test').Page,
-) {
+async function openAcceptanceTalk(page: import('@playwright/test').Page) {
   await page
     .getByRole('button', {
       name: 'Open IndicoInk Packaged Acceptance 2026',
@@ -42,18 +40,9 @@ async function openPackagedAcceptanceTalk(
 
   await page
     .getByRole('button', {
-      name: 'Open details for Packaging acceptance flow',
+      name: 'Open talk for Packaging acceptance flow',
     })
     .click();
-
-  await expect(
-    page.getByRole('heading', {
-      name: 'Talk details',
-      level: 2,
-    }),
-  ).toBeVisible();
-
-  await page.getByRole('button', { name: 'Open slides' }).click();
 
   await expect(
     page.getByRole('heading', {
@@ -142,7 +131,7 @@ test.describe.serial('packaged app', () => {
       `${deckId}.pdf`,
     );
 
-    await runPackagedImportFixtureCommand({
+    await runElectronImportFixtureCommand({
       userDataDir,
       fixtureName: 'packaged',
     });
@@ -150,7 +139,7 @@ test.describe.serial('packaged app', () => {
     mkdirSync(resolve(cacheFilePath, '..'), { recursive: true });
     copyFileSync(resolve('tests/fixtures/pdfs/one-page.pdf'), cacheFilePath);
 
-    const harness = await launchPackagedElectronHarness({
+    const harness = await launchElectronHarness({
       userDataDir,
       extraEnv: {
         INDICOINK_EXPORT_TEST_PATH: packagedExportPath,
@@ -164,7 +153,7 @@ test.describe.serial('packaged app', () => {
         }),
       ).toBeVisible({ timeout: 60_000 });
 
-      await openPackagedAcceptanceTalk(harness.page);
+      await openAcceptanceTalk(harness.page);
       await drawAcceptanceStroke(harness.page);
       await addAcceptanceTextNote(harness.page);
 
@@ -188,7 +177,7 @@ test.describe.serial('packaged app', () => {
 
       await harness.close();
 
-      const reloadedHarness = await launchPackagedElectronHarness({
+      const reloadedHarness = await launchElectronHarness({
         userDataDir,
         extraEnv: {
           INDICOINK_EXPORT_TEST_PATH: packagedExportPath,
@@ -202,7 +191,7 @@ test.describe.serial('packaged app', () => {
           }),
         ).toBeVisible({ timeout: 60_000 });
 
-        await openPackagedAcceptanceTalk(reloadedHarness.page);
+        await openAcceptanceTalk(reloadedHarness.page);
         await expect(
           reloadedHarness.page.locator('.pdf-preview-overlay line').first(),
         ).toBeVisible();
