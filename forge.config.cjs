@@ -1,43 +1,26 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const { existsSync, readdirSync } = require('node:fs');
+const { join } = require('node:path');
 
-const getCliArch = () => {
-  const archArg = process.argv.find(
-    (arg) => arg === '--arch' || arg.startsWith('--arch='),
-  );
-
-  if (!archArg) {
-    return undefined;
-  }
-
-  if (archArg.includes('=')) {
-    return archArg.split('=', 2)[1];
-  }
-
-  const archArgIndex = process.argv.indexOf(archArg);
-  return process.argv[archArgIndex + 1];
-};
-
-const targetArch =
-  getCliArch() ||
-  process.env.ELECTRON_INSTALL_ARCH ||
-  process.env.npm_config_arch ||
-  process.arch;
+const electronCacheRoot = join(__dirname, '.electron-cache');
+const electronZipDir = existsSync(electronCacheRoot)
+  ? readdirSync(electronCacheRoot, {
+      withFileTypes: true,
+    }).find((entry) => entry.isDirectory())?.name
+  : undefined;
 
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 module.exports = {
   packagerConfig: {
     asar: true,
+    electronZipDir: electronZipDir
+      ? join(electronCacheRoot, electronZipDir)
+      : undefined,
   },
   rebuildConfig: {},
   makers: [
-    {
-      name: '@electron-forge/maker-squirrel',
-      config: {
-        noMsi: true,
-        setupExe: `IndicoInk-Setup-${targetArch}.exe`,
-      },
-    },
+    { name: '@electron-forge/maker-squirrel', config: { noMsi: true } },
     { name: '@electron-forge/maker-zip', platforms: ['darwin'] },
     { name: '@electron-forge/maker-deb', config: {} },
     { name: '@electron-forge/maker-rpm', config: {} },

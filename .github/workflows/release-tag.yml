@@ -22,11 +22,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
           cache: npm
-
-      - name: Setup npm
-        run: npm install --global npm@10.9.8
 
       - name: Install dependencies
         run: npm install --cache .npm-cache
@@ -35,14 +32,19 @@ jobs:
           npm_config_arch: ${{ matrix.arch }}
 
       - name: Build installers
-        run: npm run make -- --platform=win32 --arch=${{ matrix.arch }}
+        run: npm run make -- --arch=${{ matrix.arch }}
         env:
           ELECTRON_INSTALL_ARCH: ${{ matrix.arch }}
           npm_config_arch: ${{ matrix.arch }}
 
       - name: Show installer output
         shell: pwsh
-        run: Get-ChildItem -Path out/make -Recurse | Select-Object FullName, Length
+        run: |
+          if (Test-Path out) {
+            Get-ChildItem -Path out -Recurse | Select-Object FullName, Length
+          } else {
+            Write-Host 'No out directory was created.'
+          }
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -85,11 +87,11 @@ jobs:
 
               Compress-Archive -Path (Join-Path $_.FullName '*') -DestinationPath $zipPath
 
-              $setupExe = Get-ChildItem -Path $_.FullName -Filter "IndicoInk-Setup-$arch.exe" -File | Select-Object -First 1
+              $setupExe = Get-ChildItem -Path $_.FullName -Filter "*.exe" -File | Select-Object -First 1
               if (-not $setupExe) {
-                throw "Missing IndicoInk-Setup-$arch.exe in $($_.FullName)"
+                throw "Missing setup executable in $($_.FullName)"
               }
-              Copy-Item -Path $setupExe.FullName -Destination (Join-Path 'release-assets/published' $setupExe.Name) -Force
+              Copy-Item -Path $setupExe.FullName -Destination (Join-Path 'release-assets/published' "IndicoInk-Setup-$arch.exe") -Force
             }
 
       - name: Publish release assets
