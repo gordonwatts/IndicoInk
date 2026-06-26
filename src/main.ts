@@ -267,11 +267,7 @@ const createWindow = () => {
 
   if (hasPackagedRenderer) {
     void mainWindow.loadFile(packagedRendererPath).catch((error) => {
-      appendStartupLogEntry(
-        app.getPath('userData'),
-        'window:load-file',
-        error,
-      );
+      appendStartupLogEntry(app.getPath('userData'), 'window:load-file', error);
     });
   } else {
     const loadUrl = devServerUrl || 'http://localhost:5173';
@@ -603,6 +599,8 @@ app.whenReady().then(() => {
     void importConferenceFixtureByName(
       getPersistenceStore(),
       importFixtureName as keyof typeof conferenceFixtures,
+      Date.now(),
+      join(app.getPath('userData'), 'deck-cache'),
     )
       .then((result) => {
         appendStartupLogEntry(

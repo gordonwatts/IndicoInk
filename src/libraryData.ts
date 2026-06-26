@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import {
   createAnnotationId,
   createConferenceId,
@@ -16,6 +19,7 @@ import {
   type MaterialFixture,
   validateConferenceFixture,
 } from './conferenceFixtures';
+import { createFixturePdfBytes } from './fixturePdf';
 import type { PersistenceStore } from './persistenceStore';
 import type {
   ImportedConferenceResult,
@@ -157,6 +161,7 @@ export const importConferenceFixture = async (
   store: PersistenceStore,
   fixture: ConferenceFixture,
   now = Date.now(),
+  deckCacheRoot?: string,
 ): Promise<ImportedConferenceResult> => {
   validateConferenceFixture(fixture);
 
@@ -317,6 +322,33 @@ export const importConferenceFixture = async (
     }
   });
 
+  if (deckCacheRoot) {
+    for (const day of fixture.days) {
+      for (const session of day.sessions) {
+        for (const talk of session.talks) {
+          const talkId = createTalkId(conferenceId, talk.contributionId);
+          for (const material of talk.materials) {
+            if (material.kind !== 'pdf') {
+              continue;
+            }
+
+            const deckId = createDeckId(talkId, material.sourceUrl);
+            const filePath = join(deckCacheRoot, conferenceId, `${deckId}.pdf`);
+            if (existsSync(filePath)) {
+              continue;
+            }
+
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(
+              filePath,
+              createFixturePdfBytes(material.pageCount, material.displayName),
+            );
+          }
+        }
+      }
+    }
+  }
+
   return {
     conferenceId,
     title: fixture.title,
@@ -330,4 +362,11 @@ export const importConferenceFixtureByName = async (
   store: PersistenceStore,
   fixtureName: keyof typeof conferenceFixtures,
   now = Date.now(),
-) => importConferenceFixture(store, conferenceFixtures[fixtureName], now);
+  deckCacheRoot?: string,
+) =>
+  importConferenceFixture(
+    store,
+    conferenceFixtures[fixtureName],
+    now,
+    deckCacheRoot,
+  );

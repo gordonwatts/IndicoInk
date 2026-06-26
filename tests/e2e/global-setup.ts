@@ -6,12 +6,15 @@ const electronCacheRoot = resolve('.electron-cache');
 const electronDistPath = resolve('node_modules/electron/dist');
 
 export default async function globalSetup() {
-  const [{ default: mainConfig }, { default: preloadConfig }, { default: rendererConfig }] =
-    await Promise.all([
-      import('../../vite.main.config.mjs'),
-      import('../../vite.preload.config.mjs'),
-      import('../../vite.renderer.config.mjs'),
-    ]);
+  const [
+    { default: mainConfig },
+    { default: preloadConfig },
+    { default: rendererConfig },
+  ] = await Promise.all([
+    import('../../vite.main.config.mjs'),
+    import('../../vite.preload.config.mjs'),
+    import('../../vite.renderer.config.mjs'),
+  ]);
 
   const buildEnv = {
     command: 'build' as const,
