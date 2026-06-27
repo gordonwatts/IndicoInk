@@ -79,14 +79,6 @@ jobs:
             Where-Object { $_.Name -like 'indicoink-windows-installers-*' } |
             ForEach-Object {
               $arch = $_.Name.Replace('indicoink-windows-installers-', '')
-              $zipPath = Join-Path 'release-assets/published' "IndicoInk-$tag-win32-$arch-squirrel.zip"
-
-              if (Test-Path $zipPath) {
-                Remove-Item $zipPath -Force
-              }
-
-              Compress-Archive -Path (Join-Path $_.FullName '*') -DestinationPath $zipPath
-
               $setupExe = Get-ChildItem -Path $_.FullName -Filter "*.exe" -File | Select-Object -First 1
               if (-not $setupExe) {
                 throw "Missing setup executable in $($_.FullName)"
@@ -100,4 +92,3 @@ jobs:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
             release-assets/published/*.exe
-            release-assets/published/*.zip
