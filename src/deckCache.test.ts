@@ -168,4 +168,31 @@ describe('deck cache manager', () => {
       }),
     );
   });
+
+  it('reports insufficient token scope as an API-key-required deck response', async () => {
+    const cacheRoot = createTempDir('deck-cache-scope');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(
+      makeDownloadResponse({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify({
+            error: 'insufficient_scope',
+            error_description:
+              'The request requires higher privileges than provided by the access token.',
+          }),
+        ),
+      }),
+    );
+    const manager = new DeckCacheManager(cacheRoot, fetchDeckBytes);
+
+    await expect(manager.openDeck(makeDeck())).resolves.toEqual(
+      expect.objectContaining({
+        kind: 'api-key-required',
+        message:
+          'This API token needs additional Indico file access before this slide deck can be opened.',
+      }),
+    );
+  });
 });

@@ -186,8 +186,17 @@ describe('fetchIndicoJson', () => {
       '<p>OAuth error: insufficient_scope: The request requires higher privileges than provided by the access token.</p>';
 
     expect(isLikelyIndicoApiKeyError(400, body)).toBe(true);
+    expect(
+      isLikelyIndicoApiKeyError(
+        403,
+        '{"error":"insufficient_scope","error_description":"The request requires higher privileges than provided by the access token."}',
+      ),
+    ).toBe(true);
     expect(getIndicoApiKeyPromptMessage(400, body)).toBe(
       'This API token needs Indico legacy API read access before this event can be opened.',
+    );
+    expect(getIndicoApiKeyPromptMessage(403, body, 'deck')).toBe(
+      'This API token needs additional Indico file access before this slide deck can be opened.',
     );
   });
 });

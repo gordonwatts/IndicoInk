@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   createIndicoAuthenticatedRequest,
+  getIndicoApiKeyPromptMessage,
   isLikelyIndicoApiKeyError,
 } from './indicoHttp';
 import type { Deck } from './persistenceModels';
@@ -147,7 +148,11 @@ export class DeckCacheManager {
           pageCount: 0,
           operationId: null,
           origin: new URL(deck.sourceUrl).origin,
-          message: 'This Indico slide deck requires an API key.',
+          message: getIndicoApiKeyPromptMessage(
+            response.status,
+            responseBody,
+            'deck',
+          ),
         };
       }
 

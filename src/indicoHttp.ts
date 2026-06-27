@@ -55,11 +55,11 @@ export const isLikelyIndicoApiKeyError = (
   statusCode: number,
   responseBody: string | null,
 ) => {
-  if (statusCode === 401) {
+  if (/insufficient_scope/i.test(responseBody ?? '')) {
     return true;
   }
 
-  if (statusCode === 400 && /insufficient_scope/i.test(responseBody ?? '')) {
+  if (statusCode === 401) {
     return true;
   }
 
@@ -83,12 +83,17 @@ export const isLikelyIndicoApiKeyError = (
 export const getIndicoApiKeyPromptMessage = (
   statusCode: number,
   responseBody: string | null,
+  resource: 'event' | 'deck' = 'event',
 ) => {
-  if (statusCode === 400 && /insufficient_scope/i.test(responseBody ?? '')) {
-    return 'This API token needs Indico legacy API read access before this event can be opened.';
+  if (/insufficient_scope/i.test(responseBody ?? '')) {
+    return resource === 'deck'
+      ? 'This API token needs additional Indico file access before this slide deck can be opened.'
+      : 'This API token needs Indico legacy API read access before this event can be opened.';
   }
 
-  return 'This Indico event requires an API key.';
+  return resource === 'deck'
+    ? 'This Indico slide deck requires an API key.'
+    : 'This Indico event requires an API key.';
 };
 
 export type IndicoJsonResponse = {

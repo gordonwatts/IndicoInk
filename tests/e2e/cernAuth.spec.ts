@@ -45,9 +45,11 @@ test('opens a CERN event with an API key from a local secret file', async () => 
       .fill('')
       .catch(() => {});
 
-    const legacyScopeError = harness.page.getByText(
-      'This API token needs Indico legacy API read access before this event can be opened.',
-    ).first();
+    const legacyScopeError = harness.page
+      .getByText(
+        'This API token needs Indico legacy API read access before this event can be opened.',
+      )
+      .first();
 
     await expect(agendaHeading.or(legacyScopeError)).toBeVisible({
       timeout: 30_000,
@@ -63,6 +65,32 @@ test('opens a CERN event with an API key from a local secret file', async () => 
     await expect(
       harness.page.getByRole('heading', { name: 'Untitled Indico event' }),
     ).toHaveCount(0);
+
+    await harness.page
+      .getByRole('button', { name: 'Slides available' })
+      .click();
+    await harness.page
+      .getByRole('button', { name: /^Open slides for / })
+      .first()
+      .click();
+
+    const slidesReady = harness.page.getByText('Slides ready.');
+    const fileScopeError = harness.page
+      .getByText(
+        'This API token needs additional Indico file access before this slide deck can be opened.',
+      )
+      .first();
+
+    await expect(slidesReady.or(fileScopeError)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    if (await fileScopeError.isVisible()) {
+      test.skip(
+        true,
+        'The local CERN token lacks Indico file attachment access.',
+      );
+    }
   } finally {
     await harness.close();
   }
