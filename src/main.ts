@@ -7,6 +7,7 @@ import {
   safeStorage,
   session,
 } from 'electron';
+import squirrelStartup from 'electron-squirrel-startup';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -43,6 +44,10 @@ import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 import { parseIndicoEventUrl } from './indicoEvent';
 import type { OpenLibraryEventResult } from './shared/library';
+
+if (squirrelStartup) {
+  process.exit(0);
+}
 
 let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
