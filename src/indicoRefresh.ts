@@ -6,8 +6,15 @@ import {
   type Talk,
 } from './persistenceModels';
 import { parseIndicoEventUrl } from './indicoEvent';
-import { fetchIndicoJson, type FetchIndicoJsonOptions } from './indicoHttp';
-import { mapIndicoExportEnvelope } from './indicoMapping';
+import {
+  fetchIndicoJson,
+  IndicoHttpError,
+  type FetchIndicoJsonOptions,
+} from './indicoHttp';
+import {
+  isEmptyIndicoExportEnvelope,
+  mapIndicoExportEnvelope,
+} from './indicoMapping';
 import type {
   RefreshConflict,
   RefreshLibraryEventResult,
@@ -77,6 +84,16 @@ export const fetchMappedIndicoEvent = async (
   }
 
   const raw = await fetchIndicoJson<unknown>(identity, options);
+  if (
+    isEmptyIndicoExportEnvelope(raw as { count?: unknown; results?: unknown })
+  ) {
+    throw new IndicoHttpError(
+      `Indico returned no event data for ${identity.canonicalEventUrl}.`,
+      403,
+      'Indico returned no event data. This event may require an API key.',
+    );
+  }
+
   const mapped = mapIndicoExportEnvelope(
     raw as { results?: unknown },
     identity,

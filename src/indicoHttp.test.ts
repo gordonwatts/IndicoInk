@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { parseIndicoEventUrl } from './indicoEvent';
 import {
   fetchIndicoJson,
+  getIndicoApiKeyPromptMessage,
   IndicoHttpError,
   IndicoResponseParseError,
   IndicoResponseSizeError,
@@ -59,6 +60,25 @@ describe('fetchIndicoJson', () => {
 
     const requestedUrl = new URL(fetchImpl.mock.calls[0]![0]);
     expect(requestedUrl.searchParams.get('ak')).toBe('secret-api-key');
+  });
+
+  it('sends Indico API tokens as bearer authorization headers', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      makeResponse({
+        text: vi.fn().mockResolvedValue('{"count":1}'),
+      }),
+    );
+
+    await fetchIndicoJson(identity, {
+      apiKey: 'indp_test-token',
+      fetchImpl,
+    });
+
+    const requestedUrl = new URL(fetchImpl.mock.calls[0]![0]);
+    expect(requestedUrl.searchParams.get('ak')).toBeNull();
+    expect(fetchImpl.mock.calls[0]![1]?.headers).toEqual({
+      Authorization: 'Bearer indp_test-token',
+    });
   });
 
   it('throws a timeout error when the request never resolves before the deadline', async () => {
@@ -159,5 +179,15 @@ describe('fetchIndicoJson', () => {
       ),
     ).toBe(true);
     expect(isLikelyIndicoApiKeyError(401, '<html>anything</html>')).toBe(true);
+  });
+
+  it('treats insufficient token scope as an API-key prompt with a clear message', () => {
+    const body =
+      '<p>OAuth error: insufficient_scope: The request requires higher privileges than provided by the access token.</p>';
+
+    expect(isLikelyIndicoApiKeyError(400, body)).toBe(true);
+    expect(getIndicoApiKeyPromptMessage(400, body)).toBe(
+      'This API token needs Indico legacy API read access before this event can be opened.',
+    );
   });
 });

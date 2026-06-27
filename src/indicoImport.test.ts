@@ -75,4 +75,34 @@ describe('importIndicoEvent', () => {
 
     await store.close();
   });
+
+  it('rejects an empty Indico export before storing an untitled event', async () => {
+    const store = makeStore();
+
+    await expect(
+      importIndicoEvent(store, 'https://indico.cern.ch/event/1649690', {
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: { get: vi.fn().mockReturnValue(null) },
+          text: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              count: 0,
+              additionalInfo: {},
+              results: [],
+              _type: 'HTTPAPIResult',
+            }),
+          ),
+        }),
+      }),
+    ).rejects.toMatchObject({
+      name: 'IndicoHttpError',
+      statusCode: 403,
+    });
+
+    await expect(store.listConferences()).resolves.toHaveLength(0);
+
+    await store.close();
+  });
 });

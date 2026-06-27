@@ -36,16 +36,33 @@ test('opens a CERN event with an API key from a local secret file', async () => 
       name: 'Event agenda',
     });
 
-    await expect(privateEventPrompt.or(agendaHeading)).toBeVisible({
+    await expect(privateEventPrompt).toBeVisible({ timeout: 30_000 });
+
+    await harness.page.getByLabel('API key').fill(apiKey);
+    await harness.page.getByRole('button', { name: 'Save key' }).click();
+    await harness.page
+      .getByLabel('API key')
+      .fill('')
+      .catch(() => {});
+
+    const legacyScopeError = harness.page.getByText(
+      'This API token needs Indico legacy API read access before this event can be opened.',
+    ).first();
+
+    await expect(agendaHeading.or(legacyScopeError)).toBeVisible({
       timeout: 30_000,
     });
 
-    if (await privateEventPrompt.isVisible()) {
-      await harness.page.getByLabel('API key').fill(apiKey);
-      await harness.page.getByRole('button', { name: 'Save key' }).click();
+    if (await legacyScopeError.isVisible()) {
+      test.skip(
+        true,
+        'The local CERN token lacks Indico legacy API read access.',
+      );
     }
 
-    await expect(agendaHeading).toBeVisible({ timeout: 30_000 });
+    await expect(
+      harness.page.getByRole('heading', { name: 'Untitled Indico event' }),
+    ).toHaveCount(0);
   } finally {
     await harness.close();
   }

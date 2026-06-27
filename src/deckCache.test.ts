@@ -127,6 +127,24 @@ describe('deck cache manager', () => {
     expect(requestedUrl.searchParams.get('ak')).toBe('secret-api-key');
   });
 
+  it('adds a stored API token as a bearer header for deck downloads', async () => {
+    const cacheRoot = createTempDir('deck-cache-token');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(makeDownloadResponse());
+    const manager = new DeckCacheManager(
+      cacheRoot,
+      fetchDeckBytes,
+      async () => 'indp_test-token',
+    );
+
+    await manager.openDeck(makeDeck());
+
+    const requestedUrl = new URL(fetchDeckBytes.mock.calls[0]![0]);
+    expect(requestedUrl.searchParams.get('ak')).toBeNull();
+    expect(fetchDeckBytes.mock.calls[0]![1]?.headers).toEqual({
+      Authorization: 'Bearer indp_test-token',
+    });
+  });
+
   it('reports API-key-required responses before starting a download', async () => {
     const cacheRoot = createTempDir('deck-cache-auth');
     const fetchDeckBytes = vi.fn().mockResolvedValue(

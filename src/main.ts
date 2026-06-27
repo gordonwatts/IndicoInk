@@ -22,7 +22,10 @@ import { importIndicoEvent } from './indicoImport';
 import { refreshIndicoEvent } from './indicoRefresh';
 import { IndicoHttpError } from './indicoHttp';
 import { IndicoCredentialStore } from './indicoCredentials';
-import { isLikelyIndicoApiKeyError } from './indicoHttp';
+import {
+  getIndicoApiKeyPromptMessage,
+  isLikelyIndicoApiKeyError,
+} from './indicoHttp';
 import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
@@ -476,7 +479,10 @@ ipcMain.handle(
         return {
           kind: 'api-key-required',
           origin: identity.origin,
-          message: 'This Indico event requires an API key.',
+          message: getIndicoApiKeyPromptMessage(
+            error.statusCode,
+            error.responseBody,
+          ),
         };
       }
 

@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path';
 import { open } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
-import { isLikelyIndicoApiKeyError } from './indicoHttp';
+import {
+  createIndicoAuthenticatedRequest,
+  isLikelyIndicoApiKeyError,
+} from './indicoHttp';
 import type { Deck } from './persistenceModels';
 import type {
   DeckCacheDownloadStatus,
@@ -26,7 +29,7 @@ type DeckCacheFetchResponse = {
 
 type FetchDeckBytes = (
   input: string,
-  init?: { signal?: AbortSignal },
+  init?: { signal?: AbortSignal; headers?: Record<string, string> },
 ) => Promise<DeckCacheFetchResponse>;
 
 type DownloadRecord = {
@@ -97,16 +100,16 @@ export class DeckCacheManager {
 
     const operationId = randomUUID();
     const controller = new AbortController();
-    const requestUrl = new URL(deck.sourceUrl);
     const apiKey = await this.getApiKeyForUrl(deck.sourceUrl);
-    if (apiKey) {
-      requestUrl.searchParams.set('ak', apiKey);
-    }
+    const request = createIndicoAuthenticatedRequest(deck.sourceUrl, apiKey);
 
     let response: DeckCacheFetchResponse;
     try {
-      response = await this.fetchDeckBytes(requestUrl.toString(), {
+      response = await this.fetchDeckBytes(request.url, {
         signal: controller.signal,
+        ...(Object.keys(request.headers).length
+          ? { headers: request.headers }
+          : {}),
       });
     } catch (error) {
       return {
