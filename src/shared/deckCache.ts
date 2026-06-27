@@ -34,10 +34,25 @@ export type DeckCacheOpenErrorResult = {
   message: string;
 };
 
+export type DeckCacheOpenApiKeyRequiredResult = {
+  kind: 'api-key-required';
+  conferenceId: string;
+  talkId: string;
+  deckId: string;
+  sourceUrl: string;
+  displayName: string;
+  filePath: string;
+  pageCount: number;
+  operationId: null;
+  origin: string;
+  message: string;
+};
+
 export type DeckCacheOpenResult =
   | DeckCacheOpenReadyResult
   | DeckCacheOpenDownloadingResult
-  | DeckCacheOpenErrorResult;
+  | DeckCacheOpenErrorResult
+  | DeckCacheOpenApiKeyRequiredResult;
 
 export type DeckCacheDownloadStatus = {
   operationId: string;

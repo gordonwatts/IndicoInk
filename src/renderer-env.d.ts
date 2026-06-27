@@ -14,6 +14,7 @@ import type {
   DeckCacheOpenResult,
 } from './shared/deckCache';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
+import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 
 declare global {
   interface Window {
@@ -47,6 +48,8 @@ declare global {
         apiKey?: string,
       ) => Promise<OpenLibraryEventResult>;
       saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
+      listIndicoApiKeys: () => Promise<IndicoApiKeySummary[]>;
+      deleteIndicoApiKey: (origin: string) => Promise<void>;
       setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
       setSelectedDeck: (talkId: string, deckId: string) => Promise<void>;
       openTalkDeck: (

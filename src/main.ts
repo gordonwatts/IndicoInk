@@ -44,6 +44,7 @@ import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 import { parseIndicoEventUrl } from './indicoEvent';
 import type { OpenLibraryEventResult } from './shared/library';
+import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 
 if (squirrelStartup) {
   process.exit(0);
@@ -90,11 +91,17 @@ const getCredentialStore = () =>
     safeStorage,
   ));
 
+const getStoredApiKeyForUrl = async (url: string) => {
+  const origin = new URL(url).origin;
+  return getCredentialStore().getApiKey(origin);
+};
+
 const getDeckCacheManager = () =>
   deckCacheManager ??
   (deckCacheManager = new DeckCacheManager(
     join(app.getPath('userData'), 'deck-cache'),
     session.defaultSession.fetch.bind(session.defaultSession),
+    getStoredApiKeyForUrl,
   ));
 
 const toExportAnnotation = (annotation: {
@@ -418,11 +425,19 @@ ipcMain.handle(
     _event,
     eventUrl: string,
     decision?: 'keep' | 'replace',
-  ): Promise<unknown> =>
-    refreshIndicoEvent(getPersistenceStore(), eventUrl, {
+  ): Promise<unknown> => {
+    const identity = parseIndicoEventUrl(eventUrl);
+    if (!identity) {
+      throw new Error('The provided URL is not a valid Indico event.');
+    }
+
+    const apiKey = await getCredentialStore().getApiKey(identity.origin);
+    return refreshIndicoEvent(getPersistenceStore(), eventUrl, {
       fetchImpl: session.defaultSession.fetch.bind(session.defaultSession),
+      ...(apiKey ? { apiKey } : {}),
       ...(decision ? { decision } : {}),
-    }),
+    });
+  },
 );
 
 ipcMain.handle(
@@ -476,6 +491,16 @@ ipcMain.handle(
     await getCredentialStore().saveApiKey(origin, apiKey);
   },
 );
+
+ipcMain.handle(
+  'indico:list-api-keys',
+  async (): Promise<IndicoApiKeySummary[]> =>
+    getCredentialStore().listApiKeys(),
+);
+
+ipcMain.handle('indico:delete-api-key', async (_event, origin: string) => {
+  await getCredentialStore().deleteApiKey(origin);
+});
 
 ipcMain.handle(
   'persistence:load-pdf-workspace',

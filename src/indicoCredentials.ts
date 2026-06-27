@@ -1,15 +1,24 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 
+import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+
 type SafeStorageLike = {
   isEncryptionAvailable(): boolean;
   encryptString(value: string): Buffer;
   decryptString(buffer: Buffer): string;
 };
 
+type StoredApiKey =
+  | string
+  | {
+      encryptedApiKey: string;
+      updatedAt: number;
+    };
+
 type StoredCredentialFile = {
   version: 1;
-  apiKeys: Record<string, string>;
+  apiKeys: Record<string, StoredApiKey>;
 };
 
 const emptyFile = (): StoredCredentialFile => ({
@@ -50,24 +59,47 @@ export class IndicoCredentialStore {
     );
   }
 
+  private getEncryptedApiKey(storedApiKey: StoredApiKey) {
+    return typeof storedApiKey === 'string'
+      ? storedApiKey
+      : storedApiKey.encryptedApiKey;
+  }
+
   async getApiKey(origin: string): Promise<string | null> {
     this.assertEncryptionAvailable();
     const state = await this.readState();
-    const encoded = state.apiKeys[origin];
-    if (!encoded) {
+    const storedApiKey = state.apiKeys[origin];
+    if (!storedApiKey) {
       return null;
     }
 
-    return this.safeStorage.decryptString(Buffer.from(encoded, 'base64'));
+    return this.safeStorage.decryptString(
+      Buffer.from(this.getEncryptedApiKey(storedApiKey), 'base64'),
+    );
   }
 
   async saveApiKey(origin: string, apiKey: string): Promise<void> {
     this.assertEncryptionAvailable();
     const state = await this.readState();
-    state.apiKeys[origin] = this.safeStorage
-      .encryptString(apiKey)
-      .toString('base64');
+    state.apiKeys[origin] = {
+      encryptedApiKey: this.safeStorage
+        .encryptString(apiKey)
+        .toString('base64'),
+      updatedAt: Date.now(),
+    };
     await this.writeState(state);
+  }
+
+  async listApiKeys(): Promise<IndicoApiKeySummary[]> {
+    this.assertEncryptionAvailable();
+    const state = await this.readState();
+    return Object.entries(state.apiKeys)
+      .map(([origin, storedApiKey]) => ({
+        origin,
+        updatedAt:
+          typeof storedApiKey === 'string' ? 0 : storedApiKey.updatedAt,
+      }))
+      .sort((left, right) => left.origin.localeCompare(right.origin));
   }
 
   async clearApiKey(origin: string): Promise<void> {
@@ -75,5 +107,9 @@ export class IndicoCredentialStore {
     const state = await this.readState();
     delete state.apiKeys[origin];
     await this.writeState(state);
+  }
+
+  async deleteApiKey(origin: string): Promise<void> {
+    await this.clearApiKey(origin);
   }
 }

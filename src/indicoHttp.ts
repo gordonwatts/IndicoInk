@@ -120,10 +120,11 @@ export const fetchIndicoJson = async <T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMilliseconds);
   const url = new URL(createIndicoEventExportUrl(identity, detail));
-  const requestUrl = url.toString();
+  const safeRequestUrl = url.toString();
   if (apiKey) {
     url.searchParams.set('ak', apiKey);
   }
+  const requestUrl = url.toString();
 
   try {
     const response = await fetchImpl(requestUrl, { signal: controller.signal });
@@ -137,7 +138,7 @@ export const fetchIndicoJson = async <T>(
       }
 
       throw new IndicoHttpError(
-        `Indico returned HTTP ${response.status} for ${requestUrl}.`,
+        `Indico returned HTTP ${response.status} for ${safeRequestUrl}.`,
         response.status,
         responseBody,
       );
@@ -146,14 +147,14 @@ export const fetchIndicoJson = async <T>(
     const declaredLength = response.headers.get('content-length');
     if (declaredLength && Number(declaredLength) > maxBytes) {
       throw new IndicoResponseSizeError(
-        `Indico response exceeded the ${maxBytes} byte limit before reading ${requestUrl}.`,
+        `Indico response exceeded the ${maxBytes} byte limit before reading ${safeRequestUrl}.`,
       );
     }
 
     const body = await response.text();
     if (getByteLength(body) > maxBytes) {
       throw new IndicoResponseSizeError(
-        `Indico response exceeded the ${maxBytes} byte limit for ${requestUrl}.`,
+        `Indico response exceeded the ${maxBytes} byte limit for ${safeRequestUrl}.`,
       );
     }
 
@@ -161,13 +162,13 @@ export const fetchIndicoJson = async <T>(
       return JSON.parse(body) as T;
     } catch {
       throw new IndicoResponseParseError(
-        `Indico returned invalid JSON for ${requestUrl}.`,
+        `Indico returned invalid JSON for ${safeRequestUrl}.`,
         body,
       );
     }
   } catch (error) {
     if (controller.signal.aborted) {
-      throw createTimeoutError(requestUrl, timeoutMilliseconds);
+      throw createTimeoutError(safeRequestUrl, timeoutMilliseconds);
     }
 
     throw error;

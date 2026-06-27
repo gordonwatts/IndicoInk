@@ -23,6 +23,31 @@ const makeDeck = (): Deck => ({
   updatedAt: 1700000000000,
 });
 
+const makeDownloadResponse = (
+  overrides: {
+    ok?: boolean;
+    status?: number;
+    statusText?: string;
+    text?: () => Promise<string>;
+    body?: {
+      getReader(): ReadableStreamDefaultReader<Uint8Array>;
+    } | null;
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+  } = {},
+) => ({
+  ok: true,
+  status: 200,
+  statusText: 'OK',
+  headers: {
+    get: vi.fn().mockReturnValue(null),
+  },
+  body: null,
+  arrayBuffer: vi
+    .fn()
+    .mockResolvedValue(Buffer.from('%PDF-1.4\n% downloaded\n').buffer),
+  ...overrides,
+});
+
 describe('deck cache manager', () => {
   it('reopens an existing cached deck without downloading it again', async () => {
     const cacheRoot = createTempDir('deck-cache-ready');
@@ -46,13 +71,22 @@ describe('deck cache manager', () => {
   it('cancels an interrupted download and removes the partial cache file', async () => {
     const cacheRoot = createTempDir('deck-cache-cancel');
     let abortHandler: (() => void) | null = null;
-    const fetchDeckBytes = vi.fn().mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          abortHandler = () => {
-            reject(new Error('aborted'));
-          };
-        }),
+    const fetchDeckBytes = vi.fn().mockResolvedValue(
+      makeDownloadResponse({
+        body: {
+          getReader: () =>
+            ({
+              read: () =>
+                new Promise<ReadableStreamReadResult<Uint8Array>>(
+                  (_resolve, reject) => {
+                    abortHandler = () => {
+                      reject(new Error('aborted'));
+                    };
+                  },
+                ),
+            }) as ReadableStreamDefaultReader<Uint8Array>,
+        },
+      }),
     );
     const manager = new DeckCacheManager(cacheRoot, fetchDeckBytes);
     const deck = makeDeck();
@@ -76,5 +110,44 @@ describe('deck cache manager', () => {
       'canceled',
     );
     expect(existsSync(filePath)).toBe(false);
+  });
+
+  it('adds a stored API key to download requests for the deck origin', async () => {
+    const cacheRoot = createTempDir('deck-cache-api-key');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(makeDownloadResponse());
+    const manager = new DeckCacheManager(
+      cacheRoot,
+      fetchDeckBytes,
+      async () => 'secret-api-key',
+    );
+
+    await manager.openDeck(makeDeck());
+
+    const requestedUrl = new URL(fetchDeckBytes.mock.calls[0]![0]);
+    expect(requestedUrl.searchParams.get('ak')).toBe('secret-api-key');
+  });
+
+  it('reports API-key-required responses before starting a download', async () => {
+    const cacheRoot = createTempDir('deck-cache-auth');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(
+      makeDownloadResponse({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: vi
+          .fn()
+          .mockResolvedValue('<html>API key required for this deck</html>'),
+      }),
+    );
+    const manager = new DeckCacheManager(cacheRoot, fetchDeckBytes);
+    const deck = makeDeck();
+
+    await expect(manager.openDeck(deck)).resolves.toEqual(
+      expect.objectContaining({
+        kind: 'api-key-required',
+        origin: 'https://example.org',
+        deckId: deck.id,
+      }),
+    );
   });
 });
