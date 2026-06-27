@@ -45,6 +45,22 @@ describe('fetchIndicoJson', () => {
     });
   });
 
+  it('sends the API key as an ak query parameter', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      makeResponse({
+        text: vi.fn().mockResolvedValue('{"count":1}'),
+      }),
+    );
+
+    await fetchIndicoJson(identity, {
+      apiKey: 'secret-api-key',
+      fetchImpl,
+    });
+
+    const requestedUrl = new URL(fetchImpl.mock.calls[0]![0]);
+    expect(requestedUrl.searchParams.get('ak')).toBe('secret-api-key');
+  });
+
   it('throws a timeout error when the request never resolves before the deadline', async () => {
     const fetchImpl = vi.fn(
       (_input: string, init?: { signal?: AbortSignal }) =>

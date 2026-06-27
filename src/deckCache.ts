@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { open } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
+import { isLikelyIndicoApiKeyError } from './indicoHttp';
 import type { Deck } from './persistenceModels';
 import type {
   DeckCacheDownloadStatus,
@@ -16,6 +17,7 @@ type DeckCacheFetchResponse = {
   headers: {
     get(name: string): string | null;
   };
+  text?(): Promise<string>;
   body: {
     getReader(): ReadableStreamDefaultReader<Uint8Array>;
   } | null;
@@ -34,6 +36,8 @@ type DownloadRecord = {
   tempPath: string;
 };
 
+type GetApiKeyForUrl = (url: string) => Promise<string | null>;
+
 const createCacheFilePath = (
   cacheRoot: string,
   conferenceId: string,
@@ -46,6 +50,7 @@ export class DeckCacheManager {
   constructor(
     private readonly cacheRoot: string,
     private readonly fetchDeckBytes: FetchDeckBytes,
+    private readonly getApiKeyForUrl: GetApiKeyForUrl = async () => null,
     private readonly now = () => Date.now(),
   ) {}
 
@@ -91,6 +96,72 @@ export class DeckCacheManager {
     }
 
     const operationId = randomUUID();
+    const controller = new AbortController();
+    const requestUrl = new URL(deck.sourceUrl);
+    const apiKey = await this.getApiKeyForUrl(deck.sourceUrl);
+    if (apiKey) {
+      requestUrl.searchParams.set('ak', apiKey);
+    }
+
+    let response: DeckCacheFetchResponse;
+    try {
+      response = await this.fetchDeckBytes(requestUrl.toString(), {
+        signal: controller.signal,
+      });
+    } catch (error) {
+      return {
+        kind: 'error',
+        conferenceId: deck.conferenceId,
+        talkId: deck.talkId,
+        deckId: deck.id,
+        sourceUrl: deck.sourceUrl,
+        displayName: deck.displayName,
+        filePath,
+        pageCount: 0,
+        operationId: null,
+        message:
+          error instanceof Error ? error.message : 'Failed to download PDF.',
+      };
+    }
+
+    if (!response.ok) {
+      let responseBody: string | null = null;
+      try {
+        responseBody = response.text ? await response.text() : null;
+      } catch {
+        responseBody = null;
+      }
+
+      if (isLikelyIndicoApiKeyError(response.status, responseBody)) {
+        return {
+          kind: 'api-key-required',
+          conferenceId: deck.conferenceId,
+          talkId: deck.talkId,
+          deckId: deck.id,
+          sourceUrl: deck.sourceUrl,
+          displayName: deck.displayName,
+          filePath,
+          pageCount: 0,
+          operationId: null,
+          origin: new URL(deck.sourceUrl).origin,
+          message: 'This Indico slide deck requires an API key.',
+        };
+      }
+
+      return {
+        kind: 'error',
+        conferenceId: deck.conferenceId,
+        talkId: deck.talkId,
+        deckId: deck.id,
+        sourceUrl: deck.sourceUrl,
+        displayName: deck.displayName,
+        filePath,
+        pageCount: 0,
+        operationId: null,
+        message: `Failed to download ${deck.displayName}: HTTP ${response.status} ${response.statusText}`,
+      };
+    }
+
     const status: DeckCacheDownloadStatus = {
       operationId,
       conferenceId: deck.conferenceId,
@@ -106,11 +177,10 @@ export class DeckCacheManager {
       updatedAt: this.now(),
     };
 
-    const controller = new AbortController();
     const tempPath = `${filePath}.${operationId}.download`;
     const record: DownloadRecord = { status, controller, filePath, tempPath };
     this.downloads.set(operationId, record);
-    void this.performDownload(record, deck);
+    void this.performDownload(record, response);
 
     return {
       kind: 'downloading',
@@ -125,21 +195,15 @@ export class DeckCacheManager {
     };
   }
 
-  private async performDownload(record: DownloadRecord, deck: Deck) {
+  private async performDownload(
+    record: DownloadRecord,
+    response: DeckCacheFetchResponse,
+  ) {
     const { status, controller, tempPath, filePath } = record;
     try {
       status.kind = 'downloading';
       status.message = 'Downloading PDF...';
       status.updatedAt = this.now();
-
-      const response = await this.fetchDeckBytes(deck.sourceUrl, {
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download ${deck.displayName}: HTTP ${response.status} ${response.statusText}`,
-        );
-      }
 
       const declaredLength = response.headers.get('content-length');
       status.totalBytes = declaredLength ? Number(declaredLength) : null;

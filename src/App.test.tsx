@@ -90,6 +90,8 @@ describe('App', () => {
         },
       }),
       saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
+      listIndicoApiKeys: vi.fn().mockResolvedValue([]),
+      deleteIndicoApiKey: vi.fn().mockResolvedValue(undefined),
       setTalkBookmarked: vi.fn().mockResolvedValue(undefined),
       setSelectedDeck: vi.fn().mockResolvedValue(undefined),
       openTalkDeck: vi.fn().mockResolvedValue({
@@ -306,6 +308,156 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Private Indico Event',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('lists and deletes saved Indico API keys from Settings', async () => {
+    const user = userEvent.setup();
+    window.indicoInk.listIndicoApiKeys = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          origin: 'https://indico.cern.ch',
+          updatedAt: Date.UTC(2026, 5, 27, 10, 30, 0, 0),
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    render(<App />);
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Settings',
+      }),
+    );
+
+    expect(await screen.findByText('https://indico.cern.ch')).toBeTruthy();
+    expect(screen.getByText(/Saved/)).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Delete API key for https://indico.cern.ch',
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Delete key',
+      }),
+    );
+
+    expect(window.indicoInk.deleteIndicoApiKey).toHaveBeenCalledWith(
+      'https://indico.cern.ch',
+    );
+  });
+
+  it('prompts for an API key when a slide download requires private access', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-private-deck',
+      sourceUrl: 'https://indico.cern.ch/event/1649690',
+      title: 'Private Deck Event',
+      dates: 'June 12, 2026',
+      host: 'indico.cern.ch',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-private-deck',
+        conferenceId: libraryEvent.id,
+        contributionId: 'private-deck',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Private slide materials',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Closed session',
+        timeRangeLabel: '09:00 - 09:30',
+        room: 'Auditorium',
+        bookmarked: false,
+        materialSummary: '1 PDF',
+        materials: [
+          {
+            id: 'deck-private',
+            title: 'Private deck',
+            sourceUrl: 'https://indico.cern.ch/materials/private.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+            pageCount: 12,
+          },
+        ],
+        annotatedSlideCount: 0,
+      },
+    ];
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+    window.indicoInk.openTalkDeck = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: 'api-key-required',
+        conferenceId: libraryEvent.id,
+        talkId: 'talk-private-deck',
+        deckId: 'deck-private',
+        sourceUrl: 'https://indico.cern.ch/materials/private.pdf',
+        displayName: 'Private deck',
+        filePath: 'C:/temp/private.pdf',
+        pageCount: 0,
+        operationId: null,
+        origin: 'https://indico.cern.ch',
+        message: 'This Indico slide deck requires an API key.',
+      })
+      .mockResolvedValueOnce({
+        kind: 'ready',
+        conferenceId: libraryEvent.id,
+        talkId: 'talk-private-deck',
+        deckId: 'deck-private',
+        sourceUrl: 'https://indico.cern.ch/materials/private.pdf',
+        displayName: 'Private deck',
+        filePath: 'C:/temp/private.pdf',
+        pageCount: 12,
+      });
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open talk for Private slide materials',
+      }),
+    );
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Private slides',
+      }),
+    ).toBeTruthy();
+
+    await user.type(screen.getByLabelText('API key'), 'secret-api-key');
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Save key',
+      }),
+    );
+
+    expect(window.indicoInk.saveIndicoApiKey).toHaveBeenCalledWith(
+      'https://indico.cern.ch',
+      'secret-api-key',
+    );
+    expect(window.indicoInk.openTalkDeck).toHaveBeenLastCalledWith(
+      libraryEvent.id,
+      'talk-private-deck',
+      'deck-private',
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Private slide materials',
       }),
     ).toBeTruthy();
   });

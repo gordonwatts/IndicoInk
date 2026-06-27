@@ -1694,11 +1694,20 @@ input:focus-visible {
   border: 1px solid rgba(58, 67, 81, 0.08);
 }
 
+.settings-row-column {
+  align-items: stretch;
+  flex-direction: column;
+}
+
 .settings-row-stack {
   display: grid;
   gap: 8px;
   justify-items: end;
   min-width: 0;
+}
+
+.settings-row-stack-wide {
+  justify-items: stretch;
 }
 
 .settings-row-stack strong {
@@ -1709,6 +1718,43 @@ input:focus-visible {
 .settings-row-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.settings-empty {
+  color: var(--text-secondary);
+}
+
+.settings-api-key-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-api-key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(58, 67, 81, 0.08);
+}
+
+.settings-api-key-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-api-key-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-api-key-text strong {
+  text-align: left;
+}
+
+.settings-api-key-text span {
+  color: var(--text-secondary);
 }
 
 .refresh-conflict-list {
