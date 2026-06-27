@@ -73,13 +73,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-assets/published | Out-Null
-          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "${{ github.event.release.tag_name }}"
 
           Get-ChildItem -Path release-assets -Directory |
             Where-Object { $_.Name -like 'indicoink-windows-installers-*' } |
             ForEach-Object {
               $arch = $_.Name.Replace('indicoink-windows-installers-', '')
-              $zipPath = Join-Path 'release-assets/published' "IndicoInk-$version-win32-$arch-squirrel.zip"
+              $zipPath = Join-Path 'release-assets/published' "IndicoInk-$tag-win32-$arch-squirrel.zip"
 
               if (Test-Path $zipPath) {
                 Remove-Item $zipPath -Force
@@ -91,7 +91,7 @@ jobs:
               if (-not $setupExe) {
                 throw "Missing setup executable in $($_.FullName)"
               }
-              Copy-Item -Path $setupExe.FullName -Destination (Join-Path 'release-assets/published' "IndicoInk-Setup-$arch.exe") -Force
+              Copy-Item -Path $setupExe.FullName -Destination (Join-Path 'release-assets/published' "IndicoInk-$tag-Setup-$arch.exe") -Force
             }
 
       - name: Publish release assets
