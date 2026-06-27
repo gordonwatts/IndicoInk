@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   getIsolatedUserDataPath,
+  getIsolatedPersistenceDbPath,
+  getPersistenceDbPath,
   shouldDisableGpu,
   shouldUseIsolatedUserData,
 } from './runtimeModes';
@@ -46,9 +48,35 @@ describe('runtime modes', () => {
     );
   });
 
+  it('uses the default persistence database path unless explicitly overridden', () => {
+    delete process.env.INDICOINK_PERSISTENCE_DB_PATH;
+
+    expect(
+      getPersistenceDbPath('C:\\Users\\Test\\AppData\\Local\\IndicoInk'),
+    ).toBe(
+      'C:\\Users\\Test\\AppData\\Local\\IndicoInk\\indicoink-persistence.sqlite3',
+    );
+
+    process.env.INDICOINK_PERSISTENCE_DB_PATH =
+      'C:\\tmp\\indicoink-history.sqlite3';
+
+    expect(
+      getPersistenceDbPath('C:\\Users\\Test\\AppData\\Local\\IndicoInk'),
+    ).toBe('C:\\tmp\\indicoink-history.sqlite3');
+  });
+
+  it('keeps the isolated test harness persistence path separate from the user data root', () => {
+    expect(
+      getIsolatedPersistenceDbPath('C:\\tmp\\indicoink-e2e-user-data'),
+    ).toBe(
+      'C:\\tmp\\indicoink-e2e-user-data\\history\\indicoink-persistence.sqlite3',
+    );
+  });
+
   it('only enables the launch modes when the matching env vars are set', () => {
     delete process.env.INDICOINK_DISABLE_GPU;
     delete process.env.INDICOINK_ISOLATED_USER_DATA;
+    delete process.env.INDICOINK_PERSISTENCE_DB_PATH;
 
     expect(shouldDisableGpu()).toBe(false);
     expect(shouldUseIsolatedUserData()).toBe(false);
