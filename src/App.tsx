@@ -22,6 +22,7 @@ import type {
   RefreshConflict,
   RefreshLibraryEventResult,
 } from './shared/library';
+import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import {
   CommandBar,
   DetailsSurface,
@@ -51,6 +52,22 @@ type Destination =
   | 'settings';
 
 type EventSummary = LibraryEventSummary;
+
+type ApiKeyDialogRequest =
+  | {
+      kind: 'event';
+      origin: string;
+      message: string;
+      eventUrl: string;
+    }
+  | {
+      kind: 'deck';
+      origin: string;
+      message: string;
+      conferenceId: string;
+      talkId: string;
+      deckId: string;
+    };
 
 const destinations: Array<{
   id: Destination;
@@ -315,6 +332,14 @@ function formatMaterialLabel(material: AgendaTalkMaterialSummary) {
   }
 
   return `${material.title} · ${material.mimeType}`;
+}
+
+function formatApiKeyUpdatedAt(updatedAt: number) {
+  if (updatedAt <= 0) {
+    return 'Saved key';
+  }
+
+  return `Saved ${new Date(updatedAt).toLocaleString()}`;
 }
 
 type SlideViewerState =
@@ -692,9 +717,8 @@ export function App() {
     message: string;
   } | null>(null);
   const [isOpeningEvent, setIsOpeningEvent] = React.useState(false);
-  const [apiKeyDialogOrigin, setApiKeyDialogOrigin] = React.useState<
-    string | null
-  >(null);
+  const [apiKeyDialogRequest, setApiKeyDialogRequest] =
+    React.useState<ApiKeyDialogRequest | null>(null);
   const [apiKeyValue, setApiKeyValue] = React.useState('');
   const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
@@ -704,6 +728,11 @@ export function App() {
     : 'Loading...';
   const runtimeInfoLabel = `Runtime information: ${runtimeInfoText}`;
   const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
+  const [apiKeySummaries, setApiKeySummaries] = React.useState<
+    IndicoApiKeySummary[]
+  >([]);
+  const [apiKeyDeleteTarget, setApiKeyDeleteTarget] =
+    React.useState<IndicoApiKeySummary | null>(null);
   const [libraryEvents, setLibraryEvents] = React.useState<EventSummary[]>([]);
   const [selectedEventId, setSelectedEventId] = React.useState<string | null>(
     null,
@@ -762,6 +791,11 @@ export function App() {
     setLibraryEvents(events);
   }, []);
 
+  const refreshIndicoApiKeys = React.useCallback(async () => {
+    const apiKeys = await window.indicoInk.listIndicoApiKeys();
+    setApiKeySummaries(apiKeys);
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
 
@@ -785,7 +819,12 @@ export function App() {
         }
 
         if (openedEvent.kind === 'api-key-required') {
-          setApiKeyDialogOrigin(openedEvent.origin);
+          setApiKeyDialogRequest({
+            kind: 'event',
+            origin: openedEvent.origin,
+            message: openedEvent.message,
+            eventUrl: launchUrl,
+          });
           setApiKeyValue('');
           setApiKeyError(openedEvent.message);
           setOpenEventFeedback({
@@ -874,6 +913,10 @@ export function App() {
   React.useEffect(() => {
     void refreshLibraryEvents();
   }, [refreshLibraryEvents]);
+
+  React.useEffect(() => {
+    void refreshIndicoApiKeys();
+  }, [refreshIndicoApiKeys]);
 
   const eventFocused =
     destination === 'agenda' ||
@@ -1038,6 +1081,32 @@ export function App() {
       return;
     }
 
+    if (openResult.kind === 'api-key-required') {
+      setSlideViewerState({
+        kind: 'error',
+        conferenceId: talk.conferenceId,
+        talkId: talk.id,
+        deckId: selectedPdfMaterial.id,
+        filePath: null,
+        title: talk.title,
+        selectedMaterialId: selectedPdfMaterial.id,
+        materials: talk.materials,
+        downloadStatus: null,
+        message: openResult.message,
+      });
+      setApiKeyDialogRequest({
+        kind: 'deck',
+        origin: openResult.origin,
+        message: openResult.message,
+        conferenceId: talk.conferenceId,
+        talkId: talk.id,
+        deckId: selectedPdfMaterial.id,
+      });
+      setApiKeyValue('');
+      setApiKeyError(openResult.message);
+      return;
+    }
+
     setSlideViewerState({
       kind: 'error',
       conferenceId: talk.conferenceId,
@@ -1102,7 +1171,12 @@ export function App() {
     try {
       const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
       if (openedEvent.kind === 'api-key-required') {
-        setApiKeyDialogOrigin(openedEvent.origin);
+        setApiKeyDialogRequest({
+          kind: 'event',
+          origin: openedEvent.origin,
+          message: openedEvent.message,
+          eventUrl,
+        });
         setApiKeyValue('');
         setApiKeyError(openedEvent.message);
         setOpenEventFeedback({
@@ -1115,7 +1189,7 @@ export function App() {
       await refreshLibraryEvents();
       setSelectedEventId(openedEvent.result.conferenceId);
       setDestination('agenda');
-      setApiKeyDialogOrigin(null);
+      setApiKeyDialogRequest(null);
       setApiKeyValue('');
       setApiKeyError(null);
       setOpenEventFeedback({
@@ -1133,7 +1207,8 @@ export function App() {
     }
   };
   const handleSaveApiKey = async () => {
-    if (!apiKeyDialogOrigin) {
+    const request = apiKeyDialogRequest;
+    if (!request) {
       return;
     }
 
@@ -1147,32 +1222,47 @@ export function App() {
     setApiKeyError(null);
 
     try {
-      await window.indicoInk.saveIndicoApiKey(
-        apiKeyDialogOrigin,
-        trimmedApiKey,
-      );
-      const reopenedEvent = await window.indicoInk.openLibraryEvent(
-        eventUrl,
-        trimmedApiKey,
-      );
-      if (reopenedEvent.kind === 'api-key-required') {
-        setApiKeyError(reopenedEvent.message);
+      await window.indicoInk.saveIndicoApiKey(request.origin, trimmedApiKey);
+      await refreshIndicoApiKeys();
+
+      if (request.kind === 'event') {
+        const reopenedEvent = await window.indicoInk.openLibraryEvent(
+          request.eventUrl,
+          trimmedApiKey,
+        );
+        if (reopenedEvent.kind === 'api-key-required') {
+          setApiKeyError(reopenedEvent.message);
+          setOpenEventFeedback({
+            tone: 'warning',
+            message: reopenedEvent.message,
+          });
+          return;
+        }
+
+        await refreshLibraryEvents();
+        setSelectedEventId(reopenedEvent.result.conferenceId);
+        setDestination('agenda');
+        setApiKeyDialogRequest(null);
+        setApiKeyValue('');
         setOpenEventFeedback({
-          tone: 'warning',
-          message: reopenedEvent.message,
+          tone: 'success',
+          message: `Opened ${reopenedEvent.result.title} with ${reopenedEvent.result.talkCount} talks.`,
         });
         return;
       }
 
-      await refreshLibraryEvents();
-      setSelectedEventId(reopenedEvent.result.conferenceId);
-      setDestination('agenda');
-      setApiKeyDialogOrigin(null);
+      const talk = agendaTalks.find(
+        (candidate) => candidate.id === request.talkId,
+      );
+      if (!talk) {
+        setApiKeyError('The selected talk is no longer available.');
+        return;
+      }
+
+      const deckId = request.deckId;
+      setApiKeyDialogRequest(null);
       setApiKeyValue('');
-      setOpenEventFeedback({
-        tone: 'success',
-        message: `Opened ${reopenedEvent.result.title} with ${reopenedEvent.result.talkCount} talks.`,
-      });
+      await openAgendaTalkSlides(talk, deckId);
     } catch (error) {
       setApiKeyError(
         error instanceof Error ? error.message : 'Failed to save the API key.',
@@ -1404,6 +1494,9 @@ export function App() {
   const requestDeleteLibraryEvent = (event: EventSummary) => {
     setDeleteTarget(event);
   };
+  const requestDeleteIndicoApiKey = (apiKey: IndicoApiKeySummary) => {
+    setApiKeyDeleteTarget(apiKey);
+  };
   const confirmDeleteLibraryEvent = async () => {
     if (!deleteTarget) {
       return;
@@ -1418,6 +1511,15 @@ export function App() {
       setSelectedEventId(null);
       setDestination('library');
     }
+  };
+  const confirmDeleteIndicoApiKey = async () => {
+    if (!apiKeyDeleteTarget) {
+      return;
+    }
+
+    await window.indicoInk.deleteIndicoApiKey(apiKeyDeleteTarget.origin);
+    setApiKeyDeleteTarget(null);
+    await refreshIndicoApiKeys();
   };
 
   React.useEffect(() => {
@@ -2683,6 +2785,42 @@ export function App() {
                         </div>
                       </div>
                     </div>
+                    <div className="settings-row settings-row-column">
+                      <span>Indico API keys</span>
+                      <div className="settings-row-stack settings-row-stack-wide">
+                        {apiKeySummaries.length ? (
+                          <div
+                            className="settings-api-key-list"
+                            aria-label="Saved Indico API keys"
+                          >
+                            {apiKeySummaries.map((apiKey) => (
+                              <div
+                                className="settings-api-key-row"
+                                key={apiKey.origin}
+                              >
+                                <div className="settings-api-key-text">
+                                  <strong>{apiKey.origin}</strong>
+                                  <span>
+                                    {formatApiKeyUpdatedAt(apiKey.updatedAt)}
+                                  </span>
+                                </div>
+                                <IconButton
+                                  label={`Delete API key for ${apiKey.origin}`}
+                                  icon="trash"
+                                  onClick={() =>
+                                    requestDeleteIndicoApiKey(apiKey)
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="settings-empty">
+                            No saved API keys
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </DetailsSurface>
               </div>
@@ -2711,15 +2849,43 @@ export function App() {
             </div>
           ) : null}
 
-          {apiKeyDialogOrigin ? (
+          {apiKeyDeleteTarget ? (
             <div className="dialog-backdrop" role="presentation">
               <DialogSurface
-                title="Private event"
+                title="Delete API key"
                 body={
                   <div className="dialog-copy">
                     <p>
-                      This event at <strong>{apiKeyDialogOrigin}</strong> needs
-                      an API key before it can be opened.
+                      The saved API key for{' '}
+                      <strong>{apiKeyDeleteTarget.origin}</strong> will be
+                      removed from this computer.
+                    </p>
+                  </div>
+                }
+                primaryLabel="Delete key"
+                secondaryLabel="Cancel"
+                onPrimary={() => void confirmDeleteIndicoApiKey()}
+                onSecondary={() => setApiKeyDeleteTarget(null)}
+              />
+            </div>
+          ) : null}
+
+          {apiKeyDialogRequest ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title={
+                  apiKeyDialogRequest.kind === 'event'
+                    ? 'Private event'
+                    : 'Private slides'
+                }
+                body={
+                  <div className="dialog-copy">
+                    <p>
+                      {apiKeyDialogRequest.kind === 'event'
+                        ? 'This event'
+                        : 'This slide deck'}{' '}
+                      at <strong>{apiKeyDialogRequest.origin}</strong> needs an
+                      API key before it can be opened.
                     </p>
                     <label className="field">
                       <span>API key</span>
@@ -2756,7 +2922,7 @@ export function App() {
                 secondaryLabel="Cancel"
                 onPrimary={() => void handleSaveApiKey()}
                 onSecondary={() => {
-                  setApiKeyDialogOrigin(null);
+                  setApiKeyDialogRequest(null);
                   setApiKeyValue('');
                   setApiKeyError(null);
                 }}

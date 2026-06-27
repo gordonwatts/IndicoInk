@@ -55,6 +55,10 @@ export const isLikelyIndicoApiKeyError = (
   statusCode: number,
   responseBody: string | null,
 ) => {
+  if (/insufficient_scope/i.test(responseBody ?? '')) {
+    return true;
+  }
+
   if (statusCode === 401) {
     return true;
   }
@@ -76,6 +80,22 @@ export const isLikelyIndicoApiKeyError = (
   return authChallengePatterns.some((pattern) => pattern.test(responseBody));
 };
 
+export const getIndicoApiKeyPromptMessage = (
+  statusCode: number,
+  responseBody: string | null,
+  resource: 'event' | 'deck' = 'event',
+) => {
+  if (/insufficient_scope/i.test(responseBody ?? '')) {
+    return resource === 'deck'
+      ? 'This API token needs additional Indico file access before this slide deck can be opened.'
+      : 'This API token needs Indico legacy API read access before this event can be opened.';
+  }
+
+  return resource === 'deck'
+    ? 'This Indico slide deck requires an API key.'
+    : 'This Indico event requires an API key.';
+};
+
 export type IndicoJsonResponse = {
   ok: boolean;
   status: number;
@@ -93,7 +113,7 @@ export type FetchIndicoJsonOptions = {
   apiKey?: string;
   fetchImpl?: (
     input: string,
-    init?: { signal?: AbortSignal },
+    init?: { signal?: AbortSignal; headers?: Record<string, string> },
   ) => Promise<IndicoJsonResponse>;
 };
 
@@ -106,6 +126,29 @@ const createTimeoutError = (url: string, timeoutMilliseconds: number) =>
   new IndicoTimeoutError(
     `Timed out fetching ${url} after ${timeoutMilliseconds} ms.`,
   );
+
+const isIndicoApiToken = (apiKey: string) => /^ind[op]_/.test(apiKey);
+
+export const createIndicoAuthenticatedRequest = (
+  inputUrl: string,
+  apiKey?: string | null,
+) => {
+  const url = new URL(inputUrl);
+  const headers: Record<string, string> = {};
+
+  if (apiKey) {
+    if (isIndicoApiToken(apiKey)) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    } else {
+      url.searchParams.set('ak', apiKey);
+    }
+  }
+
+  return {
+    url: url.toString(),
+    headers,
+  };
+};
 
 export const fetchIndicoJson = async <T>(
   identity: IndicoEventIdentity,
@@ -120,13 +163,16 @@ export const fetchIndicoJson = async <T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMilliseconds);
   const url = new URL(createIndicoEventExportUrl(identity, detail));
-  const requestUrl = url.toString();
-  if (apiKey) {
-    url.searchParams.set('ak', apiKey);
-  }
+  const safeRequestUrl = url.toString();
+  const request = createIndicoAuthenticatedRequest(safeRequestUrl, apiKey);
 
   try {
-    const response = await fetchImpl(requestUrl, { signal: controller.signal });
+    const response = await fetchImpl(request.url, {
+      signal: controller.signal,
+      ...(Object.keys(request.headers).length
+        ? { headers: request.headers }
+        : {}),
+    });
 
     if (!response.ok) {
       let responseBody: string | null = null;
@@ -137,7 +183,7 @@ export const fetchIndicoJson = async <T>(
       }
 
       throw new IndicoHttpError(
-        `Indico returned HTTP ${response.status} for ${requestUrl}.`,
+        `Indico returned HTTP ${response.status} for ${safeRequestUrl}.`,
         response.status,
         responseBody,
       );
@@ -146,14 +192,14 @@ export const fetchIndicoJson = async <T>(
     const declaredLength = response.headers.get('content-length');
     if (declaredLength && Number(declaredLength) > maxBytes) {
       throw new IndicoResponseSizeError(
-        `Indico response exceeded the ${maxBytes} byte limit before reading ${requestUrl}.`,
+        `Indico response exceeded the ${maxBytes} byte limit before reading ${safeRequestUrl}.`,
       );
     }
 
     const body = await response.text();
     if (getByteLength(body) > maxBytes) {
       throw new IndicoResponseSizeError(
-        `Indico response exceeded the ${maxBytes} byte limit for ${requestUrl}.`,
+        `Indico response exceeded the ${maxBytes} byte limit for ${safeRequestUrl}.`,
       );
     }
 
@@ -161,13 +207,13 @@ export const fetchIndicoJson = async <T>(
       return JSON.parse(body) as T;
     } catch {
       throw new IndicoResponseParseError(
-        `Indico returned invalid JSON for ${requestUrl}.`,
+        `Indico returned invalid JSON for ${safeRequestUrl}.`,
         body,
       );
     }
   } catch (error) {
     if (controller.signal.aborted) {
-      throw createTimeoutError(requestUrl, timeoutMilliseconds);
+      throw createTimeoutError(safeRequestUrl, timeoutMilliseconds);
     }
 
     throw error;

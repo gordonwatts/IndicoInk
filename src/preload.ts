@@ -17,6 +17,7 @@ import type {
 } from './shared/library';
 import type { AgendaTalkSummary } from './shared/agenda';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
+import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 
 const getAppInfo = async (): Promise<AppInfo> =>
   ipcRenderer.invoke('app:get-info');
@@ -80,6 +81,12 @@ const saveIndicoApiKey = async (
   origin: string,
   apiKey: string,
 ): Promise<void> => ipcRenderer.invoke('indico:save-api-key', origin, apiKey);
+
+const listIndicoApiKeys = async (): Promise<IndicoApiKeySummary[]> =>
+  ipcRenderer.invoke('indico:list-api-keys');
+
+const deleteIndicoApiKey = async (origin: string): Promise<void> =>
+  ipcRenderer.invoke('indico:delete-api-key', origin);
 
 const setTalkBookmarked = async (
   talkId: string,
@@ -146,6 +153,8 @@ contextBridge.exposeInMainWorld('indicoInk', {
   refreshLibraryEvent,
   openLibraryEvent,
   saveIndicoApiKey,
+  listIndicoApiKeys,
+  deleteIndicoApiKey,
   setTalkBookmarked,
   setSelectedDeck,
   openTalkDeck,
@@ -189,6 +198,8 @@ export type IndicoInkApi = {
     apiKey?: string,
   ) => Promise<OpenLibraryEventResult>;
   saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
+  listIndicoApiKeys: () => Promise<IndicoApiKeySummary[]>;
+  deleteIndicoApiKey: (origin: string) => Promise<void>;
   setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
   setSelectedDeck: (talkId: string, deckId: string) => Promise<void>;
   openTalkDeck: (

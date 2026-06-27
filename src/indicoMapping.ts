@@ -142,6 +142,7 @@ export type IndicoImportData = {
 };
 
 type RawEnvelope = {
+  count?: unknown;
   results?: unknown;
 };
 
@@ -170,6 +171,11 @@ const pickFirstResult = (envelope: RawEnvelope): IndicoEventValue | null => {
 
   return null;
 };
+
+export const isEmptyIndicoExportEnvelope = (envelope: RawEnvelope) =>
+  envelope.count === 0 &&
+  Array.isArray(envelope.results) &&
+  envelope.results.length === 0;
 
 const parseDateTime = (value?: IndicoDateValue | null) => {
   if (!value?.date) {
