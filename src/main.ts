@@ -40,6 +40,7 @@ import { DeckCacheManager } from './deckCache';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
 import {
   getIsolatedUserDataPath,
+  getPersistenceDbPath,
   shouldDisableGpu,
   shouldUseIsolatedUserData,
 } from './runtimeModes';
@@ -84,7 +85,7 @@ const logStartupEvent = (source: string, detail: unknown) => {
 const getPersistenceStore = () =>
   persistenceStore ??
   (persistenceStore = new PersistenceStore(
-    join(app.getPath('userData'), 'indicoink-persistence.sqlite3'),
+    getPersistenceDbPath(app.getPath('userData')),
   ));
 
 const getCredentialStore = () =>

@@ -6,6 +6,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
+import { getIsolatedPersistenceDbPath } from '../../src/runtimeModes';
+
 const electronPath = resolve('node_modules/electron/dist/electron.exe');
 const electronCacheRoot = resolve('.electron-cache');
 const electronDistPath = resolve('node_modules/electron/dist');
@@ -283,6 +285,8 @@ const launchBinaryHarness = async ({
         ]),
         INDICOINK_ISOLATED_USER_DATA: '1',
         INDICOINK_USER_DATA_DIR: userDataDir,
+        INDICOINK_PERSISTENCE_DB_PATH:
+          getIsolatedPersistenceDbPath(userDataDir),
         INDICOINK_DISABLE_GPU: '1',
         ...(useElectronDevEnv
           ? {
@@ -440,6 +444,8 @@ const runImportFixtureCommand = async ({
         ]),
         INDICOINK_ISOLATED_USER_DATA: '1',
         INDICOINK_USER_DATA_DIR: userDataDir,
+        INDICOINK_PERSISTENCE_DB_PATH:
+          getIsolatedPersistenceDbPath(userDataDir),
         INDICOINK_DISABLE_GPU: '1',
         ...(useElectronDevEnv
           ? {
