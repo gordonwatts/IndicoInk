@@ -25,6 +25,25 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Set release version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}".Trim()
+          if ($tag.StartsWith('v')) {
+            $tag = $tag.Substring(1)
+          }
+
+          $version = $tag
+          if ($version -match '^(?<core>\d+\.\d+\.\d+)(?<suffix>[A-Za-z]+)(?<num>\d+)$') {
+            $version = "$($Matches.core)-$($Matches.suffix.ToLower())$($Matches.num)"
+          }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
+            throw "Release tag '$tag' could not be converted to a valid package version."
+          }
+
+          npm version --no-git-tag-version --allow-same-version $version
+
       - name: Install dependencies
         run: npm install --cache .npm-cache
         env:
