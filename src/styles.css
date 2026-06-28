@@ -1213,8 +1213,8 @@ input:focus-visible {
 }
 
 .agenda-shell-main {
-  min-width: 0;
-  width: 100%;
+  min-width: 100%;
+  width: max-content;
 }
 
 .agenda-talk-detail-topline {
@@ -1277,7 +1277,8 @@ input:focus-visible {
 .agenda-canvas-shell {
   display: grid;
   gap: 16px;
-  min-width: 0;
+  min-width: 100%;
+  width: max-content;
 }
 
 .agenda-canvas-scroll {

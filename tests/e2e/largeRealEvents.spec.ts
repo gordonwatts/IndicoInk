@@ -117,6 +117,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
 
     const widthSamples = await harness.page.evaluate(async () => {
       const readWidths = () => {
+        const shell = document.querySelector<HTMLElement>('.agenda-shell-main');
         const canvas = document.querySelector<HTMLElement>(
           '.agenda-canvas-scroll',
         );
@@ -125,6 +126,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
         );
 
         return {
+          shellWidth: Math.round(shell?.getBoundingClientRect().width ?? 0),
           canvasWidth: Math.round(canvas?.getBoundingClientRect().width ?? 0),
           sessionWidth: Math.round(session?.getBoundingClientRect().width ?? 0),
           viewportWidth: window.innerWidth,
@@ -142,6 +144,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
       return samples;
     });
     const canvasWidths = widthSamples.map((sample) => sample.canvasWidth);
+    const shellWidths = widthSamples.map((sample) => sample.shellWidth);
     const sessionWidths = widthSamples.map((sample) => sample.sessionWidth);
     const viewportWidth = widthSamples[0]?.viewportWidth ?? 0;
 
@@ -149,8 +152,14 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
       Math.max(...canvasWidths) - Math.min(...canvasWidths),
     ).toBeLessThanOrEqual(1);
     expect(
+      Math.max(...shellWidths) - Math.min(...shellWidths),
+    ).toBeLessThanOrEqual(1);
+    expect(
       Math.max(...sessionWidths) - Math.min(...sessionWidths),
     ).toBeLessThanOrEqual(1);
+    expect(Math.max(...shellWidths)).toBeGreaterThanOrEqual(
+      Math.max(Math.max(...canvasWidths), viewportWidth),
+    );
     expect(Math.max(...canvasWidths)).toBeGreaterThan(viewportWidth);
   } finally {
     await harness.close();
