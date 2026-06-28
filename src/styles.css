@@ -1286,6 +1286,7 @@ input:focus-visible {
   width: max-content;
   min-width: 0;
   max-width: none;
+  padding-inline-start: 88px;
   padding-inline-end: 48px;
   padding-bottom: 8px;
 }
@@ -1294,6 +1295,7 @@ input:focus-visible {
   position: relative;
   min-width: max-content;
   display: block;
+  margin-inline-start: -88px;
 }
 
 .agenda-canvas-grid--absolute {
