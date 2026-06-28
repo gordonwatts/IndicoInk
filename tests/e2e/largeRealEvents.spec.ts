@@ -107,6 +107,51 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     await expect(harness.page.locator('.agenda-talk-card-title')).toHaveCount(
       89,
     );
+
+    await harness.page
+      .locator('.segmented-control-option', {
+        hasText: 'Tuesday, September 9, 2025',
+      })
+      .click();
+    await harness.page.waitForTimeout(250);
+
+    const widthSamples = await harness.page.evaluate(async () => {
+      const readWidths = () => {
+        const canvas = document.querySelector<HTMLElement>(
+          '.agenda-canvas-scroll',
+        );
+        const session = document.querySelector<HTMLElement>(
+          '.agenda-session-block--absolute:not(.agenda-session-block--shared)',
+        );
+
+        return {
+          canvasWidth: Math.round(canvas?.getBoundingClientRect().width ?? 0),
+          sessionWidth: Math.round(session?.getBoundingClientRect().width ?? 0),
+          viewportWidth: window.innerWidth,
+        };
+      };
+      const samples = [readWidths()];
+
+      for (let index = 0; index < 20; index += 1) {
+        await new Promise<void>((resolveFrame) => {
+          window.requestAnimationFrame(() => resolveFrame());
+        });
+        samples.push(readWidths());
+      }
+
+      return samples;
+    });
+    const canvasWidths = widthSamples.map((sample) => sample.canvasWidth);
+    const sessionWidths = widthSamples.map((sample) => sample.sessionWidth);
+    const viewportWidth = widthSamples[0]?.viewportWidth ?? 0;
+
+    expect(
+      Math.max(...canvasWidths) - Math.min(...canvasWidths),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.max(...sessionWidths) - Math.min(...sessionWidths),
+    ).toBeLessThanOrEqual(1);
+    expect(Math.max(...canvasWidths)).toBeGreaterThan(viewportWidth);
   } finally {
     await harness.close();
   }
