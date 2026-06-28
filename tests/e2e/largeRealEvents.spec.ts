@@ -156,6 +156,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
 
         return {
           shellWidth: Math.round(shell?.getBoundingClientRect().width ?? 0),
+          gutterWidth: Math.round(gutter?.getBoundingClientRect().width ?? 0),
           gutterRight: Math.round(gutter?.getBoundingClientRect().right ?? 0),
           canvasWidth: Math.round(canvas?.getBoundingClientRect().width ?? 0),
           sessionWidth: Math.round(session?.getBoundingClientRect().width ?? 0),
@@ -176,6 +177,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     });
     const canvasWidths = widthSamples.map((sample) => sample.canvasWidth);
     const shellWidths = widthSamples.map((sample) => sample.shellWidth);
+    const gutterWidths = widthSamples.map((sample) => sample.gutterWidth);
     const gutterRights = widthSamples.map((sample) => sample.gutterRight);
     const sessionWidths = widthSamples.map((sample) => sample.sessionWidth);
     const viewportWidth = widthSamples[0]?.viewportWidth ?? 0;
@@ -186,6 +188,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     expect(
       Math.max(...shellWidths) - Math.min(...shellWidths),
     ).toBeLessThanOrEqual(1);
+    expect(Math.max(...gutterWidths)).toBeLessThanOrEqual(90);
     expect(
       Math.max(...gutterRights) - Math.min(...gutterRights),
     ).toBeLessThanOrEqual(1);

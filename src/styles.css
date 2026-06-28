@@ -1306,10 +1306,10 @@ input:focus-visible {
 .agenda-time-gutter-mask {
   grid-area: 1 / 1;
   position: sticky;
-  left: calc(var(--page-surface-inline-padding) * -1);
+  left: 0;
   z-index: 2;
   align-self: start;
-  width: calc(88px + var(--page-surface-inline-padding));
+  width: 88px;
   background: color-mix(
     in srgb,
     var(--surface-panel) 96%,
@@ -1318,14 +1318,24 @@ input:focus-visible {
   box-shadow: 1px 0 0 color-mix(in srgb, var(--border-subtle) 86%, transparent);
 }
 
+.agenda-time-gutter-mask::before,
+.agenda-time-gutter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: var(--page-surface-inline-padding);
+  background: inherit;
+}
+
 .agenda-time-gutter {
   position: sticky;
-  left: calc(var(--page-surface-inline-padding) * -1);
+  left: 0;
   z-index: 3;
   display: block;
-  box-sizing: border-box;
-  width: calc(88px + var(--page-surface-inline-padding));
-  padding: 8px 8px 8px var(--page-surface-inline-padding);
+  width: 88px;
+  padding: 8px 8px 8px 0;
   background: color-mix(
     in srgb,
     var(--surface-panel) 96%,
