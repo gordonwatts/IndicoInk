@@ -114,6 +114,13 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
       })
       .click();
     await harness.page.waitForTimeout(250);
+    await harness.page.evaluate(() => {
+      document.querySelector<HTMLElement>('.page-surface')?.scrollTo({
+        left: 560,
+        behavior: 'auto',
+      });
+    });
+    await harness.page.waitForTimeout(100);
 
     const widthSamples = await harness.page.evaluate(async () => {
       const readWidths = () => {
@@ -127,13 +134,32 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
         const session = document.querySelector<HTMLElement>(
           '.agenda-session-block--absolute:not(.agenda-session-block--shared)',
         );
+        const gutterRect = gutter?.getBoundingClientRect();
+        const sessionRect = session?.getBoundingClientRect();
+        const gutterProbeY = Math.max(
+          (gutterRect?.top ?? 0) + 12,
+          Math.min((sessionRect?.top ?? 0) + 96, window.innerHeight - 12),
+        );
+        const gutterProbeXs = gutterRect
+          ? [
+              gutterRect.left + Math.min(24, gutterRect.width / 2),
+              gutterRect.right - 4,
+            ]
+          : [];
+        const gutterProbeHitsAgenda = gutterProbeXs.some((x) =>
+          Boolean(
+            document
+              .elementFromPoint(x, gutterProbeY)
+              ?.closest('.agenda-session-block, .agenda-talk-card'),
+          ),
+        );
 
         return {
           shellWidth: Math.round(shell?.getBoundingClientRect().width ?? 0),
           gutterRight: Math.round(gutter?.getBoundingClientRect().right ?? 0),
           canvasWidth: Math.round(canvas?.getBoundingClientRect().width ?? 0),
           sessionWidth: Math.round(session?.getBoundingClientRect().width ?? 0),
-          sessionLeft: Math.round(session?.getBoundingClientRect().left ?? 0),
+          gutterProbeHitsAgenda,
           viewportWidth: window.innerWidth,
         };
       };
@@ -152,7 +178,6 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     const shellWidths = widthSamples.map((sample) => sample.shellWidth);
     const gutterRights = widthSamples.map((sample) => sample.gutterRight);
     const sessionWidths = widthSamples.map((sample) => sample.sessionWidth);
-    const sessionLefts = widthSamples.map((sample) => sample.sessionLeft);
     const viewportWidth = widthSamples[0]?.viewportWidth ?? 0;
 
     expect(
@@ -170,8 +195,8 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     expect(Math.max(...shellWidths)).toBeGreaterThanOrEqual(
       Math.max(Math.max(...canvasWidths), viewportWidth),
     );
-    expect(Math.min(...sessionLefts)).toBeGreaterThanOrEqual(
-      Math.max(...gutterRights) - 1,
+    expect(widthSamples.some((sample) => sample.gutterProbeHitsAgenda)).toBe(
+      false,
     );
     expect(Math.max(...canvasWidths)).toBeGreaterThan(viewportWidth);
   } finally {

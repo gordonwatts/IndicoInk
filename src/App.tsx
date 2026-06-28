@@ -487,10 +487,14 @@ function AgendaTimelineCanvas({
         />
       </div>
 
-      <div
-        className="agenda-canvas-scroll"
-        aria-label="Agenda day canvas"
-      >
+      <div className="agenda-canvas-scroll" aria-label="Agenda day canvas">
+        <div
+          className="agenda-time-gutter-mask"
+          aria-hidden="true"
+          style={{
+            height: `${layout.canvasHeightPx}px`,
+          }}
+        />
         <div
           className="agenda-canvas-grid agenda-canvas-grid--absolute"
           style={{

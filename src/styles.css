@@ -1283,29 +1283,44 @@ input:focus-visible {
 
 .agenda-canvas-scroll {
   position: relative;
+  display: grid;
   width: max-content;
   min-width: 0;
   max-width: none;
-  padding-inline-start: 88px;
   padding-inline-end: 48px;
   padding-bottom: 8px;
 }
 
 .agenda-canvas-grid {
+  grid-area: 1 / 1;
   position: relative;
   min-width: max-content;
   display: block;
-  margin-inline-start: -88px;
 }
 
 .agenda-canvas-grid--absolute {
   display: block;
 }
 
-.agenda-time-gutter {
+.agenda-time-gutter-mask {
+  grid-area: 1 / 1;
   position: sticky;
   left: 0;
   z-index: 2;
+  align-self: start;
+  width: 88px;
+  background: color-mix(
+    in srgb,
+    var(--surface-panel) 96%,
+    var(--surface-panel-muted)
+  );
+  box-shadow: 1px 0 0 color-mix(in srgb, var(--border-subtle) 86%, transparent);
+}
+
+.agenda-time-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 3;
   display: block;
   width: 88px;
   padding: 8px 8px 8px 0;
