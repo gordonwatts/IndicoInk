@@ -455,6 +455,7 @@ input:focus-visible {
 }
 
 .page-surface {
+  --page-surface-inline-padding: 24px;
   min-width: 0;
   min-height: 0;
   padding: 0 24px 24px;
@@ -1305,10 +1306,10 @@ input:focus-visible {
 .agenda-time-gutter-mask {
   grid-area: 1 / 1;
   position: sticky;
-  left: 0;
+  left: calc(var(--page-surface-inline-padding) * -1);
   z-index: 2;
   align-self: start;
-  width: 88px;
+  width: calc(88px + var(--page-surface-inline-padding));
   background: color-mix(
     in srgb,
     var(--surface-panel) 96%,
@@ -1319,11 +1320,12 @@ input:focus-visible {
 
 .agenda-time-gutter {
   position: sticky;
-  left: 0;
+  left: calc(var(--page-surface-inline-padding) * -1);
   z-index: 3;
   display: block;
-  width: 88px;
-  padding: 8px 8px 8px 0;
+  box-sizing: border-box;
+  width: calc(88px + var(--page-surface-inline-padding));
+  padding: 8px 8px 8px var(--page-surface-inline-padding);
   background: color-mix(
     in srgb,
     var(--surface-panel) 96%,
@@ -1879,6 +1881,7 @@ input:focus-visible {
   }
 
   .page-surface {
+    --page-surface-inline-padding: 20px;
     padding-inline: 20px;
   }
 }
