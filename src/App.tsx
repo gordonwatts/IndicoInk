@@ -386,7 +386,7 @@ function AgendaTimelineCanvas({
   agendaFilter,
   visibleAgendaTalks,
   selectedAgendaTalkId,
-  scrollContainerRef,
+  viewportRef,
   onOpenTalk,
   onOpenTalkSlides,
   onOpenTalkMaterials,
@@ -396,7 +396,7 @@ function AgendaTimelineCanvas({
   agendaFilter: GalleryFilter;
   visibleAgendaTalks: AgendaTalkSummary[];
   selectedAgendaTalkId: string | null;
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  viewportRef: React.RefObject<HTMLDivElement | null>;
   onOpenTalk: (talk: AgendaTalkSummary) => void;
   onOpenTalkSlides: (talk: AgendaTalkSummary) => void;
   onOpenTalkMaterials: (talk: AgendaTalkSummary) => void;
@@ -407,13 +407,18 @@ function AgendaTimelineCanvas({
   );
 
   React.useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) {
+    const viewport = viewportRef.current;
+    if (!viewport) {
       return undefined;
     }
 
     const updateViewportWidth = () => {
-      setViewportWidthPx(scrollContainer.clientWidth);
+      const nextViewportWidthPx = Math.round(viewport.clientWidth);
+      setViewportWidthPx((currentViewportWidthPx) =>
+        currentViewportWidthPx === nextViewportWidthPx
+          ? currentViewportWidthPx
+          : nextViewportWidthPx,
+      );
     };
 
     updateViewportWidth();
@@ -426,12 +431,12 @@ function AgendaTimelineCanvas({
     }
 
     const observer = new ResizeObserver(updateViewportWidth);
-    observer.observe(scrollContainer);
+    observer.observe(viewport);
 
     return () => {
       observer.disconnect();
     };
-  }, [scrollContainerRef]);
+  }, [viewportRef]);
 
   const provisionalLayout = React.useMemo(
     () => buildAgendaCanvasLayout(visibleAgendaTalks),
@@ -482,11 +487,14 @@ function AgendaTimelineCanvas({
         />
       </div>
 
-      <div
-        className="agenda-canvas-scroll"
-        aria-label="Agenda day canvas"
-        ref={scrollContainerRef}
-      >
+      <div className="agenda-canvas-scroll" aria-label="Agenda day canvas">
+        <div
+          className="agenda-time-gutter-mask"
+          aria-hidden="true"
+          style={{
+            height: `${layout.canvasHeightPx}px`,
+          }}
+        />
         <div
           className="agenda-canvas-grid agenda-canvas-grid--absolute"
           style={{
@@ -768,7 +776,7 @@ export function App() {
     React.useState<SlideViewerState>({ kind: 'closed' });
   const agendaScrollPositionsRef = React.useRef<Record<string, number>>({});
   const agendaScrollFrameRef = React.useRef<number | null>(null);
-  const agendaCanvasScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const deckDownloadPollRef = React.useRef<number | null>(null);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
@@ -1706,10 +1714,19 @@ export function App() {
     const targetScrollTop =
       agendaScrollPositionsRef.current[scrollKey] ??
       visibleAgendaTalksLayoutDefaultScrollTop;
-    const scrollContainer = agendaCanvasScrollRef.current;
-    if (!scrollContainer) {
+    const scrollContainer = pageSurfaceRef.current;
+    const agendaCanvasMeasure = agendaCanvasMeasureRef.current;
+    if (!scrollContainer || !agendaCanvasMeasure) {
       return undefined;
     }
+    const getAgendaCanvasTopOffset = () => {
+      const scrollContainerRect = scrollContainer.getBoundingClientRect();
+      const canvasRect = agendaCanvasMeasure.getBoundingClientRect();
+
+      return (
+        scrollContainer.scrollTop + (canvasRect.top - scrollContainerRect.top)
+      );
+    };
     const scheduleScrollRestoration =
       window.requestAnimationFrame ??
       ((callback: FrameRequestCallback) =>
@@ -1722,16 +1739,23 @@ export function App() {
     }
 
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
+      const targetPageScrollTop = getAgendaCanvasTopOffset() + targetScrollTop;
       if (typeof scrollContainer.scrollTo === 'function') {
-        scrollContainer.scrollTo({ top: targetScrollTop, behavior: 'auto' });
+        scrollContainer.scrollTo({
+          top: targetPageScrollTop,
+          behavior: 'auto',
+        });
       } else {
-        scrollContainer.scrollTop = targetScrollTop;
+        scrollContainer.scrollTop = targetPageScrollTop;
       }
       agendaScrollFrameRef.current = null;
     });
 
     const captureScrollPosition = () => {
-      agendaScrollPositionsRef.current[scrollKey] = scrollContainer.scrollTop;
+      agendaScrollPositionsRef.current[scrollKey] = Math.max(
+        0,
+        scrollContainer.scrollTop - getAgendaCanvasTopOffset(),
+      );
     };
 
     scrollContainer.addEventListener('scroll', captureScrollPosition, {
@@ -2142,7 +2166,10 @@ export function App() {
                         </div>
 
                         <div className="agenda-shell-grid">
-                          <div className="agenda-shell-main">
+                          <div
+                            className="agenda-shell-main"
+                            ref={agendaCanvasMeasureRef}
+                          >
                             {visibleAgendaTalks.length ? (
                               <AgendaTimelineCanvas
                                 selectedAgendaDay={selectedAgendaDay}
@@ -2151,7 +2178,7 @@ export function App() {
                                 selectedAgendaTalkId={
                                   selectedAgendaTalk?.id ?? null
                                 }
-                                scrollContainerRef={agendaCanvasScrollRef}
+                                viewportRef={agendaCanvasMeasureRef}
                                 onOpenTalk={(talk) => {
                                   setSelectedAgendaTalkId(talk.id);
                                   setSelectedEventId(talk.conferenceId);

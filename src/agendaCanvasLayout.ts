@@ -418,7 +418,7 @@ export function getResponsiveAgendaColumnWidth(
     viewportWidthPx - agendaTimeGutterWidth - 16,
   );
   const targetVisibleColumns =
-    viewportWidthPx >= 1200 ? 3 : viewportWidthPx >= 800 ? 2 : 1.25;
+    viewportWidthPx >= 1200 ? 2 : viewportWidthPx >= 800 ? 2 : 1.25;
   const rawWidthPx = Math.floor(usableWidthPx / targetVisibleColumns);
 
   if (columnCount <= 1) {

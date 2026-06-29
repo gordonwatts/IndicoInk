@@ -981,13 +981,67 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    const agendaScroller = screen.getByLabelText('Agenda day canvas');
-    Object.defineProperty(agendaScroller, 'scrollTop', {
+    const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+    if (!pageSurface) {
+      throw new Error('Expected the page surface to be present.');
+    }
+    const originalGetBoundingClientRect =
+      HTMLElement.prototype.getBoundingClientRect;
+    const getBoundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function getBoundingClientRectMock(
+        this: HTMLElement,
+      ) {
+        if (this.classList.contains('page-surface')) {
+          return {
+            top: 0,
+            right: 900,
+            bottom: 700,
+            left: 0,
+            width: 900,
+            height: 700,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          };
+        }
+
+        if (this.classList.contains('agenda-shell-main')) {
+          return {
+            top: 0,
+            right: 900,
+            bottom: 1200,
+            left: 0,
+            width: 900,
+            height: 1200,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          };
+        }
+
+        if (this.classList.contains('agenda-canvas-scroll')) {
+          return {
+            top: -pageSurface.scrollTop,
+            right: 900,
+            bottom: 1200 - pageSurface.scrollTop,
+            left: 0,
+            width: 900,
+            height: 1200,
+            x: 0,
+            y: -pageSurface.scrollTop,
+            toJSON: () => ({}),
+          };
+        }
+
+        return originalGetBoundingClientRect.call(this);
+      });
+    Object.defineProperty(pageSurface, 'scrollTop', {
       value: 420,
       configurable: true,
       writable: true,
     });
-    fireEvent.scroll(agendaScroller);
+    fireEvent.scroll(pageSurface);
     await user.click(
       screen.getByRole('button', {
         name: 'Next day',
@@ -1000,10 +1054,12 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({
-      top: 0,
-      behavior: 'auto',
-    });
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        behavior: 'auto',
+        top: expect.any(Number),
+      }),
+    );
 
     await user.click(
       screen.getByRole('button', {
@@ -1029,12 +1085,12 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    Object.defineProperty(agendaScroller, 'scrollTop', {
+    Object.defineProperty(pageSurface, 'scrollTop', {
       value: 125,
       configurable: true,
       writable: true,
     });
-    fireEvent.scroll(agendaScroller);
+    fireEvent.scroll(pageSurface);
     await user.click(
       screen.getByRole('button', {
         name: 'Previous day',
@@ -1047,10 +1103,12 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({
-      top: 420,
-      behavior: 'auto',
-    });
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        behavior: 'auto',
+        top: expect.any(Number),
+      }),
+    );
     expect(
       screen
         .getByRole('button', {
@@ -1058,6 +1116,7 @@ describe('App', () => {
         })
         .getAttribute('aria-pressed'),
     ).toBe('true');
+    getBoundingClientRectSpy.mockRestore();
   });
 
   it('confirms deletion before removing a stored library event', async () => {

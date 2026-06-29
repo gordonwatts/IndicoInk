@@ -107,6 +107,101 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     await expect(harness.page.locator('.agenda-talk-card-title')).toHaveCount(
       89,
     );
+
+    await harness.page
+      .locator('.segmented-control-option', {
+        hasText: 'Tuesday, September 9, 2025',
+      })
+      .click();
+    await harness.page.waitForTimeout(250);
+    await harness.page.evaluate(() => {
+      document.querySelector<HTMLElement>('.page-surface')?.scrollTo({
+        left: 560,
+        behavior: 'auto',
+      });
+    });
+    await harness.page.waitForTimeout(100);
+
+    const widthSamples = await harness.page.evaluate(async () => {
+      const readWidths = () => {
+        const shell = document.querySelector<HTMLElement>('.agenda-shell-main');
+        const gutter = document.querySelector<HTMLElement>(
+          '.agenda-time-gutter--absolute',
+        );
+        const canvas = document.querySelector<HTMLElement>(
+          '.agenda-canvas-scroll',
+        );
+        const session = document.querySelector<HTMLElement>(
+          '.agenda-session-block--absolute:not(.agenda-session-block--shared)',
+        );
+        const gutterRect = gutter?.getBoundingClientRect();
+        const sessionRect = session?.getBoundingClientRect();
+        const gutterProbeY = Math.max(
+          (gutterRect?.top ?? 0) + 12,
+          Math.min((sessionRect?.top ?? 0) + 96, window.innerHeight - 12),
+        );
+        const gutterProbeXs = gutterRect
+          ? [
+              gutterRect.left + Math.min(24, gutterRect.width / 2),
+              gutterRect.right - 4,
+            ]
+          : [];
+        const gutterProbeHitsAgenda = gutterProbeXs.some((x) =>
+          Boolean(
+            document
+              .elementFromPoint(x, gutterProbeY)
+              ?.closest('.agenda-session-block, .agenda-talk-card'),
+          ),
+        );
+
+        return {
+          shellWidth: Math.round(shell?.getBoundingClientRect().width ?? 0),
+          gutterWidth: Math.round(gutter?.getBoundingClientRect().width ?? 0),
+          gutterRight: Math.round(gutter?.getBoundingClientRect().right ?? 0),
+          canvasWidth: Math.round(canvas?.getBoundingClientRect().width ?? 0),
+          sessionWidth: Math.round(session?.getBoundingClientRect().width ?? 0),
+          gutterProbeHitsAgenda,
+          viewportWidth: window.innerWidth,
+        };
+      };
+      const samples = [readWidths()];
+
+      for (let index = 0; index < 20; index += 1) {
+        await new Promise<void>((resolveFrame) => {
+          window.requestAnimationFrame(() => resolveFrame());
+        });
+        samples.push(readWidths());
+      }
+
+      return samples;
+    });
+    const canvasWidths = widthSamples.map((sample) => sample.canvasWidth);
+    const shellWidths = widthSamples.map((sample) => sample.shellWidth);
+    const gutterWidths = widthSamples.map((sample) => sample.gutterWidth);
+    const gutterRights = widthSamples.map((sample) => sample.gutterRight);
+    const sessionWidths = widthSamples.map((sample) => sample.sessionWidth);
+    const viewportWidth = widthSamples[0]?.viewportWidth ?? 0;
+
+    expect(
+      Math.max(...canvasWidths) - Math.min(...canvasWidths),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.max(...shellWidths) - Math.min(...shellWidths),
+    ).toBeLessThanOrEqual(1);
+    expect(Math.max(...gutterWidths)).toBeLessThanOrEqual(90);
+    expect(
+      Math.max(...gutterRights) - Math.min(...gutterRights),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.max(...sessionWidths) - Math.min(...sessionWidths),
+    ).toBeLessThanOrEqual(1);
+    expect(Math.max(...shellWidths)).toBeGreaterThanOrEqual(
+      Math.max(Math.max(...canvasWidths), viewportWidth),
+    );
+    expect(widthSamples.some((sample) => sample.gutterProbeHitsAgenda)).toBe(
+      false,
+    );
+    expect(Math.max(...canvasWidths)).toBeGreaterThan(viewportWidth);
   } finally {
     await harness.close();
   }
