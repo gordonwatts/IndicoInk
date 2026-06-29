@@ -70,7 +70,7 @@ test('opens a CERN event with an API key from a local secret file', async () => 
       .getByRole('button', { name: 'Slides available' })
       .click();
     await harness.page
-      .getByRole('button', { name: /^Open slides for / })
+      .getByRole('button', { name: /^Open talk for / })
       .first()
       .click();
 

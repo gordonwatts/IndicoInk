@@ -1117,30 +1117,14 @@ input:focus-visible {
   gap: 20px;
 }
 
-.agenda-milestone {
-  display: grid;
-  gap: 16px;
-}
-
-.agenda-event-header {
-  display: grid;
-  gap: 4px;
-}
-
-.agenda-event-header h3 {
-  margin: 0;
-  font-size: var(--font-size-page-title);
-  line-height: var(--line-height-tight);
-}
-
-.agenda-event-header span {
-  color: var(--text-secondary);
-}
-
-.agenda-milestone-note {
+.agenda-event-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
+  padding-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-standard);
 }
 
 .agenda-controls {
@@ -1172,12 +1156,12 @@ input:focus-visible {
 
 .agenda-shell {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .agenda-shell-grid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .agenda-shell-main {
@@ -1247,6 +1231,12 @@ input:focus-visible {
   gap: 16px;
   min-width: 100%;
   width: max-content;
+}
+
+.agenda-canvas-summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-standard);
 }
 
 .agenda-canvas-scroll {
@@ -1509,6 +1499,16 @@ input:focus-visible {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.agenda-talk-card-default-deck {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-standard);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agenda-talk-card-actions {

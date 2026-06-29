@@ -266,11 +266,8 @@ describe('App', () => {
         level: 1,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', {
-        name: 'Opened Indico Event',
-      }),
-    ).toBeTruthy();
+    expect(screen.getByText('indico.example.org')).toBeTruthy();
+    expect(screen.getByText('Online only')).toBeTruthy();
   });
 
   it('prompts for an API key when the event requires private access', async () => {
@@ -349,11 +346,8 @@ describe('App', () => {
         level: 1,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', {
-        name: 'Private Indico Event',
-      }),
-    ).toBeTruthy();
+    expect(screen.getByText('indico.private.example.org')).toBeTruthy();
+    expect(screen.getByText('Online only')).toBeTruthy();
   });
 
   it('lists and deletes saved Indico API keys from Settings', async () => {
@@ -637,11 +631,6 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('heading', {
-        name: libraryEvent.title,
-      }),
-    ).toBeTruthy();
-    expect(
       screen.getByRole('button', {
         name: 'Friday, June 12, 2026',
       }),
@@ -677,7 +666,7 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Open slides for Designing a calm note-taking workflow',
+        name: 'Open talk for Designing a calm note-taking workflow',
       }),
     );
 
