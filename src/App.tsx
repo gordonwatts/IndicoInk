@@ -76,7 +76,6 @@ const destinations: Array<{
   icon: React.ComponentProps<typeof NavButton>['icon'];
 }> = [
   { id: 'library', label: 'Library', shortLabel: 'Lib', icon: 'library' },
-  { id: 'agenda', label: 'Agenda', shortLabel: 'Agenda', icon: 'agenda' },
   { id: 'search', label: 'Search', shortLabel: 'Find', icon: 'search' },
   { id: 'bookmarks', label: 'Bookmarks', shortLabel: 'Book', icon: 'bookmark' },
   {
@@ -731,10 +730,8 @@ export function App() {
   const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
-  const runtimeInfoText = info
-    ? `${info.appName} - Electron ${info.electronVersion}`
-    : 'Loading...';
-  const runtimeInfoLabel = `Runtime information: ${runtimeInfoText}`;
+  const appVersionText = info ? info.appVersion : 'Loading...';
+  const electronVersionText = info ? info.electronVersion : 'Loading...';
   const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
   const [apiKeySummaries, setApiKeySummaries] = React.useState<
     IndicoApiKeySummary[]
@@ -932,6 +929,69 @@ export function App() {
     destination === 'search' ||
     destination === 'bookmarks' ||
     destination === 'annotated';
+  const commandBarStatus =
+    destination === 'library' ? undefined : refreshState.kind === 'checking' ||
+      refreshState.kind === 'refreshing' ? (
+      <StatusLabel label={refreshState.message} tone="neutral" icon="refresh" />
+    ) : refreshState.kind === 'done' ? (
+      <StatusLabel label={refreshState.message} tone="success" icon="check" />
+    ) : refreshState.kind === 'error' ? (
+      <StatusLabel label={refreshState.message} tone="error" icon="info" />
+    ) : refreshState.kind === 'conflict' ? (
+      <StatusLabel label={refreshState.message} tone="warning" icon="info" />
+    ) : exportState.kind === 'preparing' ||
+      exportState.kind === 'rendering' ||
+      exportState.kind === 'writing' ? (
+      <StatusLabel label={exportState.label} tone="neutral" icon="info" />
+    ) : exportState.kind === 'done' ? (
+      <StatusLabel label={exportState.label} tone="success" icon="check" />
+    ) : exportState.kind === 'error' ? (
+      <StatusLabel label={exportState.label} tone="error" icon="info" />
+    ) : exportState.kind === 'empty' ? (
+      <StatusLabel label={exportState.label} tone="warning" icon="info" />
+    ) : exportState.kind === 'canceled' ? (
+      <StatusLabel label={exportState.label} tone="warning" icon="info" />
+    ) : destination === 'settings' ? (
+      <StatusLabel label="Settings" icon="settings" />
+    ) : eventFocused ? (
+      <StatusLabel label="Current event active" tone="success" icon="event" />
+    ) : undefined;
+  const commandBarActions =
+    destination === 'library' ||
+    destination === 'settings' ||
+    destination === 'slides' ? undefined : (
+      <>
+        <IconButton
+          label="Search"
+          title="Search Event"
+          icon="search"
+          onClick={() => setDestination('search')}
+        />
+        <IconButton
+          label="Refresh"
+          title="Refresh Event from Indico"
+          icon="refresh"
+          onClick={() => {
+            void handleRefreshAction();
+          }}
+          disabled={!selectedEventId}
+        />
+        <PrimaryButton
+          icon="export"
+          onClick={() => {
+            void handleExportNotes();
+          }}
+          disabled={
+            !selectedEventId ||
+            exportState.kind === 'rendering' ||
+            exportState.kind === 'writing' ||
+            exportState.kind === 'preparing'
+          }
+        >
+          Export notes
+        </PrimaryButton>
+      </>
+    );
   const activeEvent =
     libraryEvents.find((event) => event.id === selectedEventId) ?? defaultEvent;
   const selectedAgendaEvent = selectedEventId
@@ -1783,10 +1843,11 @@ export function App() {
     <div className="app-frame">
       <aside className="nav-rail" aria-label="Primary navigation">
         <div className="nav-rail-brand" aria-label="IndicoInk">
-          <div className="brand-mark">I</div>
+          <div className="brand-mark">
+            <Icon name="atom" />
+          </div>
           <div className="brand-copy">
             <span className="brand-title">IndicoInk</span>
-            <span className="brand-subtitle">V1 shell</span>
           </div>
         </div>
 
@@ -1802,11 +1863,6 @@ export function App() {
             />
           ))}
         </nav>
-
-        <div className="nav-rail-foot">
-          <span className="nav-foot-label">Current event</span>
-          <strong>{activeEvent.title}</strong>
-        </div>
       </aside>
 
       <section className="workspace">
@@ -1822,7 +1878,7 @@ export function App() {
           }
           title={
             destination === 'library'
-              ? 'Open a conference event'
+              ? 'Open an event'
               : destination === 'agenda'
                 ? 'Event agenda'
                 : destination === 'slides'
@@ -1835,70 +1891,7 @@ export function App() {
                         ? 'Annotated talks'
                         : 'Settings'
           }
-          status={
-            refreshState.kind === 'checking' ||
-            refreshState.kind === 'refreshing' ? (
-              <StatusLabel
-                label={refreshState.message}
-                tone="neutral"
-                icon="refresh"
-              />
-            ) : refreshState.kind === 'done' ? (
-              <StatusLabel
-                label={refreshState.message}
-                tone="success"
-                icon="check"
-              />
-            ) : refreshState.kind === 'error' ? (
-              <StatusLabel
-                label={refreshState.message}
-                tone="error"
-                icon="info"
-              />
-            ) : refreshState.kind === 'conflict' ? (
-              <StatusLabel
-                label={refreshState.message}
-                tone="warning"
-                icon="info"
-              />
-            ) : exportState.kind === 'preparing' ||
-              exportState.kind === 'rendering' ||
-              exportState.kind === 'writing' ? (
-              <StatusLabel
-                label={exportState.label}
-                tone="neutral"
-                icon="info"
-              />
-            ) : exportState.kind === 'done' ? (
-              <StatusLabel
-                label={exportState.label}
-                tone="success"
-                icon="check"
-              />
-            ) : exportState.kind === 'error' ? (
-              <StatusLabel label={exportState.label} tone="error" icon="info" />
-            ) : exportState.kind === 'empty' ? (
-              <StatusLabel
-                label={exportState.label}
-                tone="warning"
-                icon="info"
-              />
-            ) : exportState.kind === 'canceled' ? (
-              <StatusLabel
-                label={exportState.label}
-                tone="warning"
-                icon="info"
-              />
-            ) : eventFocused ? (
-              <StatusLabel
-                label="Current event active"
-                tone="success"
-                icon="event"
-              />
-            ) : (
-              <StatusLabel label="Library view" icon="library" />
-            )
-          }
+          status={commandBarStatus}
           leading={
             destination === 'library' ? undefined : (
               <IconButton
@@ -1912,48 +1905,7 @@ export function App() {
               />
             )
           }
-          actions={
-            destination === 'slides' ? (
-              <div className="runtime-pill" aria-label={runtimeInfoLabel}>
-                <span className="runtime-pill-value">{runtimeInfoText}</span>
-              </div>
-            ) : (
-              <>
-                <IconButton
-                  label="Search"
-                  title="Search Event"
-                  icon="search"
-                  onClick={() => setDestination('search')}
-                />
-                <IconButton
-                  label="Refresh"
-                  title="Refresh Event from Indico"
-                  icon="refresh"
-                  onClick={() => {
-                    void handleRefreshAction();
-                  }}
-                  disabled={!selectedEventId}
-                />
-                <PrimaryButton
-                  icon="export"
-                  onClick={() => {
-                    void handleExportNotes();
-                  }}
-                  disabled={
-                    !selectedEventId ||
-                    exportState.kind === 'rendering' ||
-                    exportState.kind === 'writing' ||
-                    exportState.kind === 'preparing'
-                  }
-                >
-                  Export notes
-                </PrimaryButton>
-                <div className="runtime-pill" aria-label={runtimeInfoLabel}>
-                  <span className="runtime-pill-value">{runtimeInfoText}</span>
-                </div>
-              </>
-            )
-          }
+          actions={commandBarActions}
         />
 
         <main ref={pageSurfaceRef} className="page-surface" aria-live="polite">
@@ -1961,13 +1913,9 @@ export function App() {
             <section className="page-stack">
               <div className="hero-panel">
                 <div className="hero-copy">
-                  <p className="eyebrow">Conference library</p>
-                  <h2>
-                    Open an Indico event or return to one already on disk.
-                  </h2>
+                  <h2>Open an event</h2>
                   <p className="lede">
-                    Paste a conference URL, keep invalid input visible, and open
-                    the event from one prominent touch target.
+                    Paste an Indico event URL, or reopen a recent event below.
                   </p>
                 </div>
                 <div className="hero-actions">
@@ -2038,7 +1986,6 @@ export function App() {
               <section className="surface-panel" aria-label="Recent events">
                 <div className="surface-panel-header">
                   <h3>Recently opened</h3>
-                  <p>Most recent event first.</p>
                 </div>
                 {libraryEvents.length ? (
                   <div className="event-list">
@@ -2046,7 +1993,7 @@ export function App() {
                       <EventSummaryRow
                         key={event.id}
                         event={event}
-                        selected={event.id === selectedEventId}
+                        selected={false}
                         onOpen={() => openLibraryEvent(event)}
                         onDelete={() => requestDeleteLibraryEvent(event)}
                       />
@@ -2057,8 +2004,7 @@ export function App() {
                     <Icon name="library" />
                     <strong>No saved events yet</strong>
                     <span>
-                      Open a conference event to start building the local
-                      library.
+                      Open an event to start building the local library.
                     </span>
                   </div>
                 )}
@@ -2796,6 +2742,18 @@ export function App() {
                   subtitle="Local data access."
                 >
                   <div className="settings-list">
+                    <div className="settings-row">
+                      <span>App version</span>
+                      <div className="settings-row-stack">
+                        <strong>{appVersionText}</strong>
+                      </div>
+                    </div>
+                    <div className="settings-row">
+                      <span>Electron version</span>
+                      <div className="settings-row-stack">
+                        <strong>{electronVersionText}</strong>
+                      </div>
+                    </div>
                     <div className="settings-row">
                       <span>Data folder</span>
                       <div className="settings-row-stack">
