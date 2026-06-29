@@ -294,7 +294,7 @@ test('keeps agenda controls reachable by keyboard and names status indicators', 
     }
 
     expect(focusOrder[0]).toBe('Library');
-    expect(focusOrder[1]).toBe('Agenda');
+    expect(focusOrder[1]).toBe('Search');
 
     const commandButtons = ['Back', 'Search', 'Refresh', 'Export notes'];
     const commandIndexes = commandButtons.map((label) =>

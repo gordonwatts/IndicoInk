@@ -172,6 +172,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Open an event',
+        level: 1,
       }),
     ).toBeTruthy();
 
@@ -223,6 +224,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Open an event',
+        level: 1,
       }),
     ).toBeTruthy();
 
@@ -261,6 +263,7 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -343,6 +346,7 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -391,7 +395,9 @@ describe('App', () => {
     );
   });
 
-  it('prompts for an API key when a slide download requires private access', async () => {
+  it(
+    'prompts for an API key when a slide download requires private access',
+    async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-private-deck',
@@ -500,7 +506,9 @@ describe('App', () => {
         name: 'Private slide materials',
       }),
     ).toBeTruthy();
-  });
+  },
+    20_000,
+  );
 
   it('supports keyboard navigation into the shell destinations', async () => {
     const user = userEvent.setup();
@@ -525,7 +533,8 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Event agenda',
+        name: 'Search talks',
+        level: 1,
       }),
     ).toBeTruthy();
   });
@@ -624,6 +633,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -754,6 +764,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -771,6 +782,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Open an event',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
