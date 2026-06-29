@@ -172,6 +172,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Open an event',
+        level: 1,
       }),
     ).toBeTruthy();
 
@@ -223,6 +224,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Open an event',
+        level: 1,
       }),
     ).toBeTruthy();
 
@@ -261,6 +263,7 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -343,6 +346,7 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -525,7 +529,8 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Event agenda',
+        name: 'Search talks',
+        level: 1,
       }),
     ).toBeTruthy();
   });
@@ -624,6 +629,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -754,6 +760,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Event agenda',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
@@ -771,6 +778,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', {
         name: 'Open an event',
+        level: 1,
       }),
     ).toBeTruthy();
     expect(
