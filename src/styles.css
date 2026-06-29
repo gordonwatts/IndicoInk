@@ -236,11 +236,6 @@ input:focus-visible {
   font-weight: var(--font-weight-semibold);
 }
 
-.brand-subtitle {
-  font-size: var(--font-size-supporting);
-  color: var(--text-muted);
-}
-
 .nav-group {
   display: grid;
   gap: 8px;
@@ -311,20 +306,8 @@ input:focus-visible {
   display: none;
 }
 
-.nav-rail-foot {
-  margin-top: auto;
-  padding: 16px 14px;
-  border-radius: 16px;
-  background: var(--surface-panel-strong);
-  border: 1px solid var(--border-subtle);
-  display: grid;
-  gap: 4px;
-}
-
-.nav-foot-label,
-.runtime-pill-label,
-.stat-label,
 .command-kicker,
+.stat-label,
 .surface-panel-header p,
 .event-row-meta,
 .settings-row span,
@@ -382,8 +365,7 @@ input:focus-visible {
   line-height: var(--line-height-tight);
 }
 
-.status-chip,
-.runtime-pill {
+.status-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -399,24 +381,6 @@ input:focus-visible {
 .status-chip-accent {
   background: rgba(33, 67, 116, 0.12);
   color: #17395f;
-}
-
-.runtime-pill {
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 12px;
-  min-width: 0;
-  max-width: 240px;
-  margin-left: 4px;
-  font-size: var(--font-size-supporting);
-  color: var(--text-secondary);
-}
-
-.runtime-pill-value {
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.2;
 }
 
 .icon-button,
@@ -721,7 +685,13 @@ input:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr);
   gap: 20px;
-  padding: 26px;
+  padding: 22px;
+  background: color-mix(
+    in srgb,
+    var(--surface-panel) 88%,
+    var(--surface-panel-muted)
+  );
+  box-shadow: none;
 }
 
 .hero-copy h2,
@@ -732,16 +702,8 @@ input:focus-visible {
 
 .hero-copy {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   align-content: start;
-}
-
-.eyebrow {
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: var(--font-size-supporting);
-  color: var(--text-muted);
 }
 
 .lede {
@@ -1880,8 +1842,7 @@ input:focus-visible {
   }
 
   .shell-button-label,
-  .nav-rail-brand,
-  .nav-rail-foot {
+  .nav-rail-brand {
     display: none;
   }
 
@@ -1904,10 +1865,6 @@ input:focus-visible {
 
   .command-bar-actions {
     flex-wrap: wrap;
-  }
-
-  .runtime-pill {
-    min-width: 100%;
   }
 
   .hero-panel,
@@ -1981,10 +1938,6 @@ input:focus-visible {
 
   .shell-button-short {
     display: inline;
-  }
-
-  .nav-rail-foot {
-    display: none;
   }
 
   .workspace {

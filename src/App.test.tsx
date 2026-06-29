@@ -175,7 +175,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Open a conference event',
+        name: 'Open an event',
       }),
     ).toBeTruthy();
 
@@ -185,6 +185,49 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(screen.getByText('No saved events yet')).toBeTruthy();
+    expect(screen.queryByText('V1 shell')).toBeNull();
+    expect(screen.queryByText('Current event')).toBeNull();
+    expect(screen.queryByText('Library view')).toBeNull();
+    expect(screen.queryByText('IndicoInk - Electron 42.3.2')).toBeNull();
+    expect(
+      screen.queryAllByRole('button', {
+        name: 'Refresh',
+      }),
+    ).toHaveLength(0);
+    expect(
+      screen.queryAllByRole('button', {
+        name: 'Export notes',
+      }),
+    ).toHaveLength(0);
+    expect(document.querySelectorAll('.event-list .is-selected')).toHaveLength(
+      0,
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Settings',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Application settings',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('Version')).toBeTruthy();
+    expect(screen.getByText('IndicoInk - Electron 42.3.2')).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Back',
+      }),
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Open an event',
+      }),
+    ).toBeTruthy();
 
     await user.type(
       screen.getByRole('textbox', {
@@ -730,14 +773,14 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Open a conference event',
+        name: 'Open an event',
       }),
     ).toBeTruthy();
     expect(
-      screen.getByText(libraryEvent.title, {
+      screen.queryByText(libraryEvent.title, {
         selector: '.nav-rail-foot strong',
       }),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 
   it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {
