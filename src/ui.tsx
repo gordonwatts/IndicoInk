@@ -3,6 +3,7 @@ import React from 'react';
 export type IconName =
   | 'library'
   | 'agenda'
+  | 'atom'
   | 'bookmark'
   | 'annotated'
   | 'settings'
@@ -30,6 +31,7 @@ const iconPaths: Record<IconName, string> = {
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Zm0 4h6v2H8v-2Z',
   agenda:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 1.75h8v1.5H8v-1.5Zm0 3.25h8v1.5H8v-1.5Zm0 3.25h5v1.5H8v-1.5Z',
+  atom: 'M12 10.6c-1.5 0-2.7.6-2.7 1.4s1.2 1.4 2.7 1.4 2.7-.6 2.7-1.4-1.2-1.4-2.7-1.4Zm0-3.6C8.6 7 6 8.9 6 11.8S8.6 16.5 12 16.5s6-1.8 6-4.7S15.4 7 12 7Zm0 2c2.2 0 4 .9 4 2.8s-1.8 2.8-4 2.8-4-.9-4-2.8S9.8 9 12 9Zm-4.7-2.3 1.3-1.3 8.4 8.4-1.3 1.3-8.4-8.4Zm0 8.4 8.4-8.4 1.3 1.3-8.4 8.4-1.3-1.3Z',
   bookmark:
     'M7 4.5h10A1.5 1.5 0 0 1 18.5 6v12l-6.5-3.5L5.5 18V6A1.5 1.5 0 0 1 7 4.5Zm0 2v8.15l4.5-2.43 4.5 2.43V6H7Z',
   annotated:
@@ -63,6 +65,37 @@ const iconPaths: Record<IconName, string> = {
 };
 
 export function Icon({ name }: { name: IconName }) {
+  if (name === 'atom') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="icon">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <ellipse
+            cx="12"
+            cy="12"
+            rx="8.2"
+            ry="3.8"
+            transform="rotate(45 12 12)"
+            strokeWidth="1.8"
+          />
+          <ellipse
+            cx="12"
+            cy="12"
+            rx="8.2"
+            ry="3.8"
+            transform="rotate(-45 12 12)"
+            strokeWidth="1.8"
+          />
+          <circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none" />
+        </g>
+      </svg>
+    );
+  }
+
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="icon">
       <path d={iconPaths[name]} />

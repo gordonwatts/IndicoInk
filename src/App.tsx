@@ -76,7 +76,6 @@ const destinations: Array<{
   icon: React.ComponentProps<typeof NavButton>['icon'];
 }> = [
   { id: 'library', label: 'Library', shortLabel: 'Lib', icon: 'library' },
-  { id: 'agenda', label: 'Agenda', shortLabel: 'Agenda', icon: 'agenda' },
   { id: 'search', label: 'Search', shortLabel: 'Find', icon: 'search' },
   { id: 'bookmarks', label: 'Bookmarks', shortLabel: 'Book', icon: 'bookmark' },
   {
@@ -731,10 +730,8 @@ export function App() {
   const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
-  const runtimeInfoText = info
-    ? `${info.appName} - Electron ${info.electronVersion}`
-    : 'Loading...';
-  const runtimeInfoLabel = `Runtime information: ${runtimeInfoText}`;
+  const appVersionText = info ? info.appVersion : 'Loading...';
+  const electronVersionText = info ? info.electronVersion : 'Loading...';
   const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
   const [apiKeySummaries, setApiKeySummaries] = React.useState<
     IndicoApiKeySummary[]
@@ -1846,7 +1843,9 @@ export function App() {
     <div className="app-frame">
       <aside className="nav-rail" aria-label="Primary navigation">
         <div className="nav-rail-brand" aria-label="IndicoInk">
-          <div className="brand-mark">I</div>
+          <div className="brand-mark">
+            <Icon name="atom" />
+          </div>
           <div className="brand-copy">
             <span className="brand-title">IndicoInk</span>
           </div>
@@ -2744,9 +2743,15 @@ export function App() {
                 >
                   <div className="settings-list">
                     <div className="settings-row">
-                      <span>Version</span>
+                      <span>App version</span>
                       <div className="settings-row-stack">
-                        <strong>{runtimeInfoText}</strong>
+                        <strong>{appVersionText}</strong>
+                      </div>
+                    </div>
+                    <div className="settings-row">
+                      <span>Electron version</span>
+                      <div className="settings-row-stack">
+                        <strong>{electronVersionText}</strong>
                       </div>
                     </div>
                     <div className="settings-row">

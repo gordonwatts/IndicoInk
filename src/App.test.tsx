@@ -154,14 +154,10 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Agenda',
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('button', {
         name: 'Bookmarks',
       }),
     ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Agenda' })).toBeNull();
     expect(
       within(
         screen.getByRole('navigation', { name: 'Destinations' }),
@@ -188,7 +184,6 @@ describe('App', () => {
     expect(screen.queryByText('V1 shell')).toBeNull();
     expect(screen.queryByText('Current event')).toBeNull();
     expect(screen.queryByText('Library view')).toBeNull();
-    expect(screen.queryByText('IndicoInk - Electron 42.3.2')).toBeNull();
     expect(
       screen.queryAllByRole('button', {
         name: 'Refresh',
@@ -214,8 +209,10 @@ describe('App', () => {
         name: 'Application settings',
       }),
     ).toBeTruthy();
-    expect(screen.getByText('Version')).toBeTruthy();
-    expect(screen.getByText('IndicoInk - Electron 42.3.2')).toBeTruthy();
+    expect(screen.getByText('App version')).toBeTruthy();
+    expect(screen.getByText('0.1.0')).toBeTruthy();
+    expect(screen.getByText('Electron version')).toBeTruthy();
+    expect(screen.getByText('42.3.2')).toBeTruthy();
 
     await user.click(
       screen.getByRole('button', {
@@ -520,7 +517,7 @@ describe('App', () => {
     await user.tab();
     expect(document.activeElement).toBe(
       screen.getByRole('button', {
-        name: 'Agenda',
+        name: 'Search',
       }),
     );
 
