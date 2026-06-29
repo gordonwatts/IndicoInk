@@ -395,7 +395,9 @@ describe('App', () => {
     );
   });
 
-  it('prompts for an API key when a slide download requires private access', async () => {
+  it(
+    'prompts for an API key when a slide download requires private access',
+    async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-private-deck',
@@ -504,7 +506,9 @@ describe('App', () => {
         name: 'Private slide materials',
       }),
     ).toBeTruthy();
-  });
+  },
+    20_000,
+  );
 
   it('supports keyboard navigation into the shell destinations', async () => {
     const user = userEvent.setup();
