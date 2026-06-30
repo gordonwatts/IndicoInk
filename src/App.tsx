@@ -1818,9 +1818,7 @@ export function App() {
       <section className="workspace">
         <CommandBar
           kicker={
-            destination === 'agenda'
-              ? 'Event agenda'
-              : destination === 'library'
+            destination === 'library'
                 ? 'Library'
                 : destination === 'settings'
                   ? 'Settings'

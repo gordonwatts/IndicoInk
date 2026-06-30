@@ -214,7 +214,7 @@ export function CommandBar({
       <div className="command-bar-leading">
         {leading}
         <div className="command-title-group">
-          <p className="command-kicker">{kicker}</p>
+          {kicker ? <p className="command-kicker">{kicker}</p> : null}
           <h1 className="command-title">{title}</h1>
         </div>
         {status}
