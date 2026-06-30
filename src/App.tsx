@@ -1790,7 +1790,9 @@ export function App() {
   ]);
 
   return (
-    <div className="app-frame">
+    <div
+      className={`app-frame${destination === 'agenda' ? ' is-compact-nav' : ''}`}
+    >
       <aside className="nav-rail" aria-label="Primary navigation">
         <div className="nav-rail-brand" aria-label="IndicoInk">
           <div className="brand-mark">
@@ -1818,7 +1820,9 @@ export function App() {
       <section className="workspace">
         <CommandBar
           kicker={
-            destination === 'library'
+            destination === 'agenda'
+              ? ''
+              : destination === 'library'
                 ? 'Library'
                 : destination === 'settings'
                   ? 'Settings'

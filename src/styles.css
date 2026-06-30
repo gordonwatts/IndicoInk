@@ -189,12 +189,12 @@ input:focus-visible {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   overflow: hidden;
 }
 
 .nav-rail {
-  padding: 14px 10px;
+  padding: 14px 12px;
   display: grid;
   align-content: start;
   gap: 14px;
@@ -206,7 +206,6 @@ input:focus-visible {
 .nav-rail-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
   padding: 8px 8px 6px;
 }
@@ -233,7 +232,8 @@ input:focus-visible {
 }
 
 .brand-copy {
-  display: none;
+  display: grid;
+  gap: 2px;
 }
 
 .brand-title {
@@ -299,7 +299,7 @@ input:focus-visible {
 }
 
 .shell-button-label {
-  display: none;
+  display: flex;
   align-items: center;
 }
 
@@ -308,6 +308,31 @@ input:focus-visible {
 }
 
 .shell-button-short {
+  display: none;
+}
+
+.app-frame.is-compact-nav {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
+.app-frame.is-compact-nav .nav-rail {
+  padding: 14px 10px;
+}
+
+.app-frame.is-compact-nav .nav-rail-brand {
+  justify-content: center;
+}
+
+.app-frame.is-compact-nav .brand-copy {
+  display: none;
+}
+
+.app-frame.is-compact-nav .shell-button {
+  justify-content: center;
+  padding: 0;
+}
+
+.app-frame.is-compact-nav .shell-button-label {
   display: none;
 }
 
