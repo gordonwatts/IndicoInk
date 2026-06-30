@@ -1171,6 +1171,12 @@ input:focus-visible {
   gap: 12px;
 }
 
+.agenda-day-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .agenda-day-strip {
   display: flex;
   flex-wrap: wrap;

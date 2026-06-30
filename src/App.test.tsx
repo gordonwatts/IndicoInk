@@ -633,9 +633,12 @@ describe('App', () => {
     expect(screen.getByText('2 talks shown')).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Friday, June 12, 2026',
+        name: 'Fri Jun 12',
       }),
     ).toBeTruthy();
+    expect(
+      document.querySelector('.agenda-day-summary')?.textContent,
+    ).toContain('Friday, June 12, 2026');
     expect(
       screen.getByRole('button', {
         name: 'Previous day',
@@ -1019,7 +1022,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Friday, June 12, 2026',
+        name: 'Fri Jun 12',
       }),
     ).toBeTruthy();
 
@@ -1092,7 +1095,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Saturday, June 13, 2026',
+        name: 'Sat Jun 13',
       }),
     ).toBeTruthy();
 
@@ -1111,7 +1114,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Saturday, June 13, 2026',
+        name: 'Sat Jun 13',
       }),
     ).toBeTruthy();
 
@@ -1123,7 +1126,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Saturday, June 13, 2026',
+        name: 'Sat Jun 13',
       }),
     ).toBeTruthy();
 
@@ -1141,7 +1144,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Friday, June 12, 2026',
+        name: 'Fri Jun 12',
       }),
     ).toBeTruthy();
 

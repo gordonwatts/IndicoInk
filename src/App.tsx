@@ -105,6 +105,37 @@ const filterOptions = [
   { label: 'Slides available', value: 'slides' as const },
 ];
 
+const agendaDayLabelPattern =
+  /^([A-Za-z]+),\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/;
+
+const agendaMonthShortNames: Record<string, string> = {
+  January: 'Jan',
+  February: 'Feb',
+  March: 'Mar',
+  April: 'Apr',
+  May: 'May',
+  June: 'Jun',
+  July: 'Jul',
+  August: 'Aug',
+  September: 'Sep',
+  October: 'Oct',
+  November: 'Nov',
+  December: 'Dec',
+};
+
+function formatAgendaDayTickerLabel(dayLabel: string) {
+  const match = dayLabel.match(agendaDayLabelPattern);
+
+  if (!match) {
+    return dayLabel;
+  }
+
+  const [, weekday, month, day] = match;
+  const shortMonth = agendaMonthShortNames[month] ?? month;
+
+  return `${weekday.slice(0, 3)} ${shortMonth} ${day}`;
+}
+
 type GalleryFilter = (typeof filterOptions)[number]['value'];
 
 type ExportProgressState =
@@ -2014,6 +2045,13 @@ export function App() {
                   ) : agendaTalks.length ? (
                     <div className="agenda-shell">
                       <div className="agenda-controls">
+                        <div className="agenda-day-summary">
+                          <StatusLabel
+                            label={selectedAgendaDay ?? 'No day selected'}
+                            tone="neutral"
+                            icon="event"
+                          />
+                        </div>
                         <div className="agenda-day-strip">
                           <IconButton
                             label="Previous day"
@@ -2030,8 +2068,9 @@ export function App() {
                           />
                           <SegmentedControl
                             options={agendaDayLabels.map((label) => ({
-                              label,
+                              label: formatAgendaDayTickerLabel(label),
                               value: label,
+                              title: label,
                             }))}
                             value={selectedAgendaDay ?? agendaDayLabels[0] ?? ''}
                             onChange={setAgendaDayLabel}

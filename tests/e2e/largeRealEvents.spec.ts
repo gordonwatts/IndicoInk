@@ -116,7 +116,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
 
     await harness.page
       .locator('.segmented-control-option', {
-        hasText: 'Tuesday, September 9, 2025',
+        hasText: 'Tue Sep 9',
       })
       .click();
     await harness.page.waitForTimeout(250);
@@ -222,7 +222,7 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
   try {
     await harness.page
       .locator('.segmented-control-option', {
-        hasText: 'Tuesday, September 9, 2025',
+        hasText: 'Tue Sep 9',
       })
       .click();
     await harness.page.waitForTimeout(250);
