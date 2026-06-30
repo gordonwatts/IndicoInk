@@ -262,7 +262,7 @@ describe('App', () => {
     );
     expect(
       await screen.findByRole('heading', {
-        name: 'Event agenda',
+        name: 'Opened Indico Event',
         level: 1,
       }),
     ).toBeTruthy();
@@ -342,7 +342,7 @@ describe('App', () => {
     );
     expect(
       await screen.findByRole('heading', {
-        name: 'Event agenda',
+        name: 'Private Indico Event',
         level: 1,
       }),
     ).toBeTruthy();
@@ -626,10 +626,11 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Event agenda',
+        name: libraryEvent.title,
         level: 1,
       }),
     ).toBeTruthy();
+    expect(screen.getByText('2 talks shown')).toBeTruthy();
     expect(
       screen.getByRole('button', {
         name: 'Friday, June 12, 2026',
@@ -752,7 +753,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Event agenda',
+        name: libraryEvent.title,
         level: 1,
       }),
     ).toBeTruthy();

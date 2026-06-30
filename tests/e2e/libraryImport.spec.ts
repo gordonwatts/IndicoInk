@@ -38,11 +38,7 @@ test('imports a fixture event and shows it after restart', async () => {
 
   await row.click();
 
-  await expect(
-    harness.page.getByRole('heading', {
-      name: 'Event agenda',
-    }),
-  ).toBeVisible();
+    await expect(harness.page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(
     harness.page.getByRole('heading', {
       name: 'IndicoInk Small Event 2026',

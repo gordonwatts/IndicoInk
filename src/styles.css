@@ -629,7 +629,11 @@ input:focus-visible {
   gap: 8px;
   padding: 6px;
   border-radius: var(--radius-pill);
-  background: var(--surface-panel-muted);
+  background: color-mix(
+    in srgb,
+    var(--surface-panel) 82%,
+    var(--surface-panel-muted)
+  );
   border: 1px solid var(--border-subtle);
 }
 
@@ -638,13 +642,23 @@ input:focus-visible {
   padding: 0 14px;
   border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
 .segmented-control-option.is-selected {
-  background: var(--surface-elevated);
-  box-shadow: 0 8px 18px rgba(36, 46, 61, 0.06);
+  background: linear-gradient(
+    180deg,
+    var(--surface-accent) 0%,
+    var(--surface-accent-strong) 100%
+  );
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  border: 1px solid color-mix(in srgb, var(--surface-accent) 24%, transparent);
+  box-shadow:
+    0 10px 18px rgba(36, 46, 61, 0.24),
+    inset 0 0 0 1px color-mix(in srgb, white 12%, transparent);
 }
 
 .status-label {
@@ -1231,12 +1245,6 @@ input:focus-visible {
   gap: 16px;
   min-width: 100%;
   width: max-content;
-}
-
-.agenda-canvas-summary {
-  color: var(--text-secondary);
-  font-size: var(--font-size-supporting);
-  line-height: var(--line-height-standard);
 }
 
 .agenda-canvas-scroll {

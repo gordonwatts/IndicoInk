@@ -32,11 +32,11 @@ async function openLargeAgenda() {
     })
     .click();
 
-  await expect(
-    harness.page.getByRole('heading', {
-      name: 'Event agenda',
-    }),
-  ).toBeVisible();
+    await expect(
+      harness.page.getByRole('heading', {
+        name: 'IndicoInk Grand Symposium 2026',
+      }),
+    ).toBeVisible();
   await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
 
   return harness;
@@ -75,11 +75,11 @@ async function openLargeAgendaWithCachedDeck() {
     })
     .click();
 
-  await expect(
-    harness.page.getByRole('heading', {
-      name: 'Event agenda',
-    }),
-  ).toBeVisible();
+    await expect(
+      harness.page.getByRole('heading', {
+        name: 'IndicoInk Grand Symposium 2026',
+      }),
+    ).toBeVisible();
   await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
 
   return harness;

@@ -27,11 +27,7 @@ async function openAcceptanceTalk(page: import('@playwright/test').Page) {
     })
     .click();
 
-  await expect(
-    page.getByRole('heading', {
-      name: 'Event agenda',
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(
     page.getByText('Cached for offline use', {
       exact: false,

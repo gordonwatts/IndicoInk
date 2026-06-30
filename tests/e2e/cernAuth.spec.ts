@@ -32,9 +32,7 @@ test('opens a CERN event with an API key from a local secret file', async () => 
     const privateEventPrompt = harness.page.getByRole('heading', {
       name: 'Private event',
     });
-    const agendaHeading = harness.page.getByRole('heading', {
-      name: 'Event agenda',
-    });
+    const agendaHeading = harness.page.getByRole('heading', { level: 1 });
 
     await expect(privateEventPrompt).toBeVisible({ timeout: 30_000 });
 

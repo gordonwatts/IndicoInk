@@ -455,13 +455,6 @@ function AgendaTimelineCanvas({
 
   return (
     <div className="agenda-canvas-shell">
-      <div className="agenda-canvas-summary">
-        <span>
-          {visibleAgendaTalks.length}{' '}
-          {visibleAgendaTalks.length === 1 ? 'talk shown' : 'talks shown'}
-        </span>
-      </div>
-
       <div className="agenda-canvas-scroll" aria-label="Agenda day canvas">
         <div
           className="agenda-time-gutter-mask"
@@ -990,15 +983,6 @@ export function App() {
     visibleAgendaTalks.find((talk) => talk.id === selectedAgendaTalkId) ??
     visibleAgendaTalks[0] ??
     null;
-  const agendaEventSummaryParts = selectedAgendaEvent
-    ? [
-        selectedAgendaEvent.host,
-        selectedAgendaEvent.cacheStatus,
-        selectedAgendaEvent.annotationSummary !== '0 annotated slides'
-          ? selectedAgendaEvent.annotationSummary
-          : null,
-      ].filter((part): part is string => Boolean(part))
-    : [];
   const agendaMaterialsTalk =
     visibleAgendaTalks.find((talk) => talk.id === agendaMaterialsTalkId) ??
     null;
@@ -1834,19 +1818,21 @@ export function App() {
       <section className="workspace">
         <CommandBar
           kicker={
-            destination === 'library'
-              ? 'Library'
-              : destination === 'settings'
-                ? 'Settings'
-                : destination === 'slides'
-                  ? (selectedAgendaTalk?.title ?? activeEvent.title)
-                  : activeEvent.title
+            destination === 'agenda'
+              ? 'Event agenda'
+              : destination === 'library'
+                ? 'Library'
+                : destination === 'settings'
+                  ? 'Settings'
+                  : destination === 'slides'
+                    ? (selectedAgendaTalk?.title ?? activeEvent.title)
+                    : activeEvent.title
           }
           title={
-            destination === 'library'
-              ? 'Open an event'
-              : destination === 'agenda'
-                ? 'Event agenda'
+            destination === 'agenda'
+              ? activeEvent.title
+              : destination === 'library'
+                ? 'Open an event'
                 : destination === 'slides'
                   ? 'Slide Notes'
                   : destination === 'search'
@@ -1983,9 +1969,31 @@ export function App() {
               {selectedAgendaEvent ? (
                 <>
                   <div className="agenda-event-summary">
-                    {agendaEventSummaryParts.map((part) => (
-                      <span key={part}>{part}</span>
-                    ))}
+                    <StatusLabel
+                      label={selectedAgendaEvent.host}
+                      tone="neutral"
+                      icon="info"
+                    />
+                    <StatusLabel
+                      label={selectedAgendaEvent.cacheStatus}
+                      tone="success"
+                      icon="check"
+                    />
+                    <StatusLabel
+                      label={`${agendaTalks.length} ${
+                        agendaTalks.length === 1 ? 'talk shown' : 'talks shown'
+                      }`}
+                      tone="neutral"
+                      icon="agenda"
+                    />
+                    {selectedAgendaEvent.annotationSummary !==
+                    '0 annotated slides' ? (
+                      <StatusLabel
+                        label={selectedAgendaEvent.annotationSummary}
+                        tone="warning"
+                        icon="annotated"
+                      />
+                    ) : null}
                   </div>
                   {agendaTalksLoading ? (
                     <div className="empty-state agenda-empty-state">
