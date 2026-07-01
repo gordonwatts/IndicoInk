@@ -904,7 +904,7 @@ describe('App', () => {
     );
   });
 
-  it('preserves the approximate scroll position for each agenda day', async () => {
+  it('scrolls the agenda to the top when switching days', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-1',
@@ -1104,7 +1104,7 @@ describe('App', () => {
     expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
       expect.objectContaining({
         behavior: 'auto',
-        top: expect.any(Number),
+        top: 0,
       }),
     );
 
@@ -1153,7 +1153,7 @@ describe('App', () => {
     expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
       expect.objectContaining({
         behavior: 'auto',
-        top: expect.any(Number),
+        top: 0,
       }),
     );
     expect(

@@ -795,7 +795,6 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
-  const agendaScrollPositionsRef = React.useRef<Record<string, number>>({});
   const agendaScrollFrameRef = React.useRef<number | null>(null);
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
@@ -1033,10 +1032,6 @@ export function App() {
 
     return matchesDay && matchesFilter;
   });
-  const visibleAgendaTalksLayoutDefaultScrollTop = React.useMemo(
-    () => getAgendaDefaultScrollTop(visibleAgendaTalks),
-    [visibleAgendaTalks],
-  );
   const bookmarkedAgendaTalks = agendaTalks.filter((talk) => talk.bookmarked);
   const annotatedAgendaTalks = agendaTalks.filter(
     (talk) => talk.annotatedSlideCount > 0,
@@ -1778,31 +1773,13 @@ export function App() {
 
   React.useEffect(() => {
     if (destination !== 'agenda' || !selectedEventId) {
-      if (agendaScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(agendaScrollFrameRef.current);
-        agendaScrollFrameRef.current = null;
-      }
-
       return undefined;
     }
 
-    const scrollKey = `${selectedEventId}:${selectedAgendaDay ?? '__all__'}`;
-    const targetScrollTop =
-      agendaScrollPositionsRef.current[scrollKey] ??
-      visibleAgendaTalksLayoutDefaultScrollTop;
     const scrollContainer = pageSurfaceRef.current;
-    const agendaCanvasMeasure = agendaCanvasMeasureRef.current;
-    if (!scrollContainer || !agendaCanvasMeasure) {
+    if (!scrollContainer) {
       return undefined;
     }
-    const getAgendaCanvasTopOffset = () => {
-      const scrollContainerRect = scrollContainer.getBoundingClientRect();
-      const canvasRect = agendaCanvasMeasure.getBoundingClientRect();
-
-      return (
-        scrollContainer.scrollTop + (canvasRect.top - scrollContainerRect.top)
-      );
-    };
     const scheduleScrollRestoration =
       window.requestAnimationFrame ??
       ((callback: FrameRequestCallback) =>
@@ -1815,33 +1792,18 @@ export function App() {
     }
 
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
-      const targetPageScrollTop = getAgendaCanvasTopOffset() + targetScrollTop;
       if (typeof scrollContainer.scrollTo === 'function') {
         scrollContainer.scrollTo({
-          top: targetPageScrollTop,
+          top: 0,
           behavior: 'auto',
         });
       } else {
-        scrollContainer.scrollTop = targetPageScrollTop;
+        scrollContainer.scrollTop = 0;
       }
       agendaScrollFrameRef.current = null;
     });
 
-    const captureScrollPosition = () => {
-      agendaScrollPositionsRef.current[scrollKey] = Math.max(
-        0,
-        scrollContainer.scrollTop - getAgendaCanvasTopOffset(),
-      );
-    };
-
-    scrollContainer.addEventListener('scroll', captureScrollPosition, {
-      passive: true,
-    });
-
     return () => {
-      scrollContainer.removeEventListener('scroll', captureScrollPosition);
-      captureScrollPosition();
-
       if (agendaScrollFrameRef.current !== null) {
         cancelScrollRestoration(agendaScrollFrameRef.current);
         agendaScrollFrameRef.current = null;
@@ -1851,8 +1813,6 @@ export function App() {
     destination,
     selectedEventId,
     selectedAgendaDay,
-    agendaTalks.length,
-    visibleAgendaTalksLayoutDefaultScrollTop,
   ]);
 
   return (
