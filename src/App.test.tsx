@@ -262,15 +262,12 @@ describe('App', () => {
     );
     expect(
       await screen.findByRole('heading', {
-        name: 'Event agenda',
+        name: 'Opened Indico Event',
         level: 1,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', {
-        name: 'Opened Indico Event',
-      }),
-    ).toBeTruthy();
+    expect(screen.getByText('indico.example.org')).toBeTruthy();
+    expect(screen.getByText('Online only')).toBeTruthy();
   });
 
   it('prompts for an API key when the event requires private access', async () => {
@@ -345,15 +342,12 @@ describe('App', () => {
     );
     expect(
       await screen.findByRole('heading', {
-        name: 'Event agenda',
+        name: 'Private Indico Event',
         level: 1,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', {
-        name: 'Private Indico Event',
-      }),
-    ).toBeTruthy();
+    expect(screen.getByText('indico.private.example.org')).toBeTruthy();
+    expect(screen.getByText('Online only')).toBeTruthy();
   });
 
   it('lists and deletes saved Indico API keys from Settings', async () => {
@@ -632,18 +626,19 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Event agenda',
+        name: libraryEvent.title,
         level: 1,
       }),
     ).toBeTruthy();
+    expect(screen.getByText('2 talks shown')).toBeTruthy();
     expect(
-      screen.getByRole('heading', {
-        name: libraryEvent.title,
+      screen.getByRole('button', {
+        name: 'Fri Jun 12',
       }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('button', {
-        name: 'Friday, June 12, 2026',
+      screen.getByText('Jun 12, 2026', {
+        selector: '.command-title-meta',
       }),
     ).toBeTruthy();
     expect(
@@ -677,7 +672,7 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Open slides for Designing a calm note-taking workflow',
+        name: 'Open talk for Designing a calm note-taking workflow',
       }),
     );
 
@@ -763,7 +758,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Event agenda',
+        name: libraryEvent.title,
         level: 1,
       }),
     ).toBeTruthy();
@@ -909,7 +904,7 @@ describe('App', () => {
     );
   });
 
-  it('preserves the approximate scroll position for each agenda day', async () => {
+  it('scrolls the agenda to the top when switching days', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-1',
@@ -1029,7 +1024,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Friday, June 12, 2026',
+        name: 'Fri Jun 12',
       }),
     ).toBeTruthy();
 
@@ -1102,14 +1097,14 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Saturday, June 13, 2026',
+        name: 'Sat Jun 13',
       }),
     ).toBeTruthy();
 
     expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
       expect.objectContaining({
         behavior: 'auto',
-        top: expect.any(Number),
+        top: 0,
       }),
     );
 
@@ -1121,7 +1116,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Saturday, June 13, 2026',
+        name: 'Sat Jun 13',
       }),
     ).toBeTruthy();
 
@@ -1133,7 +1128,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Saturday, June 13, 2026',
+        name: 'Sat Jun 13',
       }),
     ).toBeTruthy();
 
@@ -1151,14 +1146,14 @@ describe('App', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Friday, June 12, 2026',
+        name: 'Fri Jun 12',
       }),
     ).toBeTruthy();
 
     expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
       expect.objectContaining({
         behavior: 'auto',
-        top: expect.any(Number),
+        top: 0,
       }),
     );
     expect(

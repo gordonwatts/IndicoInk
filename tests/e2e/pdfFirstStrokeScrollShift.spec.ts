@@ -47,9 +47,7 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
       .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
       .click();
 
-    await expect(
-      harness.page.getByRole('heading', { name: 'Event agenda' }),
-    ).toBeVisible();
+    await expect(harness.page.getByRole('heading', { level: 1 })).toBeVisible();
 
     await harness.page
       .getByRole('button', {
