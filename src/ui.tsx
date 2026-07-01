@@ -199,12 +199,14 @@ export function PrimaryButton({
 export function CommandBar({
   kicker,
   title,
+  titleMeta,
   status,
   leading,
   actions,
 }: {
   kicker: string;
   title: string;
+  titleMeta?: React.ReactNode;
   status: React.ReactNode;
   leading?: React.ReactNode;
   actions?: React.ReactNode;
@@ -215,7 +217,12 @@ export function CommandBar({
         {leading}
         <div className="command-title-group">
           {kicker ? <p className="command-kicker">{kicker}</p> : null}
-          <h1 className="command-title">{title}</h1>
+          <div className="command-title-row">
+            <h1 className="command-title">{title}</h1>
+            {titleMeta ? (
+              <span className="command-title-meta">{titleMeta}</span>
+            ) : null}
+          </div>
         </div>
         {status}
       </div>

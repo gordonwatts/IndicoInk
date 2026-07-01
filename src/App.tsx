@@ -136,6 +136,41 @@ function formatAgendaDayTickerLabel(dayLabel: string) {
   return `${weekday.slice(0, 3)} ${shortMonth} ${day}`;
 }
 
+function formatAgendaDateRangeLabel(dates: string) {
+  const normalized = dates.trim();
+  const match = normalized.match(
+    /^([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?(?:\s*-\s*([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?)?$/,
+  );
+
+  if (!match) {
+    return normalized;
+  }
+
+  const [, startMonth, startDay, startYear, endMonth, endDay, endYear] = match;
+  const shortStartMonth = agendaMonthShortNames[startMonth] ?? startMonth;
+  const shortEndMonth = endMonth
+    ? agendaMonthShortNames[endMonth] ?? endMonth
+    : shortStartMonth;
+  const resolvedStartYear = startYear ?? endYear ?? '';
+  const resolvedEndYear = endYear ?? startYear ?? '';
+
+  if (!endMonth || !endDay) {
+    return resolvedStartYear
+      ? `${shortStartMonth} ${startDay}, ${resolvedStartYear}`
+      : `${shortStartMonth} ${startDay}`;
+  }
+
+  if (resolvedStartYear && resolvedEndYear && resolvedStartYear !== resolvedEndYear) {
+    return `${shortStartMonth} ${startDay}, ${resolvedStartYear} - ${shortEndMonth} ${endDay}, ${resolvedEndYear}`;
+  }
+
+  if (resolvedStartYear) {
+    return `${shortStartMonth} ${startDay}-${shortEndMonth} ${endDay}, ${resolvedStartYear}`;
+  }
+
+  return `${shortStartMonth} ${startDay}-${shortEndMonth} ${endDay}`;
+}
+
 type GalleryFilter = (typeof filterOptions)[number]['value'];
 
 type ExportProgressState =
@@ -1874,7 +1909,12 @@ export function App() {
                       ? 'Bookmarks'
                       : destination === 'annotated'
                         ? 'Annotated talks'
-                        : 'Settings'
+                    : 'Settings'
+          }
+          titleMeta={
+            destination === 'agenda'
+              ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
+              : undefined
           }
           status={commandBarStatus}
           leading={
@@ -2045,13 +2085,6 @@ export function App() {
                   ) : agendaTalks.length ? (
                     <div className="agenda-shell">
                       <div className="agenda-controls">
-                        <div className="agenda-day-summary">
-                          <StatusLabel
-                            label={selectedAgendaDay ?? 'No day selected'}
-                            tone="neutral"
-                            icon="event"
-                          />
-                        </div>
                         <div className="agenda-day-strip">
                           <IconButton
                             label="Previous day"

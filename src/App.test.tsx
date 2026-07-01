@@ -637,8 +637,10 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      document.querySelector('.agenda-day-summary')?.textContent,
-    ).toContain('Friday, June 12, 2026');
+      screen.getByText('Jun 12, 2026', {
+        selector: '.command-title-meta',
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole('button', {
         name: 'Previous day',

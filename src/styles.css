@@ -395,6 +395,19 @@ input:focus-visible {
   line-height: var(--line-height-tight);
 }
 
+.command-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.command-title-meta {
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-standard);
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;
@@ -1169,12 +1182,6 @@ input:focus-visible {
 .agenda-controls {
   display: grid;
   gap: 12px;
-}
-
-.agenda-day-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .agenda-day-strip {
