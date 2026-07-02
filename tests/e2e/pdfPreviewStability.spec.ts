@@ -126,13 +126,15 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       return {
         pageSurfaceTop: pageSurfaceBox?.top ?? 0,
         toolbarTop: toolbarBox?.top ?? 0,
+        toolbarHeight: toolbarBox?.height ?? 0,
         scrollTop: pageSurface?.scrollTop ?? 0,
       };
     });
     expect(stickyToolbarSample.scrollTop).toBeGreaterThan(0);
     expect(
       Math.abs(stickyToolbarSample.toolbarTop - stickyToolbarSample.pageSurfaceTop),
-    ).toBeLessThanOrEqual(18);
+    ).toBeLessThanOrEqual(4);
+    expect(stickyToolbarSample.toolbarHeight).toBeLessThanOrEqual(48);
 
     await harness.page.getByRole('button', { name: 'Home' }).click();
     await harness.page.waitForFunction(() => {

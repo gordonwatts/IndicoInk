@@ -472,8 +472,8 @@ input:focus-visible {
 }
 
 .page-surface.is-slides-view {
-  padding-top: 12px;
-  padding-bottom: 18px;
+  padding-top: 0;
+  padding-bottom: 12px;
 }
 
 .page-stack {
@@ -483,19 +483,19 @@ input:focus-visible {
 }
 
 .page-stack--slides {
-  gap: 12px;
+  gap: 6px;
 }
 
 .slides-view-controls {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 
 .slides-view-controls-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .slides-view-controls-status {
@@ -851,16 +851,17 @@ input:focus-visible {
 
 .pdf-preview {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .pdf-preview-toolbar {
   display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 16px;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 0 0 12px 12px;
   background: var(--surface-panel-strong);
   border: 1px solid var(--border-subtle);
+  border-top: 0;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -870,14 +871,29 @@ input:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .pdf-preview-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
+}
+
+.pdf-preview-toolbar .icon-button {
+  width: 36px;
+  min-height: 36px;
+  border-radius: 10px;
+}
+
+.pdf-preview-toolbar .segmented-control {
+  padding: 2px;
+}
+
+.pdf-preview-toolbar .segmented-control-option {
+  min-height: 32px;
+  padding: 0 14px;
 }
 
 .pdf-preview-toolbar-zoom {
@@ -901,9 +917,9 @@ input:focus-visible {
 
 .pdf-preview-navigator {
   display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 16px;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
   background: var(--surface-panel-strong);
   border: 1px solid var(--border-subtle);
 }
@@ -1010,10 +1026,10 @@ input:focus-visible {
   position: relative;
   min-height: clamp(260px, 48vh, 560px);
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
   justify-items: center;
-  padding: 12px;
+  padding: 6px;
   overflow: visible;
   border-radius: 16px;
   background: var(--surface-panel-muted);
