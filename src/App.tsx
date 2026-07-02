@@ -130,7 +130,13 @@ function formatAgendaDayTickerLabel(dayLabel: string) {
     return dayLabel;
   }
 
-  const [, weekday, month, day] = match;
+  const weekday = match[1];
+  const month = match[2];
+  const day = match[3];
+  if (!weekday || !month || !day) {
+    return dayLabel;
+  }
+
   const shortMonth = agendaMonthShortNames[month] ?? month;
 
   return `${weekday.slice(0, 3)} ${shortMonth} ${day}`;
@@ -146,7 +152,16 @@ function formatAgendaDateRangeLabel(dates: string) {
     return normalized;
   }
 
-  const [, startMonth, startDay, startYear, endMonth, endDay, endYear] = match;
+  const startMonth = match[1];
+  const startDay = match[2];
+  const startYear = match[3];
+  const endMonth = match[4];
+  const endDay = match[5];
+  const endYear = match[6];
+  if (!startMonth || !startDay) {
+    return normalized;
+  }
+
   const shortStartMonth = agendaMonthShortNames[startMonth] ?? startMonth;
   const shortEndMonth = endMonth
     ? agendaMonthShortNames[endMonth] ?? endMonth
