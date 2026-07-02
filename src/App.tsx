@@ -371,22 +371,6 @@ function getAgendaTalkPrimaryAction(talk: AgendaTalkSummary) {
   };
 }
 
-function getAgendaDefaultScrollTop(visibleAgendaTalks: AgendaTalkSummary[]) {
-  const layout = buildAgendaCanvasLayout(visibleAgendaTalks);
-  const firstSessionBlock = layout.columns.find(
-    (block) => !block.spanFullWidth,
-  );
-  if (!firstSessionBlock) {
-    return 0;
-  }
-
-  const firstTalkTopPx =
-    firstSessionBlock.talkPlacements[0]?.topPx ??
-    firstSessionBlock.trackHeightPx;
-
-  return Math.max(0, firstSessionBlock.blockTopPx + firstTalkTopPx - 24);
-}
-
 function formatMaterialLabel(material: AgendaTalkMaterialSummary) {
   if (material.mimeType === 'application/pdf') {
     const pageLabel =
@@ -946,12 +930,6 @@ export function App() {
     void refreshIndicoApiKeys();
   }, [refreshIndicoApiKeys]);
 
-  const eventFocused =
-    destination === 'agenda' ||
-    destination === 'slides' ||
-    destination === 'search' ||
-    destination === 'bookmarks' ||
-    destination === 'annotated';
   const commandBarStatus =
     destination === 'library' ? undefined : refreshState.kind === 'checking' ||
       refreshState.kind === 'refreshing' ? (
