@@ -105,6 +105,41 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       .boundingBox();
     expect(firstCanvasBox).not.toBeNull();
     expect(firstCanvasBox?.y ?? 0).toBeLessThan(720);
+
+    await harness.page.evaluate(() => {
+      const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+      if (!pageSurface) {
+        return;
+      }
+
+      pageSurface.scrollTop = Math.max(pageSurface.scrollTop, 680);
+      pageSurface.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await harness.page.waitForTimeout(100);
+
+    const stickyToolbarSample = await harness.page.evaluate(() => {
+      const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+      const toolbar = document.querySelector<HTMLElement>('.pdf-preview-toolbar');
+      const pageSurfaceBox = pageSurface?.getBoundingClientRect();
+      const toolbarBox = toolbar?.getBoundingClientRect();
+
+      return {
+        pageSurfaceTop: pageSurfaceBox?.top ?? 0,
+        toolbarTop: toolbarBox?.top ?? 0,
+        scrollTop: pageSurface?.scrollTop ?? 0,
+      };
+    });
+    expect(stickyToolbarSample.scrollTop).toBeGreaterThan(0);
+    expect(
+      Math.abs(stickyToolbarSample.toolbarTop - stickyToolbarSample.pageSurfaceTop),
+    ).toBeLessThanOrEqual(18);
+
+    await harness.page.getByRole('button', { name: 'Home' }).click();
+    await harness.page.waitForFunction(() => {
+      const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+      return (pageSurface?.scrollTop ?? 0) === 0;
+    });
+
     const visibleIncompleteFrames = await harness.page.evaluate(() => {
       const state = window as typeof window & {
         __pdfPreviewVisibleIncompleteFrames?: number;

@@ -835,7 +835,7 @@ input:focus-visible {
   background: var(--surface-panel-strong);
   border: 1px solid var(--border-subtle);
   position: sticky;
-  top: 12px;
+  top: 0;
   z-index: 2;
 }
 

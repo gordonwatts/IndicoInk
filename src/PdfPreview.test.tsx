@@ -1,4 +1,6 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PdfPreview } from './PdfPreview';
@@ -42,6 +44,48 @@ describe('PdfPreview', () => {
     expect(screen.queryByText('Jump to slide')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Go' })).toBeNull();
     expect(onSlideMetricsChange).toHaveBeenCalledWith({
+      currentSlideNumber: 1,
+      currentPageCount: 0,
+    });
+  });
+
+  it('returns to the first slide from the home control', async () => {
+    const onSlideMetricsChange = vi.fn();
+    const scrollTo = vi.fn(function scrollToMock(
+      this: HTMLElement,
+      options?: ScrollToOptions,
+    ) {
+      this.scrollTop = options?.top ?? 0;
+      this.scrollLeft = options?.left ?? 0;
+    });
+    const scrollContainer = document.createElement('div');
+    Object.defineProperty(scrollContainer, 'scrollTo', {
+      value: scrollTo,
+      configurable: true,
+    });
+    const scrollContainerRef = {
+      current: scrollContainer,
+    } as React.RefObject<HTMLElement>;
+
+    const user = userEvent.setup();
+
+    render(
+      <PdfPreview
+        filePath={null}
+        title="Compact test"
+        onSlideMetricsChange={onSlideMetricsChange}
+        scrollContainerRef={scrollContainerRef}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Home' }));
+
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      left: 0,
+      behavior: 'smooth',
+    });
+    expect(onSlideMetricsChange).toHaveBeenLastCalledWith({
       currentSlideNumber: 1,
       currentPageCount: 0,
     });

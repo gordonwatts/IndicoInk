@@ -798,6 +798,20 @@ export function PdfPreview({
     setCurrentSlideNumber(pageNumber);
   }, []);
 
+  const handleGoHome = React.useCallback(() => {
+    const scrollContainer = getScrollViewportElement(scrollContainerRef);
+    if (scrollContainer) {
+      scrollContainer.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: 'smooth',
+      });
+    }
+
+    currentSlideNumberRef.current = 1;
+    setCurrentSlideNumber(1);
+  }, [scrollContainerRef]);
+
   const schedulePersistenceSave = React.useCallback(() => {
     if (
       !filePath ||
@@ -1487,6 +1501,12 @@ export function PdfPreview({
       <div className="pdf-preview-toolbar" aria-label="Annotation toolbar">
         <div className="pdf-preview-toolbar-row">
           <div className="pdf-preview-toolbar-actions">
+            <IconButton
+              label="Home"
+              icon="home"
+              title="Go to Slide 1"
+              onClick={handleGoHome}
+            />
             <IconButton
               label="Pen"
               icon="pen"
