@@ -794,7 +794,7 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
-  const [slideViewerMetrics, setSlideViewerMetrics] = React.useState<{
+  const [, setSlideViewerMetrics] = React.useState<{
     currentSlideNumber: number;
     currentPageCount: number;
   }>({ currentSlideNumber: 1, currentPageCount: 0 });
@@ -965,11 +965,6 @@ export function App() {
     slideViewerState.kind === 'closed' ? null : slideViewerState.talkId;
   const activeSlideDeckId =
     slideViewerState.kind === 'closed' ? null : slideViewerState.deckId;
-  const activeSlideMetricsLabel =
-    slideViewerMetrics.currentPageCount > 0
-      ? `${slideViewerMetrics.currentSlideNumber} / ${slideViewerMetrics.currentPageCount} slides`
-      : '';
-
   const commandBarStatus =
     destination === 'slides' ? (
       activeSlideDownloadStatus?.kind === 'downloading' ? (
@@ -1641,9 +1636,6 @@ export function App() {
       }
     }
   };
-  const handleBackFromSlides = () => {
-    setDestination('agenda');
-  };
   const openLibraryEvent = (event: EventSummary) => {
     setSelectedEventId(event.id);
     setDestination('agenda');
@@ -1958,31 +1950,25 @@ export function App() {
                   ? 'Library'
                   : destination === 'settings'
                     ? 'Settings'
-                    : destination === 'slides'
-                      ? (selectedAgendaTalk?.title ?? activeEvent.title)
-                      : activeEvent.title
+                    : activeEvent.title
             }
             title={
               destination === 'agenda'
                 ? activeEvent.title
                 : destination === 'library'
                   ? 'Open an event'
-                  : destination === 'slides'
-                    ? 'Slide Notes'
-                    : destination === 'search'
-                      ? 'Search talks'
-                      : destination === 'bookmarks'
-                        ? 'Bookmarks'
-                        : destination === 'annotated'
-                          ? 'Annotated talks'
+                  : destination === 'search'
+                    ? 'Search talks'
+                    : destination === 'bookmarks'
+                      ? 'Bookmarks'
+                      : destination === 'annotated'
+                        ? 'Annotated talks'
                         : 'Settings'
             }
             titleMeta={
-              destination === 'slides'
-                ? activeSlideMetricsLabel
-                : destination === 'agenda'
-                  ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
-                  : undefined
+              destination === 'agenda'
+                ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
+                : undefined
             }
             status={commandBarStatus}
             leading={
@@ -1990,11 +1976,7 @@ export function App() {
                 <IconButton
                   label="Back"
                   icon="back"
-                  onClick={() =>
-                    setDestination(
-                      destination === 'slides' ? 'agenda' : 'library',
-                    )
-                  }
+                  onClick={() => setDestination('library')}
                 />
               )
             }

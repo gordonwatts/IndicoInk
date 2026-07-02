@@ -1140,7 +1140,6 @@ export function PdfPreview({
             activeInkAction.pageIndex === pageIndex
           ) {
             setCurrentSlideNumber(pageIndex + 1);
-            setJumpToSlideValue(String(pageIndex + 1));
           }
 
           if (pointerMarker?.pageIndex === pageIndex) {
