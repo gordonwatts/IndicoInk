@@ -471,10 +471,37 @@ input:focus-visible {
   overflow-anchor: none;
 }
 
+.page-surface.is-slides-view {
+  padding-top: 12px;
+  padding-bottom: 18px;
+}
+
 .page-stack {
   display: grid;
   gap: 20px;
   align-content: start;
+}
+
+.page-stack--slides {
+  gap: 12px;
+}
+
+.slides-view-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.slides-view-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.slides-view-controls-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .gallery-grid {
@@ -824,13 +851,13 @@ input:focus-visible {
 
 .pdf-preview {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .pdf-preview-toolbar {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px 12px;
   border-radius: 16px;
   background: var(--surface-panel-strong);
   border: 1px solid var(--border-subtle);
@@ -843,13 +870,13 @@ input:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .pdf-preview-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
 }
 
@@ -874,8 +901,8 @@ input:focus-visible {
 
 .pdf-preview-navigator {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px 12px;
   border-radius: 16px;
   background: var(--surface-panel-strong);
   border: 1px solid var(--border-subtle);
@@ -886,7 +913,7 @@ input:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
   list-style: none;
 }
@@ -899,7 +926,7 @@ input:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-supporting);
@@ -936,14 +963,14 @@ input:focus-visible {
 .pdf-preview-navigator-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .pdf-preview-navigator-item {
   display: grid;
-  gap: 6px;
-  min-height: 44px;
-  padding: 10px 12px;
+  gap: 4px;
+  min-height: 40px;
+  padding: 8px 10px;
   border-radius: 14px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-panel-muted);

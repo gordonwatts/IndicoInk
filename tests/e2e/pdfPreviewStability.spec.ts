@@ -92,12 +92,12 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
         window.cancelAnimationFrame(frameId);
       };
     });
+    await expect(harness.page.getByRole('button', { name: 'Home' })).toBeVisible(
+      { timeout: 30_000 },
+    );
     await expect(
-      harness.page.getByText('Designing a calm note-taking workflow'),
-    ).toBeVisible();
-    await expect(harness.page.getByText('1 / 3 slides')).toBeVisible({
-      timeout: 30_000,
-    });
+      harness.page.getByRole('heading', { name: 'Slide Notes' }),
+    ).toHaveCount(0);
     await harness.page.waitForTimeout(750);
     const firstCanvasBox = await harness.page
       .locator('.pdf-preview-canvas')

@@ -1949,58 +1949,64 @@ export function App() {
       </aside>
 
       <section className="workspace">
-        <CommandBar
-          kicker={
-            destination === 'agenda'
-              ? ''
-              : destination === 'library'
-                ? 'Library'
-                : destination === 'settings'
-                  ? 'Settings'
+        {destination === 'slides' ? null : (
+          <CommandBar
+            kicker={
+              destination === 'agenda'
+                ? ''
+                : destination === 'library'
+                  ? 'Library'
+                  : destination === 'settings'
+                    ? 'Settings'
+                    : destination === 'slides'
+                      ? (selectedAgendaTalk?.title ?? activeEvent.title)
+                      : activeEvent.title
+            }
+            title={
+              destination === 'agenda'
+                ? activeEvent.title
+                : destination === 'library'
+                  ? 'Open an event'
                   : destination === 'slides'
-                    ? (selectedAgendaTalk?.title ?? activeEvent.title)
-                    : activeEvent.title
-          }
-          title={
-            destination === 'agenda'
-              ? activeEvent.title
-              : destination === 'library'
-                ? 'Open an event'
-                : destination === 'slides'
-                  ? 'Slide Notes'
-                  : destination === 'search'
-                    ? 'Search talks'
-                    : destination === 'bookmarks'
-                      ? 'Bookmarks'
-                      : destination === 'annotated'
-                        ? 'Annotated talks'
-                    : 'Settings'
-          }
-          titleMeta={
-            destination === 'slides'
-              ? activeSlideMetricsLabel
-              : destination === 'agenda'
-                ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
-                : undefined
-          }
-          status={commandBarStatus}
-          leading={
-            destination === 'library' ? undefined : (
-              <IconButton
-                label="Back"
-                icon="back"
-                onClick={() =>
-                  setDestination(
-                    destination === 'slides' ? 'agenda' : 'library',
-                  )
-                }
-              />
-            )
-          }
-          actions={commandBarActions}
-        />
+                    ? 'Slide Notes'
+                    : destination === 'search'
+                      ? 'Search talks'
+                      : destination === 'bookmarks'
+                        ? 'Bookmarks'
+                        : destination === 'annotated'
+                          ? 'Annotated talks'
+                        : 'Settings'
+            }
+            titleMeta={
+              destination === 'slides'
+                ? activeSlideMetricsLabel
+                : destination === 'agenda'
+                  ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
+                  : undefined
+            }
+            status={commandBarStatus}
+            leading={
+              destination === 'library' ? undefined : (
+                <IconButton
+                  label="Back"
+                  icon="back"
+                  onClick={() =>
+                    setDestination(
+                      destination === 'slides' ? 'agenda' : 'library',
+                    )
+                  }
+                />
+              )
+            }
+            actions={commandBarActions}
+          />
+        )}
 
-        <main ref={pageSurfaceRef} className="page-surface" aria-live="polite">
+        <main
+          ref={pageSurfaceRef}
+          className={`page-surface${destination === 'slides' ? ' is-slides-view' : ''}`}
+          aria-live="polite"
+        >
           {destination === 'library' && (
             <section className="page-stack">
               <div className="hero-panel">
@@ -2509,7 +2515,73 @@ export function App() {
           )}
 
           {destination === 'slides' && (
-            <section className="page-stack">
+            <section className="page-stack page-stack--slides">
+              <div className="slides-view-controls">
+                <div className="slides-view-controls-row">
+                  <IconButton
+                    label="Back"
+                    icon="back"
+                    onClick={() => setDestination('agenda')}
+                  />
+                  {activeSlideMaterials.length > 1 ? (
+                    <SegmentedControl
+                      options={activeSlideMaterials.map((material) => ({
+                        label: material.title,
+                        value: material.id,
+                      }))}
+                      value={
+                        activeSlideSelectedMaterialId ??
+                        activeSlideMaterials[0]?.id ??
+                        ''
+                      }
+                      onChange={(deckId) => {
+                        void handleSelectSelectedTalkDeck(deckId);
+                      }}
+                    />
+                  ) : null}
+                  {activeSlideDownloadStatus?.kind === 'downloading' ? (
+                    <IconButton
+                      label="Cancel download"
+                      title="Cancel download"
+                      icon="trash"
+                      onClick={() => {
+                        void handleCancelDeckDownload();
+                      }}
+                    />
+                  ) : activeSlideDownloadStatus?.kind === 'error' ? (
+                    <IconButton
+                      label="Retry download"
+                      title="Retry download"
+                      icon="refresh"
+                      onClick={() => {
+                        void handleRetryDeckDownload();
+                      }}
+                    />
+                  ) : null}
+                  <PrimaryButton
+                    icon="export"
+                    onClick={() => {
+                      void handleExportNotes();
+                    }}
+                    disabled={
+                      !selectedEventId ||
+                      activeSlideDownloadStatus?.kind === 'downloading' ||
+                      activeSlideDownloadStatus?.kind === 'error' ||
+                      activeSlideDownloadStatus?.kind === 'canceled' ||
+                      exportState.kind === 'rendering' ||
+                      exportState.kind === 'writing' ||
+                      exportState.kind === 'preparing'
+                    }
+                  >
+                    Export notes
+                  </PrimaryButton>
+                </div>
+                {commandBarStatus ? (
+                  <div className="slides-view-controls-status">
+                    {commandBarStatus}
+                  </div>
+                ) : null}
+              </div>
               {selectedAgendaTalk ? (
                 <PdfPreview
                   filePath={
