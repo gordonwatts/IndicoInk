@@ -93,14 +93,18 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       };
     });
     await expect(
-      harness.page.getByRole('heading', {
-        name: 'Designing a calm note-taking workflow',
-      }),
+      harness.page.getByText('Designing a calm note-taking workflow'),
     ).toBeVisible();
-    await expect(harness.page.getByText('Slides ready.')).toBeVisible({
+    await expect(harness.page.getByText('1 / 3 slides')).toBeVisible({
       timeout: 30_000,
     });
     await harness.page.waitForTimeout(750);
+    const firstCanvasBox = await harness.page
+      .locator('.pdf-preview-canvas')
+      .first()
+      .boundingBox();
+    expect(firstCanvasBox).not.toBeNull();
+    expect(firstCanvasBox?.y ?? 0).toBeLessThan(720);
     const visibleIncompleteFrames = await harness.page.evaluate(() => {
       const state = window as typeof window & {
         __pdfPreviewVisibleIncompleteFrames?: number;

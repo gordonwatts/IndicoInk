@@ -72,7 +72,7 @@ test('opens a CERN event with an API key from a local secret file', async () => 
       .first()
       .click();
 
-    const slidesReady = harness.page.getByText('Slides ready.');
+    const slidesReady = harness.page.getByText(/1 \/ \d+ slides/);
     const fileScopeError = harness.page
       .getByText(
         'This API token needs additional Indico file access before this slide deck can be opened.',
