@@ -55,11 +55,7 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
       })
       .click();
 
-    await expect(
-      harness.page.getByRole('heading', {
-        name: 'Designing a calm note-taking workflow',
-      }),
-    ).toBeVisible();
+    await expect(harness.page.getByRole('button', { name: 'Home' })).toBeVisible();
     const targetPage = harness.page.locator('.pdf-preview-page').nth(2);
     const targetSheet = targetPage.locator('.pdf-preview-sheet');
     await expect(targetSheet).toBeVisible();

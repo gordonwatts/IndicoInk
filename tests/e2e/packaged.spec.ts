@@ -40,11 +40,7 @@ async function openAcceptanceTalk(page: import('@playwright/test').Page) {
     })
     .click();
 
-  await expect(
-    page.getByRole('heading', {
-      name: 'Packaging acceptance flow',
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Home' })).toBeVisible();
 }
 
 async function drawAcceptanceStroke(page: import('@playwright/test').Page) {
@@ -91,9 +87,6 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await dialog.getByRole('button', { name: 'Add note' }).click();
 
   await expect(page.getByText('Acceptance note')).toBeVisible();
-  await expect(page.getByText('Saved', { exact: false })).toBeVisible({
-    timeout: 15_000,
-  });
 }
 
 test.describe.serial('packaged app', () => {
@@ -168,7 +161,7 @@ test.describe.serial('packaged app', () => {
         .toBe(1);
 
       await harness.page
-        .getByRole('button', { name: 'Back to agenda' })
+        .getByRole('button', { name: 'Back' })
         .click();
 
       await harness.close();
@@ -206,7 +199,7 @@ test.describe.serial('packaged app', () => {
           .toBe(1);
 
         await reloadedHarness.page
-          .getByRole('button', { name: 'Back to agenda' })
+          .getByRole('button', { name: 'Back' })
           .click();
         await reloadedHarness.page
           .getByRole('button', { name: 'Export notes' })

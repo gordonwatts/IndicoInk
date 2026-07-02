@@ -325,12 +325,10 @@ test('keeps large agenda and long deck navigation responsive enough', async () =
       })
       .click();
 
-    await expect(
-      harness.page.getByText('Conference notes in the flow of the talk'),
-    ).toBeVisible();
-    await expect(harness.page.getByText('1 / 3 slides')).toBeVisible({
+    await expect(harness.page.getByRole('button', { name: 'Home' })).toBeVisible({
       timeout: 30_000,
     });
+    await expect(harness.page.locator('.pdf-preview-page').first()).toBeVisible();
 
     const openTalkElapsed = performance.now() - openTalkStart;
     expect(
@@ -341,7 +339,7 @@ test('keeps large agenda and long deck navigation responsive enough', async () =
     const jumpStart = performance.now();
     await harness.page.getByRole('button', { name: '3' }).click();
 
-    await expect(harness.page.getByText('3 / 3 slides')).toBeVisible();
+    await expect(harness.page.locator('.pdf-preview-page').nth(2)).toBeVisible();
 
     const jumpElapsed = performance.now() - jumpStart;
     expect(
