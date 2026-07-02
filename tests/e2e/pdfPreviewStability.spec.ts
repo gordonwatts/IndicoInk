@@ -47,9 +47,7 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
       .click();
 
-    await expect(
-      harness.page.getByRole('heading', { name: 'Event agenda' }),
-    ).toBeVisible();
+    await expect(harness.page.getByRole('heading', { level: 1 })).toBeVisible();
 
     await harness.page
       .getByRole('button', {

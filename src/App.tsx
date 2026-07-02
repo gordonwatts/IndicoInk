@@ -105,6 +105,87 @@ const filterOptions = [
   { label: 'Slides available', value: 'slides' as const },
 ];
 
+const agendaDayLabelPattern =
+  /^([A-Za-z]+),\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/;
+
+const agendaMonthShortNames: Record<string, string> = {
+  January: 'Jan',
+  February: 'Feb',
+  March: 'Mar',
+  April: 'Apr',
+  May: 'May',
+  June: 'Jun',
+  July: 'Jul',
+  August: 'Aug',
+  September: 'Sep',
+  October: 'Oct',
+  November: 'Nov',
+  December: 'Dec',
+};
+
+function formatAgendaDayTickerLabel(dayLabel: string) {
+  const match = dayLabel.match(agendaDayLabelPattern);
+
+  if (!match) {
+    return dayLabel;
+  }
+
+  const weekday = match[1];
+  const month = match[2];
+  const day = match[3];
+  if (!weekday || !month || !day) {
+    return dayLabel;
+  }
+
+  const shortMonth = agendaMonthShortNames[month] ?? month;
+
+  return `${weekday.slice(0, 3)} ${shortMonth} ${day}`;
+}
+
+function formatAgendaDateRangeLabel(dates: string) {
+  const normalized = dates.trim();
+  const match = normalized.match(
+    /^([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?(?:\s*-\s*([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?)?$/,
+  );
+
+  if (!match) {
+    return normalized;
+  }
+
+  const startMonth = match[1];
+  const startDay = match[2];
+  const startYear = match[3];
+  const endMonth = match[4];
+  const endDay = match[5];
+  const endYear = match[6];
+  if (!startMonth || !startDay) {
+    return normalized;
+  }
+
+  const shortStartMonth = agendaMonthShortNames[startMonth] ?? startMonth;
+  const shortEndMonth = endMonth
+    ? agendaMonthShortNames[endMonth] ?? endMonth
+    : shortStartMonth;
+  const resolvedStartYear = startYear ?? endYear ?? '';
+  const resolvedEndYear = endYear ?? startYear ?? '';
+
+  if (!endMonth || !endDay) {
+    return resolvedStartYear
+      ? `${shortStartMonth} ${startDay}, ${resolvedStartYear}`
+      : `${shortStartMonth} ${startDay}`;
+  }
+
+  if (resolvedStartYear && resolvedEndYear && resolvedStartYear !== resolvedEndYear) {
+    return `${shortStartMonth} ${startDay}, ${resolvedStartYear} - ${shortEndMonth} ${endDay}, ${resolvedEndYear}`;
+  }
+
+  if (resolvedStartYear) {
+    return `${shortStartMonth} ${startDay}-${shortEndMonth} ${endDay}, ${resolvedStartYear}`;
+  }
+
+  return `${shortStartMonth} ${startDay}-${shortEndMonth} ${endDay}`;
+}
+
 type GalleryFilter = (typeof filterOptions)[number]['value'];
 
 type ExportProgressState =
@@ -276,8 +357,8 @@ function formatAgendaTalkDeckChipLabel(talk: AgendaTalkSummary) {
   }
 
   return getAgendaTalkPdfMaterials(talk).length > 1
-    ? `Default: ${selectedDeck.title}`
-    : selectedDeck.title;
+    ? `Default deck: ${selectedDeck.title}`
+    : null;
 }
 
 function getAgendaTalkPrimaryAction(talk: AgendaTalkSummary) {
@@ -303,22 +384,6 @@ function getAgendaTalkPrimaryAction(talk: AgendaTalkSummary) {
     ariaLabel: `Select ${talk.title}`,
     kind: 'select' as const,
   };
-}
-
-function getAgendaDefaultScrollTop(visibleAgendaTalks: AgendaTalkSummary[]) {
-  const layout = buildAgendaCanvasLayout(visibleAgendaTalks);
-  const firstSessionBlock = layout.columns.find(
-    (block) => !block.spanFullWidth,
-  );
-  if (!firstSessionBlock) {
-    return 0;
-  }
-
-  const firstTalkTopPx =
-    firstSessionBlock.talkPlacements[0]?.topPx ??
-    firstSessionBlock.trackHeightPx;
-
-  return Math.max(0, firstSessionBlock.blockTopPx + firstTalkTopPx - 24);
 }
 
 function formatMaterialLabel(material: AgendaTalkMaterialSummary) {
@@ -381,8 +446,6 @@ type SlideViewerState =
     };
 
 function AgendaTimelineCanvas({
-  selectedAgendaDay,
-  agendaFilter,
   visibleAgendaTalks,
   selectedAgendaTalkId,
   viewportRef,
@@ -391,8 +454,6 @@ function AgendaTimelineCanvas({
   onOpenTalkMaterials,
   onToggleBookmark,
 }: {
-  selectedAgendaDay: string | null;
-  agendaFilter: GalleryFilter;
   visibleAgendaTalks: AgendaTalkSummary[];
   selectedAgendaTalkId: string | null;
   viewportRef: React.RefObject<HTMLDivElement | null>;
@@ -457,35 +518,8 @@ function AgendaTimelineCanvas({
     [visibleAgendaTalks, responsiveColumnWidthPx],
   );
 
-  const filterLabel =
-    agendaFilter === 'all'
-      ? 'All talks'
-      : agendaFilter === 'bookmarked'
-        ? 'Bookmarked'
-        : agendaFilter === 'annotated'
-          ? 'Annotated'
-          : 'Slides available';
-
   return (
     <div className="agenda-canvas-shell">
-      <div className="agenda-list-meta">
-        <StatusLabel
-          label={`${visibleAgendaTalks.length} talk${visibleAgendaTalks.length === 1 ? '' : 's'} shown`}
-          icon="agenda"
-        />
-        <StatusLabel
-          label={selectedAgendaDay ?? 'All days'}
-          tone="neutral"
-          icon="event"
-        />
-        <StatusLabel label={filterLabel} tone="neutral" icon="check" />
-        <StatusLabel
-          label={`Columns: ${layout.columnCount}`}
-          tone="neutral"
-          icon="info"
-        />
-      </div>
-
       <div className="agenda-canvas-scroll" aria-label="Agenda day canvas">
         <div
           className="agenda-time-gutter-mask"
@@ -564,6 +598,8 @@ function AgendaTimelineCanvas({
                     const talkHasMaterials =
                       shouldShowAgendaTalkMaterials(talk);
                     const primaryAction = getAgendaTalkPrimaryAction(talk);
+                    const showMaterialsAction =
+                      talkHasMaterials && primaryAction.kind === 'slides';
 
                     return (
                       <div
@@ -648,7 +684,8 @@ function AgendaTimelineCanvas({
                           </div>
                           <div className="agenda-talk-card-speaker">
                             {talk.speaker}
-                            {talk.room !== 'Room unavailable'
+                            {talk.room !== 'Room unavailable' &&
+                            talk.room !== block.room
                               ? ` - ${talk.room}`
                               : ''}
                           </div>
@@ -659,34 +696,20 @@ function AgendaTimelineCanvas({
                               icon="open"
                             />
                             {talkDeckChipLabel ? (
+                              <div className="agenda-talk-card-default-deck">
+                                {talkDeckChipLabel}
+                              </div>
+                            ) : null}
+                            {talk.annotatedSlideCount > 0 ? (
                               <StatusLabel
-                                label={talkDeckChipLabel}
-                                tone="success"
-                                icon="check"
+                                label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
                               />
                             ) : null}
-                            <StatusLabel
-                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                              tone="warning"
-                              icon="annotated"
-                            />
                           </div>
-                          <div className="agenda-talk-card-actions">
-                            {talk.materials.length > 0 ? (
-                              <button
-                                className="agenda-talk-card-action-button"
-                                type="button"
-                                aria-label={`Open slides for ${talk.title}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onOpenTalkSlides(talk);
-                                }}
-                              >
-                                <Icon name="open" />
-                                <span>Open slides</span>
-                              </button>
-                            ) : null}
-                            {talkHasMaterials ? (
+                          {showMaterialsAction ? (
+                            <div className="agenda-talk-card-actions">
                               <button
                                 className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
                                 type="button"
@@ -699,8 +722,8 @@ function AgendaTimelineCanvas({
                                 <Icon name="dialog" />
                                 <span>Materials</span>
                               </button>
-                            ) : null}
-                          </div>
+                            </div>
+                          ) : null}
                         </article>
                       </div>
                     );
@@ -771,7 +794,6 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
-  const agendaScrollPositionsRef = React.useRef<Record<string, number>>({});
   const agendaScrollFrameRef = React.useRef<number | null>(null);
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
@@ -923,12 +945,6 @@ export function App() {
     void refreshIndicoApiKeys();
   }, [refreshIndicoApiKeys]);
 
-  const eventFocused =
-    destination === 'agenda' ||
-    destination === 'slides' ||
-    destination === 'search' ||
-    destination === 'bookmarks' ||
-    destination === 'annotated';
   const commandBarStatus =
     destination === 'library' ? undefined : refreshState.kind === 'checking' ||
       refreshState.kind === 'refreshing' ? (
@@ -953,20 +969,12 @@ export function App() {
       <StatusLabel label={exportState.label} tone="warning" icon="info" />
     ) : destination === 'settings' ? (
       <StatusLabel label="Settings" icon="settings" />
-    ) : eventFocused ? (
-      <StatusLabel label="Current event active" tone="success" icon="event" />
     ) : undefined;
   const commandBarActions =
     destination === 'library' ||
     destination === 'settings' ||
     destination === 'slides' ? undefined : (
       <>
-        <IconButton
-          label="Search"
-          title="Search Event"
-          icon="search"
-          onClick={() => setDestination('search')}
-        />
         <IconButton
           label="Refresh"
           title="Refresh Event from Indico"
@@ -1017,10 +1025,6 @@ export function App() {
 
     return matchesDay && matchesFilter;
   });
-  const visibleAgendaTalksLayoutDefaultScrollTop = React.useMemo(
-    () => getAgendaDefaultScrollTop(visibleAgendaTalks),
-    [visibleAgendaTalks],
-  );
   const bookmarkedAgendaTalks = agendaTalks.filter((talk) => talk.bookmarked);
   const annotatedAgendaTalks = agendaTalks.filter(
     (talk) => talk.annotatedSlideCount > 0,
@@ -1762,31 +1766,13 @@ export function App() {
 
   React.useEffect(() => {
     if (destination !== 'agenda' || !selectedEventId) {
-      if (agendaScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(agendaScrollFrameRef.current);
-        agendaScrollFrameRef.current = null;
-      }
-
       return undefined;
     }
 
-    const scrollKey = `${selectedEventId}:${selectedAgendaDay ?? '__all__'}`;
-    const targetScrollTop =
-      agendaScrollPositionsRef.current[scrollKey] ??
-      visibleAgendaTalksLayoutDefaultScrollTop;
     const scrollContainer = pageSurfaceRef.current;
-    const agendaCanvasMeasure = agendaCanvasMeasureRef.current;
-    if (!scrollContainer || !agendaCanvasMeasure) {
+    if (!scrollContainer) {
       return undefined;
     }
-    const getAgendaCanvasTopOffset = () => {
-      const scrollContainerRect = scrollContainer.getBoundingClientRect();
-      const canvasRect = agendaCanvasMeasure.getBoundingClientRect();
-
-      return (
-        scrollContainer.scrollTop + (canvasRect.top - scrollContainerRect.top)
-      );
-    };
     const scheduleScrollRestoration =
       window.requestAnimationFrame ??
       ((callback: FrameRequestCallback) =>
@@ -1799,33 +1785,18 @@ export function App() {
     }
 
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
-      const targetPageScrollTop = getAgendaCanvasTopOffset() + targetScrollTop;
       if (typeof scrollContainer.scrollTo === 'function') {
         scrollContainer.scrollTo({
-          top: targetPageScrollTop,
+          top: 0,
           behavior: 'auto',
         });
       } else {
-        scrollContainer.scrollTop = targetPageScrollTop;
+        scrollContainer.scrollTop = 0;
       }
       agendaScrollFrameRef.current = null;
     });
 
-    const captureScrollPosition = () => {
-      agendaScrollPositionsRef.current[scrollKey] = Math.max(
-        0,
-        scrollContainer.scrollTop - getAgendaCanvasTopOffset(),
-      );
-    };
-
-    scrollContainer.addEventListener('scroll', captureScrollPosition, {
-      passive: true,
-    });
-
     return () => {
-      scrollContainer.removeEventListener('scroll', captureScrollPosition);
-      captureScrollPosition();
-
       if (agendaScrollFrameRef.current !== null) {
         cancelScrollRestoration(agendaScrollFrameRef.current);
         agendaScrollFrameRef.current = null;
@@ -1835,12 +1806,12 @@ export function App() {
     destination,
     selectedEventId,
     selectedAgendaDay,
-    agendaTalks.length,
-    visibleAgendaTalksLayoutDefaultScrollTop,
   ]);
 
   return (
-    <div className="app-frame">
+    <div
+      className={`app-frame${destination === 'agenda' ? ' is-compact-nav' : ''}`}
+    >
       <aside className="nav-rail" aria-label="Primary navigation">
         <div className="nav-rail-brand" aria-label="IndicoInk">
           <div className="brand-mark">
@@ -1868,19 +1839,21 @@ export function App() {
       <section className="workspace">
         <CommandBar
           kicker={
-            destination === 'library'
-              ? 'Library'
-              : destination === 'settings'
-                ? 'Settings'
-                : destination === 'slides'
-                  ? (selectedAgendaTalk?.title ?? activeEvent.title)
-                  : activeEvent.title
+            destination === 'agenda'
+              ? ''
+              : destination === 'library'
+                ? 'Library'
+                : destination === 'settings'
+                  ? 'Settings'
+                  : destination === 'slides'
+                    ? (selectedAgendaTalk?.title ?? activeEvent.title)
+                    : activeEvent.title
           }
           title={
-            destination === 'library'
-              ? 'Open an event'
-              : destination === 'agenda'
-                ? 'Event agenda'
+            destination === 'agenda'
+              ? activeEvent.title
+              : destination === 'library'
+                ? 'Open an event'
                 : destination === 'slides'
                   ? 'Slide Notes'
                   : destination === 'search'
@@ -1889,7 +1862,12 @@ export function App() {
                       ? 'Bookmarks'
                       : destination === 'annotated'
                         ? 'Annotated talks'
-                        : 'Settings'
+                    : 'Settings'
+          }
+          titleMeta={
+            destination === 'agenda'
+              ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
+              : undefined
           }
           status={commandBarStatus}
           leading={
@@ -2014,342 +1992,321 @@ export function App() {
 
           {destination === 'agenda' && (
             <section className="page-stack">
-              <DetailsSurface
-                title="Day canvas"
-                subtitle="One conference day at a time, with time pinned on the left and sessions spread horizontally."
-              >
-                {selectedAgendaEvent ? (
-                  <div className="agenda-milestone">
-                    <div className="agenda-event-header">
-                      <h3>{selectedAgendaEvent.title}</h3>
-                      <span>{selectedAgendaEvent.dates}</span>
-                    </div>
-                    <div className="agenda-milestone-note">
-                      <StatusLabel
-                        label={`${selectedAgendaEvent.title} - ${selectedAgendaEvent.dates}`}
-                        tone="neutral"
-                        icon="event"
-                      />
-                      <StatusLabel
-                        label={selectedAgendaEvent.host}
-                        tone="neutral"
-                        icon="info"
-                      />
-                      <StatusLabel
-                        label={selectedAgendaEvent.cacheStatus}
-                        tone="success"
-                        icon="check"
-                      />
+              {selectedAgendaEvent ? (
+                <>
+                  <div className="agenda-event-summary">
+                    <StatusLabel
+                      label={selectedAgendaEvent.host}
+                      tone="neutral"
+                      icon="info"
+                    />
+                    <StatusLabel
+                      label={selectedAgendaEvent.cacheStatus}
+                      tone="success"
+                      icon="check"
+                    />
+                    <StatusLabel
+                      label={`${agendaTalks.length} ${
+                        agendaTalks.length === 1 ? 'talk shown' : 'talks shown'
+                      }`}
+                      tone="neutral"
+                      icon="agenda"
+                    />
+                    {selectedAgendaEvent.annotationSummary !==
+                    '0 annotated slides' ? (
                       <StatusLabel
                         label={selectedAgendaEvent.annotationSummary}
                         tone="warning"
                         icon="annotated"
                       />
+                    ) : null}
+                  </div>
+                  {agendaTalksLoading ? (
+                    <div className="empty-state agenda-empty-state">
+                      <Icon name="agenda" />
+                      <strong>Loading agenda talks</strong>
+                      <span>
+                        Stored talks are being read from the local event cache.
+                      </span>
                     </div>
-                    {agendaTalksLoading ? (
-                      <div className="empty-state agenda-empty-state">
-                        <Icon name="agenda" />
-                        <strong>Loading agenda talks</strong>
-                        <span>
-                          Stored talks are being read from the local event
-                          cache.
-                        </span>
-                      </div>
-                    ) : agendaTalksError ? (
-                      <div className="empty-state agenda-empty-state">
-                        <Icon name="info" />
-                        <strong>Agenda unavailable</strong>
-                        <span>{agendaTalksError}</span>
-                      </div>
-                    ) : agendaTalks.length ? (
-                      <div className="agenda-shell">
-                        <div className="agenda-controls">
-                          <div className="agenda-day-strip">
-                            <IconButton
-                              label="Previous day"
-                              icon="back"
-                              disabled={!canMoveToPreviousDay}
-                              onClick={() => {
-                                if (canMoveToPreviousDay) {
-                                  setAgendaDayLabel(
-                                    agendaDayLabels[
-                                      selectedAgendaDayIndex - 1
-                                    ] ?? null,
-                                  );
-                                }
-                              }}
-                            />
-                            <SegmentedControl
-                              options={agendaDayLabels.map((label) => ({
-                                label,
-                                value: label,
-                              }))}
-                              value={
-                                selectedAgendaDay ?? agendaDayLabels[0] ?? ''
+                  ) : agendaTalksError ? (
+                    <div className="empty-state agenda-empty-state">
+                      <Icon name="info" />
+                      <strong>Agenda unavailable</strong>
+                      <span>{agendaTalksError}</span>
+                    </div>
+                  ) : agendaTalks.length ? (
+                    <div className="agenda-shell">
+                      <div className="agenda-controls">
+                        <div className="agenda-day-strip">
+                          <IconButton
+                            label="Previous day"
+                            icon="back"
+                            disabled={!canMoveToPreviousDay}
+                            onClick={() => {
+                              if (canMoveToPreviousDay) {
+                                setAgendaDayLabel(
+                                  agendaDayLabels[selectedAgendaDayIndex - 1] ??
+                                    null,
+                                );
                               }
-                              onChange={setAgendaDayLabel}
-                            />
-                            <IconButton
-                              label="Next day"
-                              icon="chevron"
-                              disabled={!canMoveToNextDay}
-                              onClick={() => {
-                                if (canMoveToNextDay) {
-                                  setAgendaDayLabel(
-                                    agendaDayLabels[
-                                      selectedAgendaDayIndex + 1
-                                    ] ?? null,
-                                  );
-                                }
-                              }}
-                            />
-                          </div>
+                            }}
+                          />
                           <SegmentedControl
-                            options={filterOptions}
-                            value={agendaFilter}
-                            onChange={setAgendaFilter}
+                            options={agendaDayLabels.map((label) => ({
+                              label: formatAgendaDayTickerLabel(label),
+                              value: label,
+                              title: label,
+                            }))}
+                            value={selectedAgendaDay ?? agendaDayLabels[0] ?? ''}
+                            onChange={setAgendaDayLabel}
+                          />
+                          <IconButton
+                            label="Next day"
+                            icon="chevron"
+                            disabled={!canMoveToNextDay}
+                            onClick={() => {
+                              if (canMoveToNextDay) {
+                                setAgendaDayLabel(
+                                  agendaDayLabels[selectedAgendaDayIndex + 1] ??
+                                    null,
+                                );
+                              }
+                            }}
                           />
                         </div>
+                        <SegmentedControl
+                          options={filterOptions}
+                          value={agendaFilter}
+                          onChange={setAgendaFilter}
+                        />
+                      </div>
 
-                        <div className="agenda-shell-grid">
-                          <div
-                            className="agenda-shell-main"
-                            ref={agendaCanvasMeasureRef}
-                          >
-                            {visibleAgendaTalks.length ? (
-                              <AgendaTimelineCanvas
-                                selectedAgendaDay={selectedAgendaDay}
-                                agendaFilter={agendaFilter}
-                                visibleAgendaTalks={visibleAgendaTalks}
-                                selectedAgendaTalkId={
-                                  selectedAgendaTalk?.id ?? null
-                                }
-                                viewportRef={agendaCanvasMeasureRef}
-                                onOpenTalk={(talk) => {
-                                  setSelectedAgendaTalkId(talk.id);
-                                  setSelectedEventId(talk.conferenceId);
-                                  setAgendaDayLabel(talk.dayLabel);
-                                }}
-                                onOpenTalkSlides={(talk) => {
-                                  void openAgendaTalkSlides(talk);
-                                }}
-                                onOpenTalkMaterials={handleOpenTalkMaterials}
-                                onToggleBookmark={(talk) => {
-                                  void handleAgendaTalkBookmarkToggle(talk);
-                                }}
-                              />
-                            ) : (
-                              <div className="empty-state agenda-empty-state">
-                                <Icon name="agenda" />
-                                <strong>No talks match this view</strong>
-                                <span>
-                                  Try a different day or filter to keep browsing
-                                  the stored agenda data.
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {agendaMaterialsTalk ? (
-                          <div className="dialog-backdrop agenda-talk-material-dialog-backdrop">
-                            <DialogSurface
-                              title={`Materials for ${agendaMaterialsTalk.title}`}
-                              body={
-                                <div className="agenda-talk-material-dialog">
-                                  <div className="agenda-talk-detail-topline">
-                                    <StatusLabel
-                                      label={agendaMaterialsTalk.dayLabel}
-                                      tone="neutral"
-                                      icon="event"
-                                    />
-                                    <StatusLabel
-                                      label={agendaMaterialsTalk.timeRangeLabel}
-                                      tone="neutral"
-                                      icon="info"
-                                    />
-                                    <StatusLabel
-                                      label={agendaMaterialsTalk.room}
-                                      tone="neutral"
-                                      icon="agenda"
-                                    />
-                                    {agendaMaterialsTalk.upstreamSummary ? (
-                                      <StatusLabel
-                                        label={
-                                          agendaMaterialsTalk.upstreamSummary
-                                        }
-                                        tone={
-                                          agendaMaterialsTalk.upstreamStatus ===
-                                          'missing'
-                                            ? 'warning'
-                                            : 'neutral'
-                                        }
-                                        icon="info"
-                                      />
-                                    ) : null}
-                                  </div>
-
-                                  {agendaMaterialsPdfMaterials.length ? (
-                                    <div className="agenda-talk-materials">
-                                      <div className="surface-panel-header">
-                                        <h3>PDF materials</h3>
-                                        <p>
-                                          Choose the deck to remember as the
-                                          default for this talk.
-                                        </p>
-                                      </div>
-                                      <div className="agenda-talk-material-list">
-                                        {agendaMaterialsPdfMaterials.map(
-                                          (material) => (
-                                            <Row
-                                              key={material.id}
-                                              variant="list"
-                                              selected={material.selected}
-                                              onClick={() => {
-                                                void handleSelectSelectedTalkDeck(
-                                                  material.id,
-                                                );
-                                              }}
-                                              ariaLabel={`Select ${material.title} for ${agendaMaterialsTalk.title}`}
-                                              title={formatMaterialLabel(
-                                                material,
-                                              )}
-                                              meta={
-                                                <StatusLabel
-                                                  label={
-                                                    material.selected
-                                                      ? 'Default deck'
-                                                      : 'Available PDF'
-                                                  }
-                                                  tone={
-                                                    material.selected
-                                                      ? 'success'
-                                                      : 'neutral'
-                                                  }
-                                                  icon={
-                                                    material.selected
-                                                      ? 'check'
-                                                      : 'open'
-                                                  }
-                                                />
-                                              }
-                                              detail={
-                                                material.upstreamStatus ? (
-                                                  <StatusLabel
-                                                    label={
-                                                      material.upstreamStatus ===
-                                                      'missing'
-                                                        ? 'Removed from Indico'
-                                                        : material.upstreamStatus ===
-                                                            'changed'
-                                                          ? 'Updated on Indico'
-                                                          : 'Still on Indico'
-                                                    }
-                                                    tone={
-                                                      material.upstreamStatus ===
-                                                      'missing'
-                                                        ? 'warning'
-                                                        : material.upstreamStatus ===
-                                                            'changed'
-                                                          ? 'neutral'
-                                                          : 'success'
-                                                    }
-                                                    icon="info"
-                                                  />
-                                                ) : null
-                                              }
-                                            />
-                                          ),
-                                        )}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="empty-state agenda-detail-empty-state">
-                                      <Icon name="info" />
-                                      <strong>No annotatable PDF</strong>
-                                      <span>
-                                        This talk has no PDF material, so the
-                                        attachments stay in this transient
-                                        surface.
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {agendaMaterialsNonPdfMaterials.length ? (
-                                    <div className="agenda-talk-materials">
-                                      <div className="surface-panel-header">
-                                        <h3>Other materials</h3>
-                                        <p>
-                                          Non-PDF attachments remain visible
-                                          here without entering the slide
-                                          viewer.
-                                        </p>
-                                      </div>
-                                      <div className="agenda-talk-material-list">
-                                        {agendaMaterialsNonPdfMaterials.map(
-                                          (material) => (
-                                            <Row
-                                              key={material.id}
-                                              variant="list"
-                                              title={formatMaterialLabel(
-                                                material,
-                                              )}
-                                              meta={
-                                                <StatusLabel
-                                                  label="Non-PDF material"
-                                                  tone="neutral"
-                                                  icon="info"
-                                                />
-                                              }
-                                            />
-                                          ),
-                                        )}
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              }
-                              primaryLabel={
-                                agendaMaterialsDeck ? 'Open slides' : 'Done'
-                              }
-                              secondaryLabel="Close"
-                              onPrimary={() => {
-                                if (agendaMaterialsDeck) {
-                                  void handleOpenSelectedTalkDeck();
-                                  return;
-                                }
-
-                                setAgendaMaterialsTalkId(null);
+                      <div className="agenda-shell-grid">
+                        <div
+                          className="agenda-shell-main"
+                          ref={agendaCanvasMeasureRef}
+                        >
+                          {visibleAgendaTalks.length ? (
+                            <AgendaTimelineCanvas
+                              visibleAgendaTalks={visibleAgendaTalks}
+                              selectedAgendaTalkId={selectedAgendaTalk?.id ?? null}
+                              viewportRef={agendaCanvasMeasureRef}
+                              onOpenTalk={(talk) => {
+                                setSelectedAgendaTalkId(talk.id);
+                                setSelectedEventId(talk.conferenceId);
+                                setAgendaDayLabel(talk.dayLabel);
                               }}
-                              onSecondary={() => {
-                                setAgendaMaterialsTalkId(null);
+                              onOpenTalkSlides={(talk) => {
+                                void openAgendaTalkSlides(talk);
+                              }}
+                              onOpenTalkMaterials={handleOpenTalkMaterials}
+                              onToggleBookmark={(talk) => {
+                                void handleAgendaTalkBookmarkToggle(talk);
                               }}
                             />
-                          </div>
-                        ) : null}
+                          ) : (
+                            <div className="empty-state agenda-empty-state">
+                              <Icon name="agenda" />
+                              <strong>No talks match this view</strong>
+                              <span>
+                                Try a different day or filter to keep browsing
+                                the stored agenda data.
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="empty-state agenda-empty-state">
-                        <Icon name="agenda" />
-                        <strong>No stored talks yet</strong>
-                        <span>
-                          Open a conference event to populate the temporary
-                          agenda list.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="empty-state agenda-empty-state">
-                    <Icon name="agenda" />
-                    <strong>No active event selected</strong>
-                    <span>
-                      Open a stored conference event from Library to browse its
-                      agenda.
-                    </span>
-                  </div>
-                )}
-              </DetailsSurface>
+
+                      {agendaMaterialsTalk ? (
+                        <div className="dialog-backdrop agenda-talk-material-dialog-backdrop">
+                          <DialogSurface
+                            title={`Materials for ${agendaMaterialsTalk.title}`}
+                            body={
+                              <div className="agenda-talk-material-dialog">
+                                <div className="agenda-talk-detail-topline">
+                                  <StatusLabel
+                                    label={agendaMaterialsTalk.dayLabel}
+                                    tone="neutral"
+                                    icon="event"
+                                  />
+                                  <StatusLabel
+                                    label={agendaMaterialsTalk.timeRangeLabel}
+                                    tone="neutral"
+                                    icon="info"
+                                  />
+                                  <StatusLabel
+                                    label={agendaMaterialsTalk.room}
+                                    tone="neutral"
+                                    icon="agenda"
+                                  />
+                                  {agendaMaterialsTalk.upstreamSummary ? (
+                                    <StatusLabel
+                                      label={agendaMaterialsTalk.upstreamSummary}
+                                      tone={
+                                        agendaMaterialsTalk.upstreamStatus ===
+                                        'missing'
+                                          ? 'warning'
+                                          : 'neutral'
+                                      }
+                                      icon="info"
+                                    />
+                                  ) : null}
+                                </div>
+
+                                {agendaMaterialsPdfMaterials.length ? (
+                                  <div className="agenda-talk-materials">
+                                    <div className="surface-panel-header">
+                                      <h3>PDF materials</h3>
+                                      <p>
+                                        Choose the deck to remember as the
+                                        default for this talk.
+                                      </p>
+                                    </div>
+                                    <div className="agenda-talk-material-list">
+                                      {agendaMaterialsPdfMaterials.map((material) => (
+                                        <Row
+                                          key={material.id}
+                                          variant="list"
+                                          selected={material.selected}
+                                          onClick={() => {
+                                            void handleSelectSelectedTalkDeck(
+                                              material.id,
+                                            );
+                                          }}
+                                          ariaLabel={`Select ${material.title} for ${agendaMaterialsTalk.title}`}
+                                          title={formatMaterialLabel(material)}
+                                          meta={
+                                            <StatusLabel
+                                              label={
+                                                material.selected
+                                                  ? 'Default deck'
+                                                  : 'Available PDF'
+                                              }
+                                              tone={
+                                                material.selected
+                                                  ? 'success'
+                                                  : 'neutral'
+                                              }
+                                              icon={
+                                                material.selected
+                                                  ? 'check'
+                                                  : 'open'
+                                              }
+                                            />
+                                          }
+                                          detail={
+                                            material.upstreamStatus ? (
+                                              <StatusLabel
+                                                label={
+                                                  material.upstreamStatus ===
+                                                  'missing'
+                                                    ? 'Removed from Indico'
+                                                    : material.upstreamStatus ===
+                                                        'changed'
+                                                      ? 'Updated on Indico'
+                                                      : 'Still on Indico'
+                                                }
+                                                tone={
+                                                  material.upstreamStatus ===
+                                                  'missing'
+                                                    ? 'warning'
+                                                    : material.upstreamStatus ===
+                                                        'changed'
+                                                      ? 'neutral'
+                                                      : 'success'
+                                                }
+                                                icon="info"
+                                              />
+                                            ) : null
+                                          }
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="empty-state agenda-detail-empty-state">
+                                    <Icon name="info" />
+                                    <strong>No annotatable PDF</strong>
+                                    <span>
+                                      This talk has no PDF material, so the
+                                      attachments stay in this transient
+                                      surface.
+                                    </span>
+                                  </div>
+                                )}
+
+                                {agendaMaterialsNonPdfMaterials.length ? (
+                                  <div className="agenda-talk-materials">
+                                    <div className="surface-panel-header">
+                                      <h3>Other materials</h3>
+                                      <p>
+                                        Non-PDF attachments remain visible here
+                                        without entering the slide viewer.
+                                      </p>
+                                    </div>
+                                    <div className="agenda-talk-material-list">
+                                      {agendaMaterialsNonPdfMaterials.map(
+                                        (material) => (
+                                          <Row
+                                            key={material.id}
+                                            variant="list"
+                                            title={formatMaterialLabel(material)}
+                                            meta={
+                                              <StatusLabel
+                                                label="Non-PDF material"
+                                                tone="neutral"
+                                                icon="info"
+                                              />
+                                            }
+                                          />
+                                        ),
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            }
+                            primaryLabel={
+                              agendaMaterialsDeck ? 'Open slides' : 'Done'
+                            }
+                            secondaryLabel="Close"
+                            onPrimary={() => {
+                              if (agendaMaterialsDeck) {
+                                void handleOpenSelectedTalkDeck();
+                                return;
+                              }
+
+                              setAgendaMaterialsTalkId(null);
+                            }}
+                            onSecondary={() => {
+                              setAgendaMaterialsTalkId(null);
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="empty-state agenda-empty-state">
+                      <Icon name="agenda" />
+                      <strong>No stored talks yet</strong>
+                      <span>
+                        Open a conference event to populate the temporary
+                        agenda list.
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="empty-state agenda-empty-state">
+                  <Icon name="agenda" />
+                  <strong>No active event selected</strong>
+                  <span>
+                    Open a stored conference event from Library to browse its
+                    agenda.
+                  </span>
+                </div>
+              )}
             </section>
           )}
 

@@ -199,12 +199,14 @@ export function PrimaryButton({
 export function CommandBar({
   kicker,
   title,
+  titleMeta,
   status,
   leading,
   actions,
 }: {
   kicker: string;
   title: string;
+  titleMeta?: React.ReactNode;
   status: React.ReactNode;
   leading?: React.ReactNode;
   actions?: React.ReactNode;
@@ -214,8 +216,13 @@ export function CommandBar({
       <div className="command-bar-leading">
         {leading}
         <div className="command-title-group">
-          <p className="command-kicker">{kicker}</p>
-          <h1 className="command-title">{title}</h1>
+          {kicker ? <p className="command-kicker">{kicker}</p> : null}
+          <div className="command-title-row">
+            <h1 className="command-title">{title}</h1>
+            {titleMeta ? (
+              <span className="command-title-meta">{titleMeta}</span>
+            ) : null}
+          </div>
         </div>
         {status}
       </div>
@@ -279,7 +286,7 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
 }: {
-  options: Array<{ label: string; value: T }>;
+  options: Array<{ label: string; value: T; title?: string }>;
   value: T;
   onChange: (value: T) => void;
 }) {
@@ -291,7 +298,7 @@ export function SegmentedControl<T extends string>({
           className={`segmented-control-option${value === option.value ? ' is-selected' : ''}`}
           type="button"
           aria-pressed={value === option.value}
-          title={option.label}
+          title={option.title ?? option.label}
           onClick={() => onChange(option.value)}
         >
           {option.label}
