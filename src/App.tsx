@@ -794,6 +794,10 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
+  const [, setSlideViewerMetrics] = React.useState<{
+    currentSlideNumber: number;
+    currentPageCount: number;
+  }>({ currentSlideNumber: 1, currentPageCount: 0 });
   const agendaScrollFrameRef = React.useRef<number | null>(null);
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
@@ -945,8 +949,61 @@ export function App() {
     void refreshIndicoApiKeys();
   }, [refreshIndicoApiKeys]);
 
+  const activeSlideDownloadStatus =
+    slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
+  const activeSlideTitle =
+    slideViewerState.kind === 'closed' ? '' : slideViewerState.title;
+  const activeSlideMaterials =
+    slideViewerState.kind === 'closed' ? [] : slideViewerState.materials;
+  const activeSlideSelectedMaterialId =
+    slideViewerState.kind === 'closed'
+      ? null
+      : slideViewerState.selectedMaterialId;
+  const activeSlideConferenceId =
+    slideViewerState.kind === 'closed' ? null : slideViewerState.conferenceId;
+  const activeSlideTalkId =
+    slideViewerState.kind === 'closed' ? null : slideViewerState.talkId;
+  const activeSlideDeckId =
+    slideViewerState.kind === 'closed' ? null : slideViewerState.deckId;
   const commandBarStatus =
-    destination === 'library' ? undefined : refreshState.kind === 'checking' ||
+    destination === 'slides' ? (
+      activeSlideDownloadStatus?.kind === 'downloading' ? (
+        <StatusLabel
+          label={
+            activeSlideDownloadStatus.message ??
+            `Downloading ${Math.round(
+              activeSlideDownloadStatus.totalBytes
+                ? (activeSlideDownloadStatus.bytesDownloaded /
+                    activeSlideDownloadStatus.totalBytes) *
+                  100
+                : 0,
+            )}%`
+          }
+          tone="neutral"
+          icon="info"
+        />
+      ) : activeSlideDownloadStatus?.kind === 'error' ? (
+        <StatusLabel
+          label={activeSlideDownloadStatus.message ?? 'Download failed.'}
+          tone="error"
+          icon="info"
+        />
+      ) : activeSlideDownloadStatus?.kind === 'canceled' ? (
+        <StatusLabel
+          label={activeSlideDownloadStatus.message ?? 'Download canceled.'}
+          tone="warning"
+          icon="info"
+        />
+      ) : exportState.kind === 'preparing' ||
+        exportState.kind === 'rendering' ||
+        exportState.kind === 'writing' ? (
+        <StatusLabel label={exportState.label} tone="neutral" icon="info" />
+      ) : exportState.kind === 'error' ? (
+        <StatusLabel label={exportState.label} tone="error" icon="info" />
+      ) : exportState.kind === 'empty' || exportState.kind === 'canceled' ? (
+        <StatusLabel label={exportState.label} tone="warning" icon="info" />
+      ) : undefined
+    ) : destination === 'library' ? undefined : refreshState.kind === 'checking' ||
       refreshState.kind === 'refreshing' ? (
       <StatusLabel label={refreshState.message} tone="neutral" icon="refresh" />
     ) : refreshState.kind === 'done' ? (
@@ -971,33 +1028,86 @@ export function App() {
       <StatusLabel label="Settings" icon="settings" />
     ) : undefined;
   const commandBarActions =
-    destination === 'library' ||
-    destination === 'settings' ||
-    destination === 'slides' ? undefined : (
+    destination === 'library' || destination === 'settings' ? undefined : (
       <>
-        <IconButton
-          label="Refresh"
-          title="Refresh Event from Indico"
-          icon="refresh"
-          onClick={() => {
-            void handleRefreshAction();
-          }}
-          disabled={!selectedEventId}
-        />
-        <PrimaryButton
-          icon="export"
-          onClick={() => {
-            void handleExportNotes();
-          }}
-          disabled={
-            !selectedEventId ||
-            exportState.kind === 'rendering' ||
-            exportState.kind === 'writing' ||
-            exportState.kind === 'preparing'
-          }
-        >
-          Export notes
-        </PrimaryButton>
+        {destination === 'slides' ? (
+          <>
+            {activeSlideMaterials.length > 1 ? (
+              <SegmentedControl
+                options={activeSlideMaterials.map((material) => ({
+                  label: material.title,
+                  value: material.id,
+                }))}
+                value={activeSlideSelectedMaterialId ?? activeSlideMaterials[0]?.id ?? ''}
+                onChange={(deckId) => {
+                  void handleSelectSelectedTalkDeck(deckId);
+                }}
+              />
+            ) : null}
+            {activeSlideDownloadStatus?.kind === 'downloading' ? (
+              <IconButton
+                label="Cancel download"
+                title="Cancel download"
+                icon="trash"
+                onClick={() => {
+                  void handleCancelDeckDownload();
+                }}
+              />
+            ) : activeSlideDownloadStatus?.kind === 'error' ? (
+              <IconButton
+                label="Retry download"
+                title="Retry download"
+                icon="refresh"
+                onClick={() => {
+                  void handleRetryDeckDownload();
+                }}
+              />
+            ) : null}
+            <PrimaryButton
+              icon="export"
+              onClick={() => {
+                void handleExportNotes();
+              }}
+              disabled={
+                !selectedEventId ||
+                activeSlideDownloadStatus?.kind === 'downloading' ||
+                activeSlideDownloadStatus?.kind === 'error' ||
+                activeSlideDownloadStatus?.kind === 'canceled' ||
+                exportState.kind === 'rendering' ||
+                exportState.kind === 'writing' ||
+                exportState.kind === 'preparing'
+              }
+            >
+              Export notes
+            </PrimaryButton>
+          </>
+        ) : (
+          <>
+            <IconButton
+              label="Refresh"
+              title="Refresh Event from Indico"
+              icon="refresh"
+              onClick={() => {
+                void handleRefreshAction();
+              }}
+              disabled={!selectedEventId}
+            />
+            <PrimaryButton
+              icon="export"
+              onClick={() => {
+                void handleExportNotes();
+              }}
+              disabled={
+                !selectedEventId ||
+                exportState.kind === 'rendering' ||
+                exportState.kind === 'writing' ||
+                exportState.kind === 'preparing'
+              }
+            >
+              Export notes
+            </PrimaryButton>
+          </>
+        )}
       </>
     );
   const activeEvent =
@@ -1062,22 +1172,6 @@ export function App() {
   const agendaMaterialsDeck = agendaMaterialsTalk
     ? getSelectedTalkDeck(agendaMaterialsTalk)
     : null;
-  const activeSlideDownloadStatus =
-    slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
-  const activeSlideTitle =
-    slideViewerState.kind === 'closed' ? '' : slideViewerState.title;
-  const activeSlideMaterials =
-    slideViewerState.kind === 'closed' ? [] : slideViewerState.materials;
-  const activeSlideSelectedMaterialId =
-    slideViewerState.kind === 'closed'
-      ? null
-      : slideViewerState.selectedMaterialId;
-  const activeSlideConferenceId =
-    slideViewerState.kind === 'closed' ? null : slideViewerState.conferenceId;
-  const activeSlideTalkId =
-    slideViewerState.kind === 'closed' ? null : slideViewerState.talkId;
-  const activeSlideDeckId =
-    slideViewerState.kind === 'closed' ? null : slideViewerState.deckId;
   const openAgendaTalkSlides = async (
     talk: AgendaTalkSummary,
     deckId?: string,
@@ -1542,9 +1636,6 @@ export function App() {
       }
     }
   };
-  const handleBackFromSlides = () => {
-    setDestination('agenda');
-  };
   const openLibraryEvent = (event: EventSummary) => {
     setSelectedEventId(event.id);
     setDestination('agenda');
@@ -1668,6 +1759,15 @@ export function App() {
       }
     };
   }, [activeSlideDownloadStatus, slideViewerState.kind]);
+
+  React.useEffect(() => {
+    if (slideViewerState.kind === 'closed') {
+      setSlideViewerMetrics({
+        currentSlideNumber: 1,
+        currentPageCount: 0,
+      });
+    }
+  }, [slideViewerState.kind]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1810,7 +1910,11 @@ export function App() {
 
   return (
     <div
-      className={`app-frame${destination === 'agenda' ? ' is-compact-nav' : ''}`}
+      className={`app-frame${
+        destination === 'agenda' || destination === 'slides'
+          ? ' is-compact-nav'
+          : ''
+      }`}
     >
       <aside className="nav-rail" aria-label="Primary navigation">
         <div className="nav-rail-brand" aria-label="IndicoInk">
@@ -1837,56 +1941,54 @@ export function App() {
       </aside>
 
       <section className="workspace">
-        <CommandBar
-          kicker={
-            destination === 'agenda'
-              ? ''
-              : destination === 'library'
-                ? 'Library'
-                : destination === 'settings'
-                  ? 'Settings'
-                  : destination === 'slides'
-                    ? (selectedAgendaTalk?.title ?? activeEvent.title)
+        {destination === 'slides' ? null : (
+          <CommandBar
+            kicker={
+              destination === 'agenda'
+                ? ''
+                : destination === 'library'
+                  ? 'Library'
+                  : destination === 'settings'
+                    ? 'Settings'
                     : activeEvent.title
-          }
-          title={
-            destination === 'agenda'
-              ? activeEvent.title
-              : destination === 'library'
-                ? 'Open an event'
-                : destination === 'slides'
-                  ? 'Slide Notes'
+            }
+            title={
+              destination === 'agenda'
+                ? activeEvent.title
+                : destination === 'library'
+                  ? 'Open an event'
                   : destination === 'search'
                     ? 'Search talks'
                     : destination === 'bookmarks'
                       ? 'Bookmarks'
                       : destination === 'annotated'
                         ? 'Annotated talks'
-                    : 'Settings'
-          }
-          titleMeta={
-            destination === 'agenda'
-              ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
-              : undefined
-          }
-          status={commandBarStatus}
-          leading={
-            destination === 'library' ? undefined : (
-              <IconButton
-                label="Back"
-                icon="back"
-                onClick={() =>
-                  setDestination(
-                    destination === 'slides' ? 'agenda' : 'library',
-                  )
-                }
-              />
-            )
-          }
-          actions={commandBarActions}
-        />
+                        : 'Settings'
+            }
+            titleMeta={
+              destination === 'agenda'
+                ? formatAgendaDateRangeLabel(selectedAgendaEvent?.dates ?? '')
+                : undefined
+            }
+            status={commandBarStatus}
+            leading={
+              destination === 'library' ? undefined : (
+                <IconButton
+                  label="Back"
+                  icon="back"
+                  onClick={() => setDestination('library')}
+                />
+              )
+            }
+            actions={commandBarActions}
+          />
+        )}
 
-        <main ref={pageSurfaceRef} className="page-surface" aria-live="polite">
+        <main
+          ref={pageSurfaceRef}
+          className={`page-surface${destination === 'slides' ? ' is-slides-view' : ''}`}
+          aria-live="polite"
+        >
           {destination === 'library' && (
             <section className="page-stack">
               <div className="hero-panel">
@@ -2395,7 +2497,73 @@ export function App() {
           )}
 
           {destination === 'slides' && (
-            <section className="page-stack">
+            <section className="page-stack page-stack--slides">
+              <div className="slides-view-controls">
+                <div className="slides-view-controls-row">
+                  <IconButton
+                    label="Back"
+                    icon="back"
+                    onClick={() => setDestination('agenda')}
+                  />
+                  {activeSlideMaterials.length > 1 ? (
+                    <SegmentedControl
+                      options={activeSlideMaterials.map((material) => ({
+                        label: material.title,
+                        value: material.id,
+                      }))}
+                      value={
+                        activeSlideSelectedMaterialId ??
+                        activeSlideMaterials[0]?.id ??
+                        ''
+                      }
+                      onChange={(deckId) => {
+                        void handleSelectSelectedTalkDeck(deckId);
+                      }}
+                    />
+                  ) : null}
+                  {activeSlideDownloadStatus?.kind === 'downloading' ? (
+                    <IconButton
+                      label="Cancel download"
+                      title="Cancel download"
+                      icon="trash"
+                      onClick={() => {
+                        void handleCancelDeckDownload();
+                      }}
+                    />
+                  ) : activeSlideDownloadStatus?.kind === 'error' ? (
+                    <IconButton
+                      label="Retry download"
+                      title="Retry download"
+                      icon="refresh"
+                      onClick={() => {
+                        void handleRetryDeckDownload();
+                      }}
+                    />
+                  ) : null}
+                  <PrimaryButton
+                    icon="export"
+                    onClick={() => {
+                      void handleExportNotes();
+                    }}
+                    disabled={
+                      !selectedEventId ||
+                      activeSlideDownloadStatus?.kind === 'downloading' ||
+                      activeSlideDownloadStatus?.kind === 'error' ||
+                      activeSlideDownloadStatus?.kind === 'canceled' ||
+                      exportState.kind === 'rendering' ||
+                      exportState.kind === 'writing' ||
+                      exportState.kind === 'preparing'
+                    }
+                  >
+                    Export notes
+                  </PrimaryButton>
+                </div>
+                {commandBarStatus ? (
+                  <div className="slides-view-controls-status">
+                    {commandBarStatus}
+                  </div>
+                ) : null}
+              </div>
               {selectedAgendaTalk ? (
                 <PdfPreview
                   filePath={
@@ -2404,24 +2572,9 @@ export function App() {
                       : null
                   }
                   title={activeSlideTitle}
-                  materials={activeSlideMaterials}
-                  selectedMaterialId={activeSlideSelectedMaterialId}
-                  downloadStatus={activeSlideDownloadStatus}
                   conferenceId={activeSlideConferenceId}
                   talkId={activeSlideTalkId}
-                  onBack={handleBackFromSlides}
-                  onSelectMaterial={(deckId) => {
-                    void handleSelectSelectedTalkDeck(deckId);
-                  }}
-                  onCancelDownload={() => {
-                    void handleCancelDeckDownload();
-                  }}
-                  onRetryDownload={() => {
-                    void handleRetryDeckDownload();
-                  }}
-                  onExportNotes={() => {
-                    void handleExportNotes();
-                  }}
+                  onSlideMetricsChange={setSlideViewerMetrics}
                   workspaceDeckId={activeSlideDeckId}
                   scrollContainerRef={pageSurfaceRef}
                 />

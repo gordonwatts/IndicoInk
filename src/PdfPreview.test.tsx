@@ -1,4 +1,6 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PdfPreview } from './PdfPreview';
@@ -21,61 +23,71 @@ describe('PdfPreview', () => {
     });
   });
 
-  it('shows download progress and cancellation controls while a deck is downloading', () => {
-    const onCancelDownload = vi.fn();
+  it('shows the compact slide-note controls without jump or download chrome', () => {
+    const onSlideMetricsChange = vi.fn();
 
     render(
       <PdfPreview
         filePath={null}
-        title="Download test"
-        downloadStatus={{
-          operationId: 'download-1',
-          conferenceId: 'conference-1',
-          talkId: 'talk-1',
-          deckId: 'deck-1',
-          sourceUrl: 'https://example.org/deck.pdf',
-          displayName: 'Deck',
-          filePath: 'C:/temp/deck.pdf',
-          kind: 'downloading',
-          bytesDownloaded: 512,
-          totalBytes: 1024,
-          message: null,
-          updatedAt: 1700000000000,
-        }}
-        onCancelDownload={onCancelDownload}
+        title="Compact test"
+        onSlideMetricsChange={onSlideMetricsChange}
       />,
     );
 
-    expect(screen.getByText('Downloading 50%')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pen' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Text' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Eraser' })).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Cancel download' }),
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry download' })).toBeNull();
+    expect(screen.queryByText('Jump to slide')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Go' })).toBeNull();
+    expect(onSlideMetricsChange).toHaveBeenCalledWith({
+      currentSlideNumber: 1,
+      currentPageCount: 0,
+    });
   });
 
-  it('shows retry controls for download failures', () => {
-    const onRetryDownload = vi.fn();
+  it('returns to the first slide from the home control', async () => {
+    const onSlideMetricsChange = vi.fn();
+    const scrollTo = vi.fn(function scrollToMock(
+      this: HTMLElement,
+      options?: ScrollToOptions,
+    ) {
+      this.scrollTop = options?.top ?? 0;
+      this.scrollLeft = options?.left ?? 0;
+    });
+    const scrollContainer = document.createElement('div');
+    Object.defineProperty(scrollContainer, 'scrollTo', {
+      value: scrollTo,
+      configurable: true,
+    });
+    const scrollContainerRef = {
+      current: scrollContainer,
+    } as React.RefObject<HTMLElement>;
+
+    const user = userEvent.setup();
 
     render(
       <PdfPreview
         filePath={null}
-        title="Failure test"
-        downloadStatus={{
-          operationId: 'download-1',
-          conferenceId: 'conference-1',
-          talkId: 'talk-1',
-          deckId: 'deck-1',
-          sourceUrl: 'https://example.org/deck.pdf',
-          displayName: 'Deck',
-          filePath: 'C:/temp/deck.pdf',
-          kind: 'error',
-          bytesDownloaded: 0,
-          totalBytes: null,
-          message: 'Download failed.',
-          updatedAt: 1700000000000,
-        }}
-        onRetryDownload={onRetryDownload}
+        title="Compact test"
+        onSlideMetricsChange={onSlideMetricsChange}
+        scrollContainerRef={scrollContainerRef}
       />,
     );
 
-    expect(screen.getByText('Download failed.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Home' }));
+
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      left: 0,
+      behavior: 'smooth',
+    });
+    expect(onSlideMetricsChange).toHaveBeenLastCalledWith({
+      currentSlideNumber: 1,
+      currentPageCount: 0,
+    });
   });
 });

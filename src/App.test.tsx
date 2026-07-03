@@ -473,11 +473,7 @@ describe('App', () => {
       }),
     );
 
-    expect(
-      await screen.findByRole('heading', {
-        name: 'Private slides',
-      }),
-    ).toBeTruthy();
+    expect(await screen.findByLabelText('API key')).toBeTruthy();
 
     await user.type(screen.getByLabelText('API key'), 'secret-api-key');
     await user.click(
@@ -496,8 +492,8 @@ describe('App', () => {
       'deck-private',
     );
     expect(
-      await screen.findByRole('heading', {
-        name: 'Private slide materials',
+      await screen.findByRole('button', {
+        name: 'Home',
       }),
     ).toBeTruthy();
   },
@@ -677,10 +673,15 @@ describe('App', () => {
     );
 
     expect(
-      await screen.findByRole('heading', {
-        name: 'Designing a calm note-taking workflow',
+      await screen.findByRole('button', {
+        name: 'Home',
       }),
     ).toBeTruthy();
+    expect(
+      screen.queryByRole('heading', {
+        name: 'Slide Notes',
+      }),
+    ).toBeNull();
     expect(
       screen.getByRole('button', {
         name: 'Back',
@@ -888,8 +889,8 @@ describe('App', () => {
     );
 
     expect(
-      await screen.findByRole('heading', {
-        name: 'Opening the right deck',
+      await screen.findByRole('button', {
+        name: 'Home',
       }),
     ).toBeTruthy();
     expect(
