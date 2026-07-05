@@ -467,9 +467,9 @@ export const buildConferenceNotesMarkdown = (
         );
         if (rendered.links.length) {
           lines.push('');
-          for (const link of rendered.links) {
-            lines.push(`  - ${formatMarkdownLink(link.label, link.url)}`);
-          }
+          lines.push(
+            `- Links on slide: ${rendered.links.map((link) => formatMarkdownLink(link.label, link.url)).join(', ')}`,
+          );
         }
         lines.push('');
       }

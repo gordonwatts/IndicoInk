@@ -192,6 +192,10 @@ describe('export notes', () => {
             label: 'ATL-COM-03',
             url: 'https://cds.cern.ch/document/1.pdf',
           },
+          {
+            label: 'Talk notes',
+            url: 'https://indico.example.org/event/summit/materials/notes',
+          },
         ],
       },
     ]);
@@ -215,7 +219,7 @@ describe('export notes', () => {
       '- ![Annotated slide 3](<data:image/png;base64,exported>)',
     );
     expect(markdown).toContain(
-      '  - [ATL-COM-03](<https://cds.cern.ch/document/1.pdf>)',
+      '- Links on slide: [ATL-COM-03](<https://cds.cern.ch/document/1.pdf>), [Talk notes](<https://indico.example.org/event/summit/materials/notes>)',
     );
     expect(markdown).not.toContain('Host:');
     expect(markdown).not.toContain('Contribution:');
