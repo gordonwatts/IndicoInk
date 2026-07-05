@@ -1816,6 +1816,29 @@ input:focus-visible {
   justify-items: stretch;
 }
 
+.settings-row-hint {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.settings-row-error {
+  color: var(--danger);
+  line-height: 1.45;
+}
+
+.settings-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.settings-toggle input {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
 .settings-row-stack strong {
   word-break: break-word;
   text-align: right;

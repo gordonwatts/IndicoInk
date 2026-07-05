@@ -48,6 +48,9 @@ describe('App', () => {
       getDataFolder: vi
         .fn()
         .mockResolvedValue('C:/Users/test/AppData/Roaming/IndicoInk'),
+      getAppSettings: vi.fn().mockResolvedValue({
+        recordLogging: false,
+      }),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       openPdf: vi.fn().mockResolvedValue({
         canceled: true,
@@ -109,6 +112,9 @@ describe('App', () => {
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
       openDataFolder: vi.fn().mockResolvedValue(undefined),
       getConferenceExportSnapshot: vi.fn().mockResolvedValue(null),
+      setAppSettings: vi.fn().mockResolvedValue({
+        recordLogging: false,
+      }),
       showExportSaveDialog: vi.fn().mockResolvedValue({
         canceled: true,
         filePath: null,

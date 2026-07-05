@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type { AppInfo } from './shared/appInfo';
+import type { AppSettings } from './shared/appSettings';
 import type { PdfSelection } from './openPdf';
 import type { RefreshLibraryEventResult } from './shared/library';
 import type {
@@ -24,6 +25,12 @@ const getAppInfo = async (): Promise<AppInfo> =>
 
 const getDataFolder = async (): Promise<string> =>
   ipcRenderer.invoke('app:get-data-folder');
+
+const getAppSettings = async (): Promise<AppSettings> =>
+  ipcRenderer.invoke('app:get-settings');
+
+const setAppSettings = async (settings: AppSettings): Promise<AppSettings> =>
+  ipcRenderer.invoke('app:set-settings', settings);
 
 const getStartupIndicoEventUrl = async (): Promise<string | null> =>
   ipcRenderer.invoke('app:get-startup-indico-url');
@@ -140,6 +147,7 @@ const openExportFileLocation = async (filePath: string): Promise<void> =>
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
   getDataFolder,
+  getAppSettings,
   getStartupIndicoEventUrl,
   openPdf,
   readPdfBytes,
@@ -166,11 +174,13 @@ contextBridge.exposeInMainWorld('indicoInk', {
   showExportSaveDialog,
   writeExportFile,
   openExportFileLocation,
+  setAppSettings,
 });
 
 export type IndicoInkApi = {
   getAppInfo: () => Promise<AppInfo>;
   getDataFolder: () => Promise<string>;
+  getAppSettings: () => Promise<AppSettings>;
   getStartupIndicoEventUrl: () => Promise<string | null>;
   openPdf: () => Promise<PdfSelection>;
   readPdfBytes: (filePath: string) => Promise<Uint8Array>;
@@ -216,6 +226,7 @@ export type IndicoInkApi = {
   getConferenceExportSnapshot: (
     conferenceId: string,
   ) => Promise<ConferenceExportSnapshot | null>;
+  setAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   showExportSaveDialog: (options: {
     defaultPath: string;
     title: string;
