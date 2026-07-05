@@ -1970,7 +1970,6 @@ export function PdfPreview({
             ) : null}
           </div>
         ) : null}
-
         {currentPageCount > 0 ? (
           <div
             className={`pdf-preview-pages${
@@ -2156,6 +2155,35 @@ export function PdfPreview({
                 </figure>
               );
             })}
+          </div>
+        ) : null}
+        {state.kind === 'loading' ? (
+          <div className="pdf-preview-stage-status pdf-preview-stage-status--loading">
+            <span className="pdf-preview-stage-spinner" aria-hidden="true" />
+            <div className="pdf-preview-stage-status-copy">
+              <strong>{state.label}</strong>
+              <span>
+                {currentPageCount > 0
+                  ? 'Keeping the previous render visible while the new size loads.'
+                  : 'Loading the first render now.'}
+              </span>
+            </div>
+          </div>
+        ) : state.kind === 'error' ? (
+          <div className="pdf-preview-stage-status pdf-preview-stage-status--error">
+            <div className="pdf-preview-stage-status-copy">
+              <strong>PDF preview unavailable</strong>
+              <span>{state.label}</span>
+            </div>
+            {onRetryLoad ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={onRetryLoad}
+              >
+                Retry
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
