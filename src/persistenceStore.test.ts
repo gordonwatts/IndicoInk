@@ -493,4 +493,43 @@ describe('persistence store', () => {
     );
     await secondStore.close();
   });
+
+  it('orders conferences by most recent access time', async () => {
+    const dbPath = createTempDbPath('recent-order');
+    const store = new PersistenceStore(dbPath, () => 1_700_000_000_000);
+
+    await store.upsertConference({
+      id: 'conference-old',
+      sourceUrl: 'https://example.org/event/old',
+      title: 'Old Event',
+      dates: 'June 1, 2026',
+      host: 'old.example.org',
+      lastOpenedAt: 1_700_000_000_000,
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+    });
+    await store.upsertConference({
+      id: 'conference-new',
+      sourceUrl: 'https://example.org/event/new',
+      title: 'New Event',
+      dates: 'June 2, 2026',
+      host: 'new.example.org',
+      lastOpenedAt: 1_700_000_100_000,
+      createdAt: 1_700_000_100_000,
+      updatedAt: 1_700_000_100_000,
+    });
+
+    await expect(store.listConferences()).resolves.toMatchObject([
+      { id: 'conference-new' },
+      { id: 'conference-old' },
+    ]);
+
+    await store.touchConference('conference-old', 1_700_000_200_000);
+
+    await expect(store.listConferences()).resolves.toMatchObject([
+      { id: 'conference-old', lastOpenedAt: 1_700_000_200_000 },
+      { id: 'conference-new' },
+    ]);
+    await store.close();
+  });
 });
