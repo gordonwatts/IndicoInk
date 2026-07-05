@@ -46,9 +46,15 @@ import {
 } from './runtimeModes';
 import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
+import type { AppSettings } from './shared/appSettings';
 import { parseIndicoEventUrl } from './indicoEvent';
 import type { OpenLibraryEventResult } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import {
+  coerceAppSettings,
+  loadAppSettings,
+  saveAppSettings,
+} from './appSettings';
 
 if (squirrelStartup) {
   process.exit(0);
@@ -58,6 +64,7 @@ let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
 let credentialStore: IndicoCredentialStore | null = null;
 let deckCacheManager: DeckCacheManager | null = null;
+let appSettings: AppSettings | null = null;
 const importFixtureName = getImportFixtureName(process.argv);
 
 if (shouldDisableGpu()) {
@@ -78,8 +85,19 @@ const getMainWindowDevServerUrl = () =>
 const getPackagedRendererPath = () =>
   join(__dirname, '../renderer/', MAIN_WINDOW_VITE_NAME, 'index.html');
 
+const getUserDataPath = () => app.getPath('userData');
+
+const ensureAppSettings = () =>
+  appSettings ?? (appSettings = loadAppSettings(getUserDataPath()));
+
+const shouldRecordStartupLogs = () =>
+  process.env.INDICOINK_RECORD_LOGGING === '1' ||
+  ensureAppSettings().recordLogging;
+
 const logStartupEvent = (source: string, detail: unknown) => {
-  appendStartupLogEntry(app.getPath('userData'), source, detail);
+  appendStartupLogEntry(getUserDataPath(), source, detail, {
+    enabled: shouldRecordStartupLogs(),
+  });
 };
 
 const getPersistenceStore = () =>
@@ -91,7 +109,7 @@ const getPersistenceStore = () =>
 const getCredentialStore = () =>
   credentialStore ??
   (credentialStore = new IndicoCredentialStore(
-    join(app.getPath('userData'), 'indicoink-credentials.json'),
+    join(getUserDataPath(), 'indicoink-credentials.json'),
     safeStorage,
   ));
 
@@ -103,7 +121,7 @@ const getStoredApiKeyForUrl = async (url: string) => {
 const getDeckCacheManager = () =>
   deckCacheManager ??
   (deckCacheManager = new DeckCacheManager(
-    join(app.getPath('userData'), 'deck-cache'),
+    join(getUserDataPath(), 'deck-cache'),
     session.defaultSession.fetch.bind(session.defaultSession),
     getStoredApiKeyForUrl,
   ));
@@ -337,10 +355,11 @@ const createWindow = () => {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-  });
-};
+    });
+  };
 
 app.setName('IndicoInk');
+ensureAppSettings();
 logStartupEvent(
   'launch:modes',
   JSON.stringify({
@@ -354,7 +373,7 @@ if (startupIndicoEventUrl) {
 }
 
 const logStartupError = (source: string) => (error: unknown) => {
-  appendStartupLogEntry(app.getPath('userData'), source, error);
+  appendStartupLogEntry(getUserDataPath(), source, error, { force: true });
 };
 
 process.on('uncaughtException', logStartupError('uncaughtException'));
@@ -372,6 +391,21 @@ ipcMain.handle(
 ipcMain.handle(
   'app:get-data-folder',
   async (): Promise<string> => app.getPath('userData'),
+);
+
+ipcMain.handle(
+  'app:get-settings',
+  async (): Promise<AppSettings> => ensureAppSettings(),
+);
+
+ipcMain.handle(
+  'app:set-settings',
+  async (_event, settings: AppSettings): Promise<AppSettings> => {
+    const normalizedSettings = coerceAppSettings(settings);
+    appSettings = normalizedSettings;
+    saveAppSettings(getUserDataPath(), normalizedSettings);
+    return normalizedSettings;
+  },
 );
 
 ipcMain.handle(

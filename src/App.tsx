@@ -8,6 +8,7 @@ import {
   formatAgendaClockFromMinutes as layoutFormatAgendaClockFromMinutes,
 } from './agendaCanvasLayout';
 import type { AppInfo } from './shared/appInfo';
+import type { AppSettings } from './shared/appSettings';
 import type {
   AgendaTalkMaterialSummary,
   AgendaTalkSummary,
@@ -756,6 +757,13 @@ export function App() {
   const appVersionText = info ? info.appVersion : 'Loading...';
   const electronVersionText = info ? info.electronVersion : 'Loading...';
   const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
+  const [appSettings, setAppSettings] = React.useState<AppSettings | null>(
+    null,
+  );
+  const [isSavingAppSettings, setIsSavingAppSettings] = React.useState(false);
+  const [appSettingsError, setAppSettingsError] = React.useState<string | null>(
+    null,
+  );
   const [apiKeySummaries, setApiKeySummaries] = React.useState<
     IndicoApiKeySummary[]
   >([]);
@@ -817,6 +825,10 @@ export function App() {
     void window.indicoInk.getDataFolder().then(setDataFolderPath);
   }, []);
 
+  React.useEffect(() => {
+    void window.indicoInk.getAppSettings().then(setAppSettings);
+  }, []);
+
   const refreshLibraryEvents = React.useCallback(async () => {
     const events = await window.indicoInk.listLibraryEvents();
     setLibraryEvents(events);
@@ -826,6 +838,28 @@ export function App() {
     const apiKeys = await window.indicoInk.listIndicoApiKeys();
     setApiKeySummaries(apiKeys);
   }, []);
+
+  const setRecordLoggingEnabled = React.useCallback(
+    async (enabled: boolean) => {
+      setIsSavingAppSettings(true);
+      setAppSettingsError(null);
+      try {
+        const updatedSettings = await window.indicoInk.setAppSettings({
+          recordLogging: enabled,
+        });
+        setAppSettings(updatedSettings);
+      } catch (error) {
+        setAppSettingsError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to save logging settings.',
+        );
+      } finally {
+        setIsSavingAppSettings(false);
+      }
+    },
+    [],
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -2878,6 +2912,34 @@ export function App() {
                             disabled={!dataFolderPath}
                           />
                         </div>
+                      </div>
+                    </div>
+                    <div className="settings-row settings-row-column">
+                      <span>Logging</span>
+                      <div className="settings-row-stack settings-row-stack-wide">
+                        <label className="settings-toggle">
+                          <input
+                            type="checkbox"
+                            checked={appSettings?.recordLogging ?? false}
+                            onChange={(event) => {
+                              void setRecordLoggingEnabled(event.target.checked);
+                            }}
+                            disabled={isSavingAppSettings || !appSettings}
+                          />
+                          <span>
+                            Record startup events and diagnostics in the data
+                            folder.
+                          </span>
+                        </label>
+                        <div className="settings-row-hint">
+                          Uncaught exceptions are always recorded. The log file
+                          stays under 5 MB.
+                        </div>
+                        {appSettingsError ? (
+                          <div className="settings-row-error">
+                            {appSettingsError}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="settings-row settings-row-column">

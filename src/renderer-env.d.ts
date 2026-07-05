@@ -1,4 +1,5 @@
 import type { AppInfo } from './shared/appInfo';
+import type { AppSettings } from './shared/appSettings';
 import type { AgendaTalkSummary } from './shared/agenda';
 import type { PdfSelection } from './openPdf';
 import type {
@@ -21,6 +22,7 @@ declare global {
     indicoInk: {
       getAppInfo: () => Promise<AppInfo>;
       getDataFolder: () => Promise<string>;
+      getAppSettings: () => Promise<AppSettings>;
       getStartupIndicoEventUrl: () => Promise<string | null>;
       openPdf: () => Promise<PdfSelection>;
       readPdfBytes: (filePath: string) => Promise<Uint8Array>;
@@ -66,6 +68,7 @@ declare global {
       getConferenceExportSnapshot: (
         conferenceId: string,
       ) => Promise<ConferenceExportSnapshot | null>;
+      setAppSettings: (settings: AppSettings) => Promise<AppSettings>;
       showExportSaveDialog: (options: {
         defaultPath: string;
         title: string;

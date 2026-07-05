@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
 import { getIsolatedPersistenceDbPath } from '../../src/runtimeModes';
+import { startupLogFileName } from '../../src/startupLog';
 
 const electronPath = resolve('node_modules/electron/dist/electron.exe');
 const electronCacheRoot = resolve('.electron-cache');
@@ -288,6 +289,7 @@ const launchBinaryHarness = async ({
         INDICOINK_PERSISTENCE_DB_PATH:
           getIsolatedPersistenceDbPath(userDataDir),
         INDICOINK_DISABLE_GPU: '1',
+        INDICOINK_RECORD_LOGGING: '1',
         ...(useElectronDevEnv
           ? {
               ELECTRON_CONFIG_CACHE: electronCacheRoot,
@@ -421,7 +423,7 @@ const runImportFixtureCommand = async ({
   extraEnv,
   useElectronDevEnv = true,
 }: LaunchBinaryHarnessOptions) => {
-  const startupLogPath = join(userDataDir, 'startup.log');
+  const startupLogPath = join(userDataDir, startupLogFileName);
   const child = spawn(
     binaryPath,
     [`--user-data-dir=${userDataDir}`, ...launchArgs],
@@ -447,6 +449,7 @@ const runImportFixtureCommand = async ({
         INDICOINK_PERSISTENCE_DB_PATH:
           getIsolatedPersistenceDbPath(userDataDir),
         INDICOINK_DISABLE_GPU: '1',
+        INDICOINK_RECORD_LOGGING: '1',
         ...(useElectronDevEnv
           ? {
               ELECTRON_CONFIG_CACHE: electronCacheRoot,
