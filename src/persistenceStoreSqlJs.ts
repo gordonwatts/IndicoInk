@@ -889,9 +889,20 @@ export class PersistenceStore {
   async listConferences(): Promise<Conference[]> {
     const db = await this.getDb();
     const rows = db
-      .prepare('SELECT * FROM conferences ORDER BY updated_at DESC')
+      .prepare(
+        'SELECT * FROM conferences ORDER BY COALESCE(last_opened_at, updated_at) DESC, updated_at DESC',
+      )
       .all() as Record<string, unknown>[];
     return rows.map((row) => rowToConference(row));
+  }
+
+  async touchConference(id: string, lastOpenedAt = this.now()) {
+    const db = await this.getDb();
+    db.prepare(
+      'UPDATE conferences SET last_opened_at = ?, updated_at = ? WHERE id = ?',
+    ).run([lastOpenedAt, lastOpenedAt, id]);
+    this.markDirty();
+    await this.flushIfNeeded();
   }
 
   async deleteConference(id: string) {

@@ -831,7 +831,7 @@ export function App() {
 
   const refreshLibraryEvents = React.useCallback(async () => {
     const events = await window.indicoInk.listLibraryEvents();
-    setLibraryEvents(events);
+    setLibraryEvents(events ?? []);
   }, []);
 
   const refreshIndicoApiKeys = React.useCallback(async () => {
@@ -860,6 +860,11 @@ export function App() {
     },
     [],
   );
+
+  const returnToLibrary = React.useCallback(async () => {
+    await refreshLibraryEvents();
+    setDestination('library');
+  }, [refreshLibraryEvents]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1702,12 +1707,14 @@ export function App() {
     const deletingSelected = selectedEventId === deleteTarget.id;
     await window.indicoInk.deleteLibraryEvent(deleteTarget.id);
     setDeleteTarget(null);
-    await refreshLibraryEvents();
 
     if (deletingSelected) {
       setSelectedEventId(null);
-      setDestination('library');
+      await returnToLibrary();
+      return;
     }
+
+    await refreshLibraryEvents();
   };
   const confirmDeleteIndicoApiKey = async () => {
     if (!apiKeyDeleteTarget) {
@@ -1968,7 +1975,14 @@ export function App() {
               label={item.label}
               shortLabel={item.shortLabel}
               icon={item.icon}
-              onClick={() => setDestination(item.id)}
+              onClick={() => {
+                if (item.id === 'library') {
+                  void returnToLibrary();
+                  return;
+                }
+
+                setDestination(item.id);
+              }}
             />
           ))}
         </nav>
@@ -2010,7 +2024,9 @@ export function App() {
                 <IconButton
                   label="Back"
                   icon="back"
-                  onClick={() => setDestination('library')}
+                  onClick={() => {
+                    void returnToLibrary();
+                  }}
                 />
               )
             }

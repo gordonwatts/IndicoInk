@@ -139,7 +139,7 @@ describe('App', () => {
     window.indicoInk.listLibraryEvents = vi
       .fn()
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([openedEvent]);
+      .mockResolvedValue([openedEvent]);
     window.indicoInk.openLibraryEvent = vi.fn().mockResolvedValue({
       kind: 'opened',
       result: {
@@ -792,6 +792,169 @@ describe('App', () => {
         selector: '.nav-rail-foot strong',
       }),
     ).toBeNull();
+  });
+
+  it('refreshes the recently opened list after returning from slides', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-1',
+      sourceUrl: 'https://indico.example.org/event/indico-1',
+      title: 'IndicoInk Small Event 2026',
+      dates: 'June 12, 2026',
+      host: 'small.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    const updatedLibraryEvent = {
+      ...libraryEvent,
+      annotationSummary: '1 annotated slide',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-1',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-1',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Designing a calm note-taking workflow',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Opening keynote',
+        timeRangeLabel: '09:00 - 09:45',
+        room: 'Auditorium A',
+        bookmarked: false,
+        materialSummary: 'PDF',
+        materials: [
+          {
+            id: 'deck-1',
+            title: 'Opening slides',
+            sourceUrl: 'https://indico.example.org/materials/deck-1.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+            pageCount: 10,
+          },
+        ],
+        annotatedSlideCount: 1,
+      },
+    ];
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([libraryEvent])
+      .mockResolvedValue([updatedLibraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+
+    render(<App />);
+
+    await screen.findByRole('button', {
+      name: `Open ${libraryEvent.title}`,
+    });
+
+    await user.click(
+      screen.getByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open talk for Designing a calm note-taking workflow',
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Back',
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Back',
+      }),
+    );
+
+    expect(await screen.findByText('1 annotated slide')).toBeTruthy();
+  });
+
+  it('refreshes the recently opened list when using the Library nav button', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-2',
+      sourceUrl: 'https://indico.example.org/event/indico-2',
+      title: 'IndicoInk Library Route Event',
+      dates: 'June 13, 2026',
+      host: 'small.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    const updatedLibraryEvent = {
+      ...libraryEvent,
+      annotationSummary: '2 annotated slides',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-2',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-2',
+        sortStartsAt: Date.UTC(2026, 5, 13, 9, 0, 0, 0),
+        dayLabel: 'Saturday, June 13, 2026',
+        title: 'Navigating back to the library',
+        speaker: 'Grace Hopper',
+        sessionTitle: 'Routing session',
+        timeRangeLabel: '09:00 - 09:45',
+        room: 'Auditorium B',
+        bookmarked: false,
+        materialSummary: 'PDF',
+        materials: [
+          {
+            id: 'deck-2',
+            title: 'Routing slides',
+            sourceUrl: 'https://indico.example.org/materials/deck-2.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+            pageCount: 8,
+          },
+        ],
+        annotatedSlideCount: 2,
+      },
+    ];
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([libraryEvent])
+      .mockResolvedValue([updatedLibraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+
+    render(<App />);
+
+    await screen.findByRole('button', {
+      name: `Open ${libraryEvent.title}`,
+    });
+
+    await user.click(
+      screen.getByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open talk for Navigating back to the library',
+      }),
+    );
+
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
+        'button',
+        {
+          name: 'Library',
+        },
+      ),
+    );
+
+    expect(await screen.findByText('2 annotated slides')).toBeTruthy();
   });
 
   it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {

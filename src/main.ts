@@ -582,6 +582,7 @@ ipcMain.handle(
       throw new Error('The requested deck does not exist.');
     }
 
+    await getPersistenceStore().touchConference(conferenceId);
     return getDeckCacheManager().openDeck(deck);
   },
 );
