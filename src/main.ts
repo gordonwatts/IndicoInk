@@ -662,6 +662,7 @@ app.whenReady().then(() => {
         app.getPath('userData'),
         'fixture-import:error',
         `Unknown fixture name: ${importFixtureName}`,
+        { enabled: shouldRecordStartupLogs() },
       );
       app.exit(1);
       return;
@@ -678,6 +679,7 @@ app.whenReady().then(() => {
           app.getPath('userData'),
           'fixture-import:done',
           JSON.stringify(result),
+          { enabled: shouldRecordStartupLogs() },
         );
         app.exit(0);
       })
@@ -686,6 +688,7 @@ app.whenReady().then(() => {
           app.getPath('userData'),
           'fixture-import:error',
           error,
+          { enabled: shouldRecordStartupLogs() },
         );
         app.exit(1);
       });
