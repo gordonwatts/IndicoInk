@@ -2,6 +2,7 @@ import { getStrokeWidth } from './strokeTools';
 import type {
   ConferenceExportSnapshot,
   ExportRenderedSlide,
+  ExportRenderedSlideLink,
   ExportSlideAnnotation,
   ExportTalkSnapshot,
 } from './shared/exportNotes';
@@ -34,6 +35,17 @@ type PdfPageLike = {
     width: number;
     height: number;
   };
+  getAnnotations?: (options?: {
+    intent?: string;
+  }) => Promise<PdfAnnotationLike[]>;
+  getTextContent?: () => Promise<{
+    items: Array<{
+      str?: string;
+      transform?: number[];
+      width?: number;
+      height?: number;
+    }>;
+  }>;
   render: (options: {
     canvas: HTMLCanvasElement;
     canvasContext: CanvasRenderingContext2D;
@@ -42,6 +54,22 @@ type PdfPageLike = {
 };
 
 type LoadPdfDocument = (bytes: Uint8Array) => Promise<PdfDocumentHandle>;
+
+type SlideImageExport = {
+  imageDataUrl: string;
+  links: ExportRenderedSlideLink[];
+};
+
+type PdfAnnotationLike = {
+  subtype?: string;
+  annotationType?: number;
+  url?: string;
+  unsafeUrl?: string;
+  rect?: number[];
+  contents?: string;
+  title?: string;
+  altText?: string;
+};
 
 export const collectExportRenderJobs = (
   snapshot: ConferenceExportSnapshot,
@@ -107,12 +135,11 @@ const formatTalkStartTime = (value: number) => {
 const escapeMarkdown = (value: string) =>
   value.replaceAll('\\', '\\\\').replaceAll('|', '\\|');
 
-const escapeHtmlAttribute = (value: string) =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
+const escapeMarkdownLinkText = (value: string) =>
+  escapeMarkdown(value).replaceAll('[', '\\[').replaceAll(']', '\\]');
+
+const formatMarkdownLink = (label: string, url: string) =>
+  `[${escapeMarkdownLinkText(label)}](<${url.replaceAll('>', '%3E')}>)`;
 
 const renderStroke = (
   context: CanvasRenderingContext2D,
@@ -192,6 +219,103 @@ const renderTextNote = (
   context.restore();
 };
 
+const normalizeRect = (rect: number[]) =>
+  [
+    Math.min(rect[0] ?? 0, rect[2] ?? 0),
+    Math.min(rect[1] ?? 0, rect[3] ?? 0),
+    Math.max(rect[0] ?? 0, rect[2] ?? 0),
+    Math.max(rect[1] ?? 0, rect[3] ?? 0),
+  ] as const;
+
+const rectsIntersect = (
+  left: readonly [number, number, number, number],
+  right: readonly [number, number, number, number],
+) =>
+  left[0] <= right[2] &&
+  left[2] >= right[0] &&
+  left[1] <= right[3] &&
+  left[3] >= right[1];
+
+const getTextItemRect = (item: {
+  transform?: number[];
+  width?: number;
+  height?: number;
+}) => {
+  const transform = item.transform;
+  if (!transform || transform.length < 6) {
+    return null;
+  }
+
+  const width = typeof item.width === 'number' ? item.width : 0;
+  const height = typeof item.height === 'number' ? item.height : 0;
+  const x = transform[4] ?? 0;
+  const y = (transform[5] ?? 0) - height;
+
+  return [x, y, x + width, y + height] as const;
+};
+
+const normalizeLinkLabel = (value: string) => value.replace(/\s+/g, ' ').trim();
+
+const extractSlideLinks = async (
+  page: PdfPageLike,
+): Promise<ExportRenderedSlideLink[]> => {
+  const [annotations, textContent] = await Promise.all([
+    page.getAnnotations?.({ intent: 'display' }) ?? Promise.resolve([]),
+    page.getTextContent?.() ?? Promise.resolve({ items: [] }),
+  ]);
+
+  const textItems = textContent.items ?? [];
+  const links: ExportRenderedSlideLink[] = [];
+
+  for (const annotation of annotations) {
+    const url =
+      typeof annotation?.url === 'string'
+        ? annotation.url
+        : typeof annotation?.unsafeUrl === 'string'
+          ? annotation.unsafeUrl
+          : null;
+    const subtype = annotation?.subtype ?? annotation?.annotationType;
+    if (!url || (subtype !== 'Link' && subtype !== 2)) {
+      continue;
+    }
+
+    let label = '';
+    if (Array.isArray(annotation?.rect) && annotation.rect.length >= 4) {
+      const annotationRect = normalizeRect(annotation.rect);
+      const matchingTexts = textItems
+        .map((item) => {
+          const itemRect = getTextItemRect(item);
+          if (!itemRect || !item.str?.trim()) {
+            return null;
+          }
+
+          return rectsIntersect(annotationRect, itemRect) ? item.str : null;
+        })
+        .filter((value): value is string => Boolean(value));
+
+      label = normalizeLinkLabel(matchingTexts.join(' '));
+    }
+
+    if (!label) {
+      label = normalizeLinkLabel(
+        annotation?.contents ?? annotation?.title ?? annotation?.altText ?? url,
+      );
+    }
+
+    links.push({ label, url });
+  }
+
+  const deduped = new Map<string, ExportRenderedSlideLink>();
+  for (const link of links) {
+    const key = `${link.label}\u0000${link.url}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, link);
+    }
+  }
+
+  return [...deduped.values()];
+};
+
 export const renderAnnotatedSlidePng = async ({
   filePath,
   slideNumber,
@@ -208,7 +332,7 @@ export const renderAnnotatedSlidePng = async ({
   loadPdfDocument?: LoadPdfDocument;
   createCanvas?: () => HTMLCanvasElement;
   exportScale?: number;
-}): Promise<string> => {
+}): Promise<SlideImageExport> => {
   const bytes = await readPdfBytes(filePath);
   const loadDocument =
     loadPdfDocument ??
@@ -227,6 +351,7 @@ export const renderAnnotatedSlidePng = async ({
   const { document, destroy } = await loadDocument(bytes);
   try {
     const page = await document.getPage(slideNumber);
+    const links = await extractSlideLinks(page);
     const viewport = page.getViewport({ scale: exportScale });
     const canvas =
       createCanvas?.() ?? globalThis.document.createElement('canvas');
@@ -253,7 +378,10 @@ export const renderAnnotatedSlidePng = async ({
       }
     }
 
-    return canvas.toDataURL('image/png');
+    return {
+      imageDataUrl: canvas.toDataURL('image/png'),
+      links,
+    };
   } finally {
     await destroy?.();
   }
@@ -278,6 +406,9 @@ const formatTalkDateRange = (talk: ExportTalkSnapshot) => {
 
   return 'Time unavailable';
 };
+
+const formatSlideImage = (slideNumber: number, imageDataUrl: string) =>
+  `![Annotated slide ${slideNumber}](<${imageDataUrl.replaceAll('>', '%3E')}>)`;
 
 export const buildConferenceNotesMarkdown = (
   snapshot: ConferenceExportSnapshot,
@@ -332,10 +463,14 @@ export const buildConferenceNotesMarkdown = (
         lines.push(`### Slide ${slide.slideNumber}`);
         lines.push('');
         lines.push(
-          `<img alt="${escapeHtmlAttribute(
-            `Slide ${slide.slideNumber}`,
-          )}" src="${escapeHtmlAttribute(rendered.imageDataUrl)}" />`,
+          `- ${formatSlideImage(slide.slideNumber, rendered.imageDataUrl)}`,
         );
+        if (rendered.links.length) {
+          lines.push('');
+          lines.push(
+            `- Links on slide: ${rendered.links.map((link) => formatMarkdownLink(link.label, link.url)).join(', ')}`,
+          );
+        }
         lines.push('');
       }
     }

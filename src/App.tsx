@@ -165,7 +165,7 @@ function formatAgendaDateRangeLabel(dates: string) {
 
   const shortStartMonth = agendaMonthShortNames[startMonth] ?? startMonth;
   const shortEndMonth = endMonth
-    ? agendaMonthShortNames[endMonth] ?? endMonth
+    ? (agendaMonthShortNames[endMonth] ?? endMonth)
     : shortStartMonth;
   const resolvedStartYear = startYear ?? endYear ?? '';
   const resolvedEndYear = endYear ?? startYear ?? '';
@@ -176,7 +176,11 @@ function formatAgendaDateRangeLabel(dates: string) {
       : `${shortStartMonth} ${startDay}`;
   }
 
-  if (resolvedStartYear && resolvedEndYear && resolvedStartYear !== resolvedEndYear) {
+  if (
+    resolvedStartYear &&
+    resolvedEndYear &&
+    resolvedStartYear !== resolvedEndYear
+  ) {
     return `${shortStartMonth} ${startDay}, ${resolvedStartYear} - ${shortEndMonth} ${endDay}, ${resolvedEndYear}`;
   }
 
@@ -1014,7 +1018,7 @@ export function App() {
               activeSlideDownloadStatus.totalBytes
                 ? (activeSlideDownloadStatus.bytesDownloaded /
                     activeSlideDownloadStatus.totalBytes) *
-                  100
+                    100
                 : 0,
             )}%`
           }
@@ -1042,8 +1046,8 @@ export function App() {
       ) : exportState.kind === 'empty' || exportState.kind === 'canceled' ? (
         <StatusLabel label={exportState.label} tone="warning" icon="info" />
       ) : undefined
-    ) : destination === 'library' ? undefined : refreshState.kind === 'checking' ||
-      refreshState.kind === 'refreshing' ? (
+    ) : destination === 'library' ? undefined : refreshState.kind ===
+        'checking' || refreshState.kind === 'refreshing' ? (
       <StatusLabel label={refreshState.message} tone="neutral" icon="refresh" />
     ) : refreshState.kind === 'done' ? (
       <StatusLabel label={refreshState.message} tone="success" icon="check" />
@@ -1077,7 +1081,11 @@ export function App() {
                   label: material.title,
                   value: material.id,
                 }))}
-                value={activeSlideSelectedMaterialId ?? activeSlideMaterials[0]?.id ?? ''}
+                value={
+                  activeSlideSelectedMaterialId ??
+                  activeSlideMaterials[0]?.id ??
+                  ''
+                }
                 onChange={(deckId) => {
                   void handleSelectSelectedTalkDeck(deckId);
                 }}
@@ -1612,7 +1620,7 @@ export function App() {
           return;
         }
 
-        const imageDataUrl = await renderAnnotatedSlidePng({
+        const renderedSlide = await renderAnnotatedSlidePng({
           filePath: job.deckFilePath,
           slideNumber: job.slideNumber,
           annotations: job.annotations,
@@ -1628,7 +1636,8 @@ export function App() {
           deckDisplayName: job.deckDisplayName,
           deckSourceUrl: job.deckSourceUrl,
           slideNumber: job.slideNumber,
-          imageDataUrl,
+          imageDataUrl: renderedSlide.imageDataUrl,
+          links: renderedSlide.links,
         });
         setExportState({
           kind: 'rendering',
@@ -1943,11 +1952,7 @@ export function App() {
         agendaScrollFrameRef.current = null;
       }
     };
-  }, [
-    destination,
-    selectedEventId,
-    selectedAgendaDay,
-  ]);
+  }, [destination, selectedEventId, selectedAgendaDay]);
 
   return (
     <div
@@ -2210,7 +2215,9 @@ export function App() {
                               value: label,
                               title: label,
                             }))}
-                            value={selectedAgendaDay ?? agendaDayLabels[0] ?? ''}
+                            value={
+                              selectedAgendaDay ?? agendaDayLabels[0] ?? ''
+                            }
                             onChange={setAgendaDayLabel}
                           />
                           <IconButton
@@ -2242,7 +2249,9 @@ export function App() {
                           {visibleAgendaTalks.length ? (
                             <AgendaTimelineCanvas
                               visibleAgendaTalks={visibleAgendaTalks}
-                              selectedAgendaTalkId={selectedAgendaTalk?.id ?? null}
+                              selectedAgendaTalkId={
+                                selectedAgendaTalk?.id ?? null
+                              }
                               viewportRef={agendaCanvasMeasureRef}
                               onOpenTalk={(talk) => {
                                 setSelectedAgendaTalkId(talk.id);
@@ -2294,7 +2303,9 @@ export function App() {
                                   />
                                   {agendaMaterialsTalk.upstreamSummary ? (
                                     <StatusLabel
-                                      label={agendaMaterialsTalk.upstreamSummary}
+                                      label={
+                                        agendaMaterialsTalk.upstreamSummary
+                                      }
                                       tone={
                                         agendaMaterialsTalk.upstreamStatus ===
                                         'missing'
@@ -2316,64 +2327,68 @@ export function App() {
                                       </p>
                                     </div>
                                     <div className="agenda-talk-material-list">
-                                      {agendaMaterialsPdfMaterials.map((material) => (
-                                        <Row
-                                          key={material.id}
-                                          variant="list"
-                                          selected={material.selected}
-                                          onClick={() => {
-                                            void handleSelectSelectedTalkDeck(
-                                              material.id,
-                                            );
-                                          }}
-                                          ariaLabel={`Select ${material.title} for ${agendaMaterialsTalk.title}`}
-                                          title={formatMaterialLabel(material)}
-                                          meta={
-                                            <StatusLabel
-                                              label={
-                                                material.selected
-                                                  ? 'Default deck'
-                                                  : 'Available PDF'
-                                              }
-                                              tone={
-                                                material.selected
-                                                  ? 'success'
-                                                  : 'neutral'
-                                              }
-                                              icon={
-                                                material.selected
-                                                  ? 'check'
-                                                  : 'open'
-                                              }
-                                            />
-                                          }
-                                          detail={
-                                            material.upstreamStatus ? (
+                                      {agendaMaterialsPdfMaterials.map(
+                                        (material) => (
+                                          <Row
+                                            key={material.id}
+                                            variant="list"
+                                            selected={material.selected}
+                                            onClick={() => {
+                                              void handleSelectSelectedTalkDeck(
+                                                material.id,
+                                              );
+                                            }}
+                                            ariaLabel={`Select ${material.title} for ${agendaMaterialsTalk.title}`}
+                                            title={formatMaterialLabel(
+                                              material,
+                                            )}
+                                            meta={
                                               <StatusLabel
                                                 label={
-                                                  material.upstreamStatus ===
-                                                  'missing'
-                                                    ? 'Removed from Indico'
-                                                    : material.upstreamStatus ===
-                                                        'changed'
-                                                      ? 'Updated on Indico'
-                                                      : 'Still on Indico'
+                                                  material.selected
+                                                    ? 'Default deck'
+                                                    : 'Available PDF'
                                                 }
                                                 tone={
-                                                  material.upstreamStatus ===
-                                                  'missing'
-                                                    ? 'warning'
-                                                    : material.upstreamStatus ===
-                                                        'changed'
-                                                      ? 'neutral'
-                                                      : 'success'
+                                                  material.selected
+                                                    ? 'success'
+                                                    : 'neutral'
                                                 }
-                                                icon="info"
+                                                icon={
+                                                  material.selected
+                                                    ? 'check'
+                                                    : 'open'
+                                                }
                                               />
-                                            ) : null
-                                          }
-                                        />
-                                      ))}
+                                            }
+                                            detail={
+                                              material.upstreamStatus ? (
+                                                <StatusLabel
+                                                  label={
+                                                    material.upstreamStatus ===
+                                                    'missing'
+                                                      ? 'Removed from Indico'
+                                                      : material.upstreamStatus ===
+                                                          'changed'
+                                                        ? 'Updated on Indico'
+                                                        : 'Still on Indico'
+                                                  }
+                                                  tone={
+                                                    material.upstreamStatus ===
+                                                    'missing'
+                                                      ? 'warning'
+                                                      : material.upstreamStatus ===
+                                                          'changed'
+                                                        ? 'neutral'
+                                                        : 'success'
+                                                  }
+                                                  icon="info"
+                                                />
+                                              ) : null
+                                            }
+                                          />
+                                        ),
+                                      )}
                                     </div>
                                   </div>
                                 ) : (
@@ -2403,7 +2418,9 @@ export function App() {
                                           <Row
                                             key={material.id}
                                             variant="list"
-                                            title={formatMaterialLabel(material)}
+                                            title={formatMaterialLabel(
+                                              material,
+                                            )}
                                             meta={
                                               <StatusLabel
                                                 label="Non-PDF material"
@@ -2443,8 +2460,8 @@ export function App() {
                       <Icon name="agenda" />
                       <strong>No stored talks yet</strong>
                       <span>
-                        Open a conference event to populate the temporary
-                        agenda list.
+                        Open a conference event to populate the temporary agenda
+                        list.
                       </span>
                     </div>
                   )}
@@ -2938,7 +2955,9 @@ export function App() {
                             type="checkbox"
                             checked={appSettings?.recordLogging ?? false}
                             onChange={(event) => {
-                              void setRecordLoggingEnabled(event.target.checked);
+                              void setRecordLoggingEnabled(
+                                event.target.checked,
+                              );
                             }}
                             disabled={isSavingAppSettings || !appSettings}
                           />
