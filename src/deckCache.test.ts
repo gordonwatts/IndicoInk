@@ -96,6 +96,11 @@ describe('deck cache manager', () => {
     if (openResult.kind !== 'downloading') {
       throw new Error('Expected a download to start.');
     }
+    expect(manager.getDownloadStatus(openResult.operationId)).toEqual(
+      expect.objectContaining({
+        startedAt: expect.any(Number),
+      }),
+    );
     const filePath = manager.getCacheFilePath(deck.conferenceId, deck.id);
 
     await manager.cancelDownload(openResult.operationId);
