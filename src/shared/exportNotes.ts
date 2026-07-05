@@ -23,6 +23,11 @@ export type ExportSlideAnnotationText = {
   text: string;
 };
 
+export type ExportRenderedSlideLink = {
+  label: string;
+  url: string;
+};
+
 export type ExportSlideAnnotation =
   | ExportSlideAnnotationStroke
   | ExportSlideAnnotationText;
@@ -73,4 +78,5 @@ export type ExportRenderedSlide = {
   deckSourceUrl: string;
   slideNumber: number;
   imageDataUrl: string;
+  links: ExportRenderedSlideLink[];
 };

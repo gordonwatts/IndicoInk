@@ -88,6 +88,8 @@ describe('export notes', () => {
               width: 100 * scale,
               height: 200 * scale,
             })),
+            getAnnotations: vi.fn().mockResolvedValue([]),
+            getTextContent: vi.fn().mockResolvedValue({ items: [] }),
             render: vi.fn(() => ({ promise: Promise.resolve() })),
           }),
         },
@@ -97,7 +99,10 @@ describe('export notes', () => {
       exportScale: 2,
     });
 
-    expect(image).toBe('data:image/png;base64,exported');
+    expect(image).toEqual({
+      imageDataUrl: 'data:image/png;base64,exported',
+      links: [],
+    });
     expect(canvas.width).toBe(200);
     expect(canvas.height).toBe(400);
     expect(calls).toContain('stroke');
@@ -182,6 +187,12 @@ describe('export notes', () => {
         deckSourceUrl: 'https://indico.example.org/materials/slides.pdf',
         slideNumber: 3,
         imageDataUrl: 'data:image/png;base64,exported',
+        links: [
+          {
+            label: 'ATL-COM-03',
+            url: 'https://cds.cern.ch/document/1.pdf',
+          },
+        ],
       },
     ]);
 
@@ -201,13 +212,16 @@ describe('export notes', () => {
       '- [Original Slides](https://indico.example.org/materials/slides.pdf)',
     );
     expect(markdown).toContain(
-      '<img alt="Slide 3" src="data:image/png;base64,exported" />',
+      '- ![Annotated slide 3](<data:image/png;base64,exported>)',
+    );
+    expect(markdown).toContain(
+      '  - [ATL-COM-03](<https://cds.cern.ch/document/1.pdf>)',
     );
     expect(markdown).not.toContain('Host:');
     expect(markdown).not.toContain('Contribution:');
     expect(markdown).not.toContain('Room:');
     expect(markdown).not.toContain('Annotations:');
-    expect(markdown).not.toContain('Annotated slide');
+    expect(markdown).toContain('Annotated slide 3');
     expect(markdown).not.toContain('Time:\n\n- [Original Slides]');
   });
 
