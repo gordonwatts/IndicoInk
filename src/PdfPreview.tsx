@@ -344,6 +344,11 @@ export function PdfPreview({
     scrollTop: number;
     currentSlideNumber: number;
   } | null>(null);
+  const pendingViewportRestoreRef = React.useRef<{
+    pageIndex: number;
+    pageOffsetRatio: number;
+    scrollLeft: number;
+  } | null>(null);
   const currentSlideNumberRef = React.useRef(1);
   const pageFigureRefs = React.useRef<Array<HTMLElement | null>>([]);
   const [zoomLevel, setZoomLevel] = React.useState(1);
@@ -351,6 +356,66 @@ export function PdfPreview({
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
   const lastRenderedZoomRef = React.useRef(zoomLevel);
+
+  const captureViewportAnchor = React.useCallback(() => {
+    const scrollContainer = getScrollViewportElement(scrollContainerRef);
+    const pageFigures = pageFigureRefs.current;
+    if (!scrollContainer || pageFigures.length === 0) {
+      return null;
+    }
+
+    const scrollContainerBox = scrollContainer.getBoundingClientRect();
+    const visibleTop = scrollContainer.scrollTop;
+    let anchoredPageIndex = -1;
+    let anchoredPageTop = 0;
+    let anchoredPageHeight = 1;
+
+    for (let index = 0; index < pageFigures.length; index += 1) {
+      const pageFigure = pageFigures[index];
+      if (!pageFigure) {
+        continue;
+      }
+
+      const pageBox = pageFigure.getBoundingClientRect();
+      const pageTop =
+        pageBox.top - scrollContainerBox.top + scrollContainer.scrollTop;
+      const pageBottom = pageTop + pageBox.height;
+
+      if (pageTop <= visibleTop && pageBottom > visibleTop) {
+        anchoredPageIndex = index;
+        anchoredPageTop = pageTop;
+        anchoredPageHeight = Math.max(1, pageBox.height);
+        break;
+      }
+
+      if (pageTop <= visibleTop) {
+        anchoredPageIndex = index;
+        anchoredPageTop = pageTop;
+        anchoredPageHeight = Math.max(1, pageBox.height);
+        continue;
+      }
+
+      if (anchoredPageIndex === -1) {
+        anchoredPageIndex = index;
+        anchoredPageTop = pageTop;
+        anchoredPageHeight = Math.max(1, pageBox.height);
+      }
+
+      break;
+    }
+
+    if (anchoredPageIndex < 0) {
+      return null;
+    }
+
+    return {
+      pageIndex: anchoredPageIndex,
+      pageOffsetRatio: clamp01(
+        (scrollContainer.scrollTop - anchoredPageTop) / anchoredPageHeight,
+      ),
+      scrollLeft: scrollContainer.scrollLeft,
+    };
+  }, [scrollContainerRef]);
 
   React.useEffect(() => {
     const viewportElement =
@@ -368,9 +433,13 @@ export function PdfPreview({
         0,
         Math.floor(viewportElement.clientWidth - horizontalPadding),
       );
-      setPreviewViewportWidth((currentWidth) =>
-        currentWidth === nextWidth ? currentWidth : nextWidth,
-      );
+      setPreviewViewportWidth((currentWidth) => {
+        if (currentWidth !== nextWidth && currentWidth > 0) {
+          pendingViewportRestoreRef.current = captureViewportAnchor();
+        }
+
+        return currentWidth === nextWidth ? currentWidth : nextWidth;
+      });
     };
 
     updateWidth();
@@ -382,7 +451,7 @@ export function PdfPreview({
     return () => {
       observer.disconnect();
     };
-  }, [scrollContainerRef]);
+  }, [captureViewportAnchor, scrollContainerRef]);
 
   const resolvePointerInteraction = React.useCallback(
     (
@@ -1662,6 +1731,38 @@ export function PdfPreview({
       window.cancelAnimationFrame(frame);
     };
   }, [filePath, readyPageStatuses, scrollContainerRef, state.kind]);
+
+  React.useEffect(() => {
+    const viewportRestore = pendingViewportRestoreRef.current;
+    if (!viewportRestore || previewViewportWidth <= 0) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const scrollContainer = getScrollViewportElement(scrollContainerRef);
+      const pageFigure = pageFigureRefs.current[viewportRestore.pageIndex];
+      if (!scrollContainer || !pageFigure) {
+        pendingViewportRestoreRef.current = null;
+        return;
+      }
+
+      const scrollContainerBox = scrollContainer.getBoundingClientRect();
+      const pageFigureBox = pageFigure.getBoundingClientRect();
+      const pageTop =
+        pageFigureBox.top - scrollContainerBox.top + scrollContainer.scrollTop;
+      const nextScrollTop =
+        pageTop +
+        viewportRestore.pageOffsetRatio * Math.max(1, pageFigureBox.height);
+
+      scrollContainer.scrollLeft = viewportRestore.scrollLeft;
+      scrollContainer.scrollTop = nextScrollTop;
+      pendingViewportRestoreRef.current = null;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [previewViewportWidth, scrollContainerRef, state.kind]);
 
   React.useEffect(() => {
     onSlideMetricsChange?.({
