@@ -109,7 +109,7 @@ describe('PdfPreview', () => {
     render(<PdfPreview filePath="/tmp/pending.pdf" title="Loading test" />);
 
     expect(
-      await screen.findByText('Loading the first render now.'),
+      await screen.findByText('Preparing a new render...'),
     ).toBeTruthy();
   });
 

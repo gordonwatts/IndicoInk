@@ -92,9 +92,9 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
         window.cancelAnimationFrame(frameId);
       };
     });
-    await expect(harness.page.getByRole('button', { name: 'Home' })).toBeVisible(
-      { timeout: 30_000 },
-    );
+    await expect(
+      harness.page.getByRole('button', { name: 'Home' }),
+    ).toBeVisible({ timeout: 30_000 });
     await expect(
       harness.page.getByRole('heading', { name: 'Slide Notes' }),
     ).toHaveCount(0);
@@ -119,7 +119,9 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
 
     const stickyToolbarSample = await harness.page.evaluate(() => {
       const pageSurface = document.querySelector<HTMLElement>('.page-surface');
-      const toolbar = document.querySelector<HTMLElement>('.pdf-preview-toolbar');
+      const toolbar = document.querySelector<HTMLElement>(
+        '.pdf-preview-toolbar',
+      );
       const pageSurfaceBox = pageSurface?.getBoundingClientRect();
       const toolbarBox = toolbar?.getBoundingClientRect();
 
@@ -132,9 +134,32 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     });
     expect(stickyToolbarSample.scrollTop).toBeGreaterThan(0);
     expect(
-      Math.abs(stickyToolbarSample.toolbarTop - stickyToolbarSample.pageSurfaceTop),
+      Math.abs(
+        stickyToolbarSample.toolbarTop - stickyToolbarSample.pageSurfaceTop,
+      ),
     ).toBeLessThanOrEqual(4);
     expect(stickyToolbarSample.toolbarHeight).toBeLessThanOrEqual(48);
+
+    const firstCanvasWidthBeforeResize = firstCanvasBox?.width ?? 0;
+    const initialInnerWidth = await harness.page.evaluate(
+      () => window.innerWidth,
+    );
+    await harness.page.evaluate(() => {
+      window.resizeTo(820, 900);
+    });
+    await harness.page.waitForFunction(
+      (initialWidth) => window.innerWidth < initialWidth,
+      initialInnerWidth,
+    );
+    await harness.page.waitForTimeout(250);
+    const firstCanvasBoxAfterResize = await harness.page
+      .locator('.pdf-preview-canvas')
+      .first()
+      .boundingBox();
+    expect(firstCanvasBoxAfterResize).not.toBeNull();
+    expect(firstCanvasBoxAfterResize?.width ?? 0).toBeLessThan(
+      firstCanvasWidthBeforeResize,
+    );
 
     await harness.page.getByRole('button', { name: 'Home' }).click();
     await harness.page.waitForFunction(() => {

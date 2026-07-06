@@ -350,10 +350,11 @@ export function PdfPreview({
   const [previewViewportWidth, setPreviewViewportWidth] = React.useState(0);
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
+  const lastRenderedZoomRef = React.useRef(zoomLevel);
 
   React.useEffect(() => {
     const viewportElement =
-      stageViewportRef.current ?? getScrollViewportElement(scrollContainerRef);
+      scrollContainerRef?.current ?? stageViewportRef.current;
     if (!viewportElement) {
       return;
     }
@@ -635,6 +636,15 @@ export function PdfPreview({
     state.kind === 'loading' || state.kind === 'ready' || state.kind === 'error'
       ? state.pageSizes
       : [];
+  const renderedPageWidth =
+    renderablePageSizes.reduce(
+      (maximumWidth, pageSize) => Math.max(maximumWidth, pageSize.width),
+      0,
+    ) || 1;
+  const pageDisplayScale =
+    state.kind === 'idle'
+      ? 1
+      : Math.min(1, previewViewportWidth / renderedPageWidth);
 
   const closeTextNoteDraft = React.useCallback(() => {
     setTextNoteDraft(null);
@@ -1291,6 +1301,25 @@ export function PdfPreview({
       };
     }
 
+    if (
+      (state.kind === 'ready' || state.kind === 'loading') &&
+      zoomLevel === lastRenderedZoomRef.current &&
+      previewViewportWidth > 0 &&
+      renderedPageWidth > 0 &&
+      previewViewportWidth < renderedPageWidth
+    ) {
+      return () => {
+        cancelled = true;
+        if (pointerDiagnosticsFrameRef.current !== null) {
+          window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
+        }
+        if (persistenceSaveTimerRef.current !== null) {
+          window.clearTimeout(persistenceSaveTimerRef.current);
+        }
+        void loadingTask?.destroy?.();
+      };
+    }
+
     const renderPreview = async () => {
       latchedToolRef.current = null;
       setPointerDiagnostics(createIdlePointerDiagnostics());
@@ -1531,6 +1560,7 @@ export function PdfPreview({
                 },
           );
           setPersistenceError(null);
+          lastRenderedZoomRef.current = zoomLevel;
         }
 
         await loadingTask.destroy();
@@ -1804,6 +1834,14 @@ export function PdfPreview({
                 width: 1,
                 height: 1,
               };
+              const displayWidth = Math.max(
+                1,
+                Math.round(pageSize.width * pageDisplayScale),
+              );
+              const displayHeight = Math.max(
+                1,
+                Math.round(pageSize.height * pageDisplayScale),
+              );
               const pageStrokes = strokesByPage[index] ?? [];
               const pageTextNotes = textNotesByPage[index] ?? [];
               const marker =
@@ -1853,12 +1891,20 @@ export function PdfPreview({
                   ref={(element) => {
                     pageFigureRefs.current[index] = element;
                   }}
+                  style={{
+                    width: `${displayWidth}px`,
+                    height: `${displayHeight}px`,
+                  }}
                 >
                   <div
                     className="pdf-preview-sheet"
                     data-rendered-tool={pointerDiagnostics.renderedTool}
                     draggable={false}
-                    style={{ cursor: pointerDiagnostics.cursor }}
+                    style={{
+                      cursor: pointerDiagnostics.cursor,
+                      width: `${displayWidth}px`,
+                      height: `${displayHeight}px`,
+                    }}
                     onPointerMove={handlePagePointerEvent(index, 'pointermove')}
                     onPointerDown={handlePagePointerEvent(index, 'pointerdown')}
                     onPointerUp={handlePagePointerEvent(index, 'pointerup')}
@@ -1872,6 +1918,10 @@ export function PdfPreview({
                         pageCanvasRefs.current[index] = element;
                       }}
                       className="pdf-preview-canvas"
+                      style={{
+                        width: `${displayWidth}px`,
+                        height: `${displayHeight}px`,
+                      }}
                       draggable={false}
                     />
                     <svg
@@ -1963,11 +2013,6 @@ export function PdfPreview({
             <span className="pdf-preview-stage-spinner" aria-hidden="true" />
             <div className="pdf-preview-stage-status-copy">
               <strong>{state.label}</strong>
-              <span>
-                {currentPageCount > 0
-                  ? 'Keeping the previous render visible while the new size loads.'
-                  : 'Loading the first render now.'}
-              </span>
             </div>
           </div>
         ) : state.kind === 'error' ? (
