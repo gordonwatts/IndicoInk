@@ -2162,11 +2162,6 @@ export function PdfPreview({
             <span className="pdf-preview-stage-spinner" aria-hidden="true" />
             <div className="pdf-preview-stage-status-copy">
               <strong>{state.label}</strong>
-              <span>
-                {currentPageCount > 0
-                  ? 'Keeping the previous render visible while the new size loads.'
-                  : 'Loading the first render now.'}
-              </span>
             </div>
           </div>
         ) : state.kind === 'error' ? (
