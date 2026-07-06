@@ -453,7 +453,7 @@ export function PdfPreview({
                     mode: 'anchor',
                     ...anchor,
                   }
-              : null;
+                : null;
         }
 
         return currentWidth === nextWidth ? currentWidth : nextWidth;
@@ -1759,7 +1759,7 @@ export function PdfPreview({
     const frame = window.requestAnimationFrame(() => {
       const scrollContainer = getScrollViewportElement(scrollContainerRef);
       const pageFigure = pageFigureRefs.current[viewportRestore.pageIndex];
-      if (!scrollContainer || !pageFigure) {
+      if (!scrollContainer) {
         pendingViewportRestoreRef.current = null;
         return;
       }
@@ -1780,7 +1780,6 @@ export function PdfPreview({
       } else {
         scrollContainer.scrollTop = viewportRestore.scrollTop;
       }
-      scrollContainer.scrollLeft = viewportRestore.scrollLeft;
       pendingViewportRestoreRef.current = null;
     });
 
