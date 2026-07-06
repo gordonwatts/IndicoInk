@@ -198,6 +198,45 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
 
     expect(visiblePageAfterResize).toBe(visiblePageBeforeResize);
 
+    const firstCanvasWidthAfterShrink = firstCanvasBoxAfterResize?.width ?? 0;
+    const widthBeforeExpand = await harness.page.evaluate(() => window.innerWidth);
+    await harness.page.evaluate(() => {
+      window.resizeTo(1600, 900);
+    });
+    await harness.page.waitForFunction(
+      (previousWidth) => window.innerWidth > previousWidth,
+      widthBeforeExpand,
+    );
+    await harness.page.waitForTimeout(250);
+    const firstCanvasBoxAfterExpand = await harness.page
+      .locator('.pdf-preview-canvas')
+      .first()
+      .boundingBox();
+    expect(firstCanvasBoxAfterExpand).not.toBeNull();
+    expect(firstCanvasBoxAfterExpand?.width ?? 0).toBeGreaterThanOrEqual(
+      firstCanvasWidthAfterShrink,
+    );
+
+    const visiblePageAfterExpand = await harness.page.evaluate(() => {
+      const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+      const pages = Array.from(
+        document.querySelectorAll<HTMLElement>('.pdf-preview-page'),
+      );
+      if (!pageSurface || pages.length === 0) {
+        return -1;
+      }
+
+      const targetTop = pageSurface.getBoundingClientRect().top + 24;
+      const visibleIndex = pages.findIndex((page) => {
+        const box = page.getBoundingClientRect();
+        return box.bottom > targetTop;
+      });
+
+      return visibleIndex >= 0 ? visibleIndex : pages.length - 1;
+    });
+
+    expect(visiblePageAfterExpand).toBe(visiblePageAfterResize);
+
     await harness.page.getByRole('button', { name: 'Home' }).click();
     await harness.page.waitForFunction(() => {
       const pageSurface = document.querySelector<HTMLElement>('.page-surface');

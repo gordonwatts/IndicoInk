@@ -345,9 +345,11 @@ export function PdfPreview({
     currentSlideNumber: number;
   } | null>(null);
   const pendingViewportRestoreRef = React.useRef<{
+    mode: 'anchor' | 'preserve-scroll';
     pageIndex: number;
     pageOffsetRatio: number;
     scrollLeft: number;
+    scrollTop: number;
   } | null>(null);
   const currentSlideNumberRef = React.useRef(1);
   const pageFigureRefs = React.useRef<Array<HTMLElement | null>>([]);
@@ -435,7 +437,22 @@ export function PdfPreview({
       );
       setPreviewViewportWidth((currentWidth) => {
         if (currentWidth !== nextWidth && currentWidth > 0) {
-          pendingViewportRestoreRef.current = captureViewportAnchor();
+          const anchor = captureViewportAnchor();
+          pendingViewportRestoreRef.current =
+            nextWidth > currentWidth && nextWidth >= renderedPageWidth
+              ? {
+                  mode: 'preserve-scroll',
+                  pageIndex: Math.max(0, currentSlideNumberRef.current - 1),
+                  pageOffsetRatio: 0,
+                  scrollLeft: viewportElement.scrollLeft,
+                  scrollTop: viewportElement.scrollTop,
+                }
+              : anchor
+                ? {
+                    mode: 'anchor',
+                    ...anchor,
+                  }
+                : null;
         }
 
         return currentWidth === nextWidth ? currentWidth : nextWidth;
@@ -1741,21 +1758,25 @@ export function PdfPreview({
     const frame = window.requestAnimationFrame(() => {
       const scrollContainer = getScrollViewportElement(scrollContainerRef);
       const pageFigure = pageFigureRefs.current[viewportRestore.pageIndex];
-      if (!scrollContainer || !pageFigure) {
+      if (!scrollContainer) {
         pendingViewportRestoreRef.current = null;
         return;
       }
 
-      const scrollContainerBox = scrollContainer.getBoundingClientRect();
-      const pageFigureBox = pageFigure.getBoundingClientRect();
-      const pageTop =
-        pageFigureBox.top - scrollContainerBox.top + scrollContainer.scrollTop;
-      const nextScrollTop =
-        pageTop +
-        viewportRestore.pageOffsetRatio * Math.max(1, pageFigureBox.height);
-
       scrollContainer.scrollLeft = viewportRestore.scrollLeft;
-      scrollContainer.scrollTop = nextScrollTop;
+      if (viewportRestore.mode === 'preserve-scroll') {
+        scrollContainer.scrollTop = viewportRestore.scrollTop;
+      } else if (pageFigure) {
+        const scrollContainerBox = scrollContainer.getBoundingClientRect();
+        const pageFigureBox = pageFigure.getBoundingClientRect();
+        const pageTop =
+          pageFigureBox.top - scrollContainerBox.top + scrollContainer.scrollTop;
+        const nextScrollTop =
+          pageTop +
+          viewportRestore.pageOffsetRatio * Math.max(1, pageFigureBox.height);
+
+        scrollContainer.scrollTop = nextScrollTop;
+      }
       pendingViewportRestoreRef.current = null;
     });
 
