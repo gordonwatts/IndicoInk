@@ -1191,9 +1191,9 @@ input:focus-visible {
 }
 
 .pdf-preview-stage-status {
-  position: absolute;
+  position: sticky;
   top: 16px;
-  right: 16px;
+  justify-self: end;
   z-index: 2;
   display: inline-flex;
   align-items: center;

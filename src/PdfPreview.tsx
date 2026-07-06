@@ -1821,6 +1821,31 @@ export function PdfPreview({
           }
         }}
       >
+        {state.kind === 'loading' ? (
+          <div className="pdf-preview-stage-status pdf-preview-stage-status--loading">
+            <span className="pdf-preview-stage-spinner" aria-hidden="true" />
+            <div className="pdf-preview-stage-status-copy">
+              <strong>{state.label}</strong>
+            </div>
+          </div>
+        ) : state.kind === 'error' ? (
+          <div className="pdf-preview-stage-status pdf-preview-stage-status--error">
+            <div className="pdf-preview-stage-status-copy">
+              <strong>PDF preview unavailable</strong>
+              <span>{state.label}</span>
+            </div>
+            {onRetryLoad ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={onRetryLoad}
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         {currentPageCount > 0 ? (
           <div
             className={`pdf-preview-pages${
@@ -2006,30 +2031,6 @@ export function PdfPreview({
                 </figure>
               );
             })}
-          </div>
-        ) : null}
-        {state.kind === 'loading' ? (
-          <div className="pdf-preview-stage-status pdf-preview-stage-status--loading">
-            <span className="pdf-preview-stage-spinner" aria-hidden="true" />
-            <div className="pdf-preview-stage-status-copy">
-              <strong>{state.label}</strong>
-            </div>
-          </div>
-        ) : state.kind === 'error' ? (
-          <div className="pdf-preview-stage-status pdf-preview-stage-status--error">
-            <div className="pdf-preview-stage-status-copy">
-              <strong>PDF preview unavailable</strong>
-              <span>{state.label}</span>
-            </div>
-            {onRetryLoad ? (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={onRetryLoad}
-              >
-                Retry
-              </button>
-            ) : null}
           </div>
         ) : null}
       </div>
