@@ -21,6 +21,7 @@ import {
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
+import { copyTextToClipboard } from './clipboard';
 import { parseIndicoEventUrl } from './indicoEvent';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import type { PdfWorkspacePageState } from './shared/pdfWorkspace';
@@ -199,6 +200,12 @@ const normalizeViewportRect = (
 
 const normalizeLinkHotspotLabel = (value: string) =>
   value.replace(/\s+/g, ' ').trim();
+
+type CopyTooltipState = {
+  message: string;
+  x: number;
+  y: number;
+} | null;
 
 export const isLikelyDownloadableUrl = (value: string) => {
   let url: URL;
@@ -457,6 +464,8 @@ export function PdfPreview({
   >([]);
   const [activeLinkPopover, setActiveLinkPopover] =
     React.useState<LinkPopoverState>(null);
+  const [copyTooltip, setCopyTooltip] =
+    React.useState<CopyTooltipState>(null);
   const [persistenceError, setPersistenceError] = React.useState<string | null>(
     null,
   );
@@ -467,6 +476,7 @@ export function PdfPreview({
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
   const persistenceHydratedRef = React.useRef(false);
   const linkPopoverHideTimerRef = React.useRef<number | null>(null);
+  const copyTooltipHideTimerRef = React.useRef<number | null>(null);
   const pendingWorkspaceRestoreRef = React.useRef<PdfWorkspaceSnapshot | null>(
     null,
   );
@@ -717,6 +727,10 @@ export function PdfPreview({
         pointerDiagnosticsFrameRef.current = null;
       }
       clearLinkPopoverHideTimer();
+      if (copyTooltipHideTimerRef.current !== null) {
+        window.clearTimeout(copyTooltipHideTimerRef.current);
+        copyTooltipHideTimerRef.current = null;
+      }
     },
     [clearLinkPopoverHideTimer],
   );
@@ -1126,6 +1140,38 @@ export function PdfPreview({
     anchor.click();
     anchor.remove();
   }, []);
+
+  const showCopyTooltip = React.useCallback(
+    (message: string, clientX: number, clientY: number) => {
+      if (copyTooltipHideTimerRef.current !== null) {
+        window.clearTimeout(copyTooltipHideTimerRef.current);
+        copyTooltipHideTimerRef.current = null;
+      }
+
+      setCopyTooltip({
+        message,
+        x: clientX + 16,
+        y: clientY + 18,
+      });
+      copyTooltipHideTimerRef.current = window.setTimeout(() => {
+        setCopyTooltip(null);
+        copyTooltipHideTimerRef.current = null;
+      }, 2500);
+    },
+    [],
+  );
+
+  const handleCopyLink = React.useCallback(
+    async (
+      url: string,
+      event: React.MouseEvent<HTMLButtonElement>,
+      message: string,
+    ) => {
+      showCopyTooltip(message, event.clientX, event.clientY);
+      await copyTextToClipboard(url);
+    },
+    [showCopyTooltip],
+  );
 
   const handleOpenLinkInIndicoInk = React.useCallback(
     async (url: string) => {
@@ -2447,6 +2493,19 @@ export function PdfPreview({
                 void handleOpenLink(activeLinkPopover.link.url);
               }}
             />
+            <IconButton
+              label="Copy link"
+              title="Copy"
+              icon="copy"
+              onClick={(event) => {
+                setActiveLinkPopover(null);
+                void handleCopyLink(
+                  activeLinkPopover.link.url,
+                  event,
+                  'Copied to clipboard',
+                );
+              }}
+            />
             {isLikelyDownloadableUrl(activeLinkPopover.link.url) ? (
               <IconButton
                 label="Download link"
@@ -2473,6 +2532,20 @@ export function PdfPreview({
               />
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {copyTooltip ? (
+        <div
+          className="copy-tooltip"
+          role="status"
+          aria-live="polite"
+          style={{
+            left: `${Math.max(12, copyTooltip.x)}px`,
+            top: `${Math.max(12, copyTooltip.y)}px`,
+          }}
+        >
+          {copyTooltip.message}
         </div>
       ) : null}
 
