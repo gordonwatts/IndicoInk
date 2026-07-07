@@ -522,6 +522,21 @@ input:focus-visible {
   border-radius: 10px;
 }
 
+.copy-tooltip {
+  position: fixed;
+  z-index: 90;
+  max-width: min(240px, calc(100vw - 24px));
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  font-size: var(--font-size-supporting);
+  line-height: 1.2;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+  transform: translate(0, 0);
+}
+
 .slides-view-controls-status {
   display: flex;
   flex-wrap: wrap;

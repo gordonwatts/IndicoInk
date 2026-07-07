@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1075,6 +1081,18 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
+        name: 'Copy contribution link for Opening the right deck',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Copied to clipboard')).toBeTruthy();
+    });
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+      'https://indico.example.org/event/chooser-2026/contributions/contribution-chooser/',
+    );
+
+    await user.click(
+      screen.getByRole('button', {
         name: 'Select Alternate deck for Opening the right deck',
       }),
     );
@@ -1128,7 +1146,14 @@ describe('App', () => {
       'talk-chooser',
       'deck-alt',
     );
-  });
+
+    await waitFor(
+      () => {
+        expect(screen.queryByText('Copied to clipboard')).toBeNull();
+      },
+      { timeout: 4000 },
+    );
+  }, 10_000);
 
   it('scrolls the agenda to the top when switching days', async () => {
     const user = userEvent.setup();

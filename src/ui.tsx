@@ -119,7 +119,7 @@ export function IconButton({
   label: string;
   icon: IconName;
   title?: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   onPointerDown?: React.PointerEventHandler<HTMLButtonElement>;
   disabled?: boolean;
   pressed?: boolean;
@@ -181,7 +181,7 @@ export function PrimaryButton({
 }: {
   children: React.ReactNode;
   icon?: IconName;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   title?: string;
   className?: string;
   disabled?: boolean;

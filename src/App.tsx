@@ -871,6 +871,12 @@ export function App() {
   const [exportState, setExportState] = React.useState<ExportProgressState>({
     kind: 'idle',
   });
+  const [copyTooltip, setCopyTooltip] = React.useState<{
+    message: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const copyTooltipTimerRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     void window.indicoInk.getAppInfo().then(setInfo);
@@ -883,6 +889,15 @@ export function App() {
   React.useEffect(() => {
     void window.indicoInk.getAppSettings().then(setAppSettings);
   }, []);
+
+  React.useEffect(
+    () => () => {
+      if (copyTooltipTimerRef.current !== null) {
+        window.clearTimeout(copyTooltipTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const refreshLibraryEvents = React.useCallback(async () => {
     const events = await window.indicoInk.listLibraryEvents();
@@ -1603,11 +1618,35 @@ export function App() {
 
     await window.indicoInk.openExternalUrl(sourceUrl);
   };
-  const handleCopyLink = async (url: string | null) => {
+  const showCopyTooltip = React.useCallback(
+    (message: string, clientX: number, clientY: number) => {
+      if (copyTooltipTimerRef.current !== null) {
+        window.clearTimeout(copyTooltipTimerRef.current);
+        copyTooltipTimerRef.current = null;
+      }
+
+      setCopyTooltip({
+        message,
+        x: clientX + 16,
+        y: clientY + 18,
+      });
+      copyTooltipTimerRef.current = window.setTimeout(() => {
+        setCopyTooltip(null);
+        copyTooltipTimerRef.current = null;
+      }, 2500);
+    },
+    [],
+  );
+  const handleCopyLink = async (
+    url: string | null,
+    event: React.MouseEvent<HTMLButtonElement>,
+    message: string,
+  ) => {
     if (!url) {
       return;
     }
 
+    showCopyTooltip(message, event.clientX, event.clientY);
     await copyTextToClipboard(url);
   };
   const handleSelectSelectedTalkDeck = async (deckId: string) => {
@@ -2426,9 +2465,11 @@ export function App() {
                                     label={`Copy contribution link for ${agendaMaterialsTalk.title}`}
                                     title="Copy contribution link"
                                     icon="copy"
-                                    onClick={() => {
+                                    onClick={(event) => {
                                       void handleCopyLink(
                                         agendaMaterialsTalk.contributionUrl,
+                                        event,
+                                        'Copied to clipboard',
                                       );
                                     }}
                                     disabled={
@@ -2737,9 +2778,11 @@ export function App() {
                       label={`Copy contribution link for ${selectedAgendaTalk?.title ?? 'selected talk'}`}
                       title="Copy contribution link"
                       icon="copy"
-                      onClick={() => {
+                      onClick={(event) => {
                         void handleCopyLink(
                           selectedAgendaTalk?.contributionUrl ?? null,
+                          event,
+                          'Copied to clipboard',
                         );
                       }}
                       disabled={!selectedAgendaTalk?.contributionUrl}
@@ -2748,9 +2791,11 @@ export function App() {
                       label={`Copy PDF link for ${activeSlideSelectedMaterial?.title ?? 'selected deck'}`}
                       title="Copy PDF link"
                       icon="copy"
-                      onClick={() => {
+                      onClick={(event) => {
                         void handleCopyLink(
                           activeSlideSelectedMaterial?.sourceUrl ?? null,
+                          event,
+                          'Copied to clipboard',
                         );
                       }}
                       disabled={!activeSlideSelectedMaterial?.sourceUrl}
@@ -3481,6 +3526,19 @@ export function App() {
             </div>
           ) : null}
         </main>
+        {copyTooltip ? (
+          <div
+            className="copy-tooltip"
+            role="status"
+            aria-live="polite"
+            style={{
+              left: `${Math.max(12, copyTooltip.x)}px`,
+              top: `${Math.max(12, copyTooltip.y)}px`,
+            }}
+          >
+            {copyTooltip.message}
+          </div>
+        ) : null}
       </section>
     </div>
   );
