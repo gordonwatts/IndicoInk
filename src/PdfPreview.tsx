@@ -416,6 +416,7 @@ export function PdfPreview({
         (scrollContainer.scrollTop - anchoredPageTop) / anchoredPageHeight,
       ),
       scrollLeft: scrollContainer.scrollLeft,
+      scrollTop: scrollContainer.scrollTop,
     };
   }, [scrollContainerRef]);
 
@@ -1776,6 +1777,8 @@ export function PdfPreview({
           viewportRestore.pageOffsetRatio * Math.max(1, pageFigureBox.height);
 
         scrollContainer.scrollTop = nextScrollTop;
+      } else {
+        scrollContainer.scrollTop = viewportRestore.scrollTop;
       }
       pendingViewportRestoreRef.current = null;
     });
