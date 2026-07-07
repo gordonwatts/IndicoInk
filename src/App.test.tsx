@@ -695,7 +695,7 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open URL',
+        name: 'Open URL for IndicoInk Small Event 2026',
       }),
     ).toBeTruthy();
     expect(
@@ -706,7 +706,7 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Open URL',
+        name: 'Open URL for IndicoInk Small Event 2026',
       }),
     );
     expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(

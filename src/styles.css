@@ -1446,6 +1446,7 @@ input:focus-visible {
 .agenda-event-summary {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   padding-bottom: 8px;
   color: var(--text-secondary);
@@ -1455,20 +1456,15 @@ input:focus-visible {
 
 .agenda-event-summary-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding-bottom: 8px;
-}
-
-.agenda-event-summary-actions .primary-button {
-  min-height: 40px;
+  flex: 0 0 auto;
 }
 
 .agenda-event-summary-actions .icon-button {
-  width: 40px;
-  min-height: 40px;
-  border-radius: 10px;
+  width: 34px;
+  min-height: 34px;
+  border-radius: 9px;
 }
 
 .agenda-controls {
