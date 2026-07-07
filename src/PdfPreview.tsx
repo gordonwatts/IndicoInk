@@ -2262,7 +2262,6 @@ export function PdfPreview({
                               ? `Link on page ${index + 1}: ${link.label}`
                               : `Link on page ${index + 1}`
                           }
-                          title={link.label || link.url}
                           style={{
                             left: `${link.rect.left}px`,
                             top: `${link.rect.top}px`,
