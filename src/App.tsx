@@ -1469,6 +1469,35 @@ export function App() {
   const openSearchResult = (talk: AgendaTalkSummary) => {
     openAgendaTalkFromIndex(talk);
   };
+  const openIndicoEventInApp = async (eventUrl: string) => {
+    const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
+    if (openedEvent.kind === 'api-key-required') {
+      setApiKeyDialogRequest({
+        kind: 'event',
+        origin: openedEvent.origin,
+        message: openedEvent.message,
+        eventUrl,
+      });
+      setApiKeyValue('');
+      setApiKeyError(openedEvent.message);
+      setOpenEventFeedback({
+        tone: 'warning',
+        message: openedEvent.message,
+      });
+      return;
+    }
+
+    await refreshLibraryEvents();
+    setSelectedEventId(openedEvent.result.conferenceId);
+    setDestination('agenda');
+    setApiKeyDialogRequest(null);
+    setApiKeyValue('');
+    setApiKeyError(null);
+    setOpenEventFeedback({
+      tone: 'success',
+      message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
+    });
+  };
   const handleOpenEvent = async () => {
     setEventUrlTouched(true);
     const validationError = validateEventUrl(eventUrl);
@@ -1487,33 +1516,7 @@ export function App() {
     });
 
     try {
-      const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
-      if (openedEvent.kind === 'api-key-required') {
-        setApiKeyDialogRequest({
-          kind: 'event',
-          origin: openedEvent.origin,
-          message: openedEvent.message,
-          eventUrl,
-        });
-        setApiKeyValue('');
-        setApiKeyError(openedEvent.message);
-        setOpenEventFeedback({
-          tone: 'warning',
-          message: openedEvent.message,
-        });
-        return;
-      }
-
-      await refreshLibraryEvents();
-      setSelectedEventId(openedEvent.result.conferenceId);
-      setDestination('agenda');
-      setApiKeyDialogRequest(null);
-      setApiKeyValue('');
-      setApiKeyError(null);
-      setOpenEventFeedback({
-        tone: 'success',
-        message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
-      });
+      await openIndicoEventInApp(eventUrl);
     } catch (error) {
       setOpenEventFeedback({
         tone: 'error',
@@ -2928,6 +2931,7 @@ export function App() {
                     title={activeSlideTitle}
                     conferenceId={activeSlideConferenceId}
                     talkId={activeSlideTalkId}
+                    onOpenIndicoEvent={openIndicoEventInApp}
                     onSlideMetricsChange={setSlideViewerMetrics}
                     workspaceDeckId={activeSlideDeckId}
                     onRetryLoad={handleRetryPdfLoad}

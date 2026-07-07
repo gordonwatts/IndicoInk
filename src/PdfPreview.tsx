@@ -21,6 +21,7 @@ import {
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
+import { parseIndicoEventUrl } from './indicoEvent';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import type { PdfWorkspacePageState } from './shared/pdfWorkspace';
 import { DialogSurface, IconButton, SegmentedControl } from './ui';
@@ -77,6 +78,25 @@ type PointerMarker = {
   point: NormalizedPagePoint;
   tool: PointerTool;
 };
+
+type PdfLinkHotspot = {
+  label: string;
+  url: string;
+  rect: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+  isIndicoEvent: boolean;
+};
+
+type LinkPopoverState = {
+  pageIndex: number;
+  link: PdfLinkHotspot;
+  x: number;
+  y: number;
+} | null;
 
 type TextNoteDraft = {
   mode: 'create' | 'edit';
@@ -153,6 +173,80 @@ const createEmptyStrokePages = (pageCount: number) =>
 
 const createEmptyTextNotePages = (pageCount: number) =>
   Array.from({ length: pageCount }, () => [] as TextNote[]);
+
+const createEmptyLinkHotspotPages = (pageCount: number) =>
+  Array.from({ length: pageCount }, () => [] as PdfLinkHotspot[]);
+
+const normalizeViewportRect = (
+  viewport: {
+    convertToViewportRectangle: (rect: number[]) => number[];
+  },
+  rect: number[],
+) => {
+  const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(rect);
+  const left = Math.min(x1 ?? 0, x2 ?? 0);
+  const top = Math.min(y1 ?? 0, y2 ?? 0);
+  const right = Math.max(x1 ?? 0, x2 ?? 0);
+  const bottom = Math.max(y1 ?? 0, y2 ?? 0);
+
+  return {
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+};
+
+const normalizeLinkHotspotLabel = (value: string) =>
+  value.replace(/\s+/g, ' ').trim();
+
+const getLinkHotspotsForPage = async (
+  page: {
+    getAnnotations?: (options: { intent: 'display' }) => Promise<any[]>;
+  },
+  viewport: {
+    convertToViewportRectangle: (rect: number[]) => number[];
+  },
+): Promise<PdfLinkHotspot[]> => {
+  const annotations =
+    (await page.getAnnotations?.({ intent: 'display' })) ?? [];
+  const hotspots: PdfLinkHotspot[] = [];
+
+  for (const annotation of annotations) {
+    const url =
+      typeof annotation?.url === 'string'
+        ? annotation.url
+        : typeof annotation?.unsafeUrl === 'string'
+          ? annotation.unsafeUrl
+          : null;
+    const subtype = annotation?.subtype ?? annotation?.annotationType;
+    if (!url || (subtype !== 'Link' && subtype !== 2)) {
+      continue;
+    }
+
+    if (!Array.isArray(annotation?.rect) || annotation.rect.length < 4) {
+      continue;
+    }
+
+    const rect = normalizeViewportRect(viewport, annotation.rect);
+    if (rect.width <= 0 || rect.height <= 0) {
+      continue;
+    }
+
+    const label = normalizeLinkHotspotLabel(
+      annotation?.contents ?? annotation?.title ?? annotation?.altText ?? url,
+    );
+
+    hotspots.push({
+      label,
+      url,
+      rect,
+      isIndicoEvent: Boolean(parseIndicoEventUrl(url)),
+    });
+  }
+
+  return hotspots;
+};
 
 const createLoadingPreviewState = (
   label: string,
@@ -282,6 +376,7 @@ type PdfPreviewProps = {
   conferenceId?: string | null;
   talkId?: string | null;
   workspaceDeckId?: string | null;
+  onOpenIndicoEvent?: (eventUrl: string) => Promise<void>;
   onRetryLoad?: () => void;
   onSlideMetricsChange?: (metrics: {
     currentSlideNumber: number;
@@ -296,6 +391,7 @@ export function PdfPreview({
   conferenceId = null,
   talkId = null,
   workspaceDeckId = null,
+  onOpenIndicoEvent,
   onRetryLoad,
   onSlideMetricsChange,
   scrollContainerRef,
@@ -327,6 +423,11 @@ export function PdfPreview({
     React.useState<TextNoteDragState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
+  const [linkHotspotsByPage, setLinkHotspotsByPage] = React.useState<
+    Array<PdfLinkHotspot[]>
+  >([]);
+  const [activeLinkPopover, setActiveLinkPopover] =
+    React.useState<LinkPopoverState>(null);
   const [persistenceError, setPersistenceError] = React.useState<string | null>(
     null,
   );
@@ -336,6 +437,7 @@ export function PdfPreview({
   );
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
   const persistenceHydratedRef = React.useRef(false);
+  const linkPopoverHideTimerRef = React.useRef<number | null>(null);
   const pendingWorkspaceRestoreRef = React.useRef<PdfWorkspaceSnapshot | null>(
     null,
   );
@@ -358,6 +460,34 @@ export function PdfPreview({
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
   const lastRenderedZoomRef = React.useRef(zoomLevel);
+
+  const clearLinkPopoverHideTimer = React.useCallback(() => {
+    if (linkPopoverHideTimerRef.current !== null) {
+      window.clearTimeout(linkPopoverHideTimerRef.current);
+      linkPopoverHideTimerRef.current = null;
+    }
+  }, []);
+
+  const hideLinkPopoverSoon = React.useCallback(() => {
+    clearLinkPopoverHideTimer();
+    linkPopoverHideTimerRef.current = window.setTimeout(() => {
+      setActiveLinkPopover(null);
+      linkPopoverHideTimerRef.current = null;
+    }, 160);
+  }, [clearLinkPopoverHideTimer]);
+
+  const showLinkPopover = React.useCallback(
+    (pageIndex: number, link: PdfLinkHotspot, x: number, y: number) => {
+      clearLinkPopoverHideTimer();
+      setActiveLinkPopover({
+        pageIndex,
+        link,
+        x,
+        y,
+      });
+    },
+    [clearLinkPopoverHideTimer],
+  );
 
   const captureViewportAnchor = React.useCallback(() => {
     const scrollContainer = getScrollViewportElement(scrollContainerRef);
@@ -557,8 +687,9 @@ export function PdfPreview({
         window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
         pointerDiagnosticsFrameRef.current = null;
       }
+      clearLinkPopoverHideTimer();
     },
-    [],
+    [clearLinkPopoverHideTimer],
   );
 
   const updatePointerDiagnostics = React.useCallback(
@@ -947,6 +1078,37 @@ export function PdfPreview({
     currentSlideNumberRef.current = 1;
     setCurrentSlideNumber(1);
   }, [scrollContainerRef]);
+
+  const handleOpenLink = React.useCallback(
+    async (url: string) => {
+      await window.indicoInk.openExternalUrl(url);
+    },
+    [],
+  );
+
+  const handleDownloadLink = React.useCallback(async (url: string) => {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = '';
+    anchor.rel = 'noreferrer noopener';
+    anchor.target = '_blank';
+    anchor.style.display = 'none';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  }, []);
+
+  const handleOpenLinkInIndicoInk = React.useCallback(
+    async (url: string) => {
+      if (onOpenIndicoEvent) {
+        await onOpenIndicoEvent(url);
+        return;
+      }
+
+      await window.indicoInk.openLibraryEvent(url);
+    },
+    [onOpenIndicoEvent],
+  );
 
   const schedulePersistenceSave = React.useCallback(() => {
     if (
@@ -1338,6 +1500,8 @@ export function PdfPreview({
       setState({ kind: 'idle' });
       setStrokesByPage([]);
       setTextNotesByPage([]);
+      setLinkHotspotsByPage([]);
+      setActiveLinkPopover(null);
       setUndoStack([]);
       setRedoStack([]);
       setPointerMarker(null);
@@ -1376,6 +1540,8 @@ export function PdfPreview({
             )
           : createLoadingPreviewState('Loading PDF...'),
       );
+      setLinkHotspotsByPage([]);
+      setActiveLinkPopover(null);
       return () => {
         cancelled = true;
         if (pointerDiagnosticsFrameRef.current !== null) {
@@ -1415,6 +1581,8 @@ export function PdfPreview({
         setState({ kind: 'idle' });
         setStrokesByPage([]);
         setTextNotesByPage([]);
+        setLinkHotspotsByPage([]);
+        setActiveLinkPopover(null);
         setUndoStack([]);
         setRedoStack([]);
         setPointerMarker(null);
@@ -1482,6 +1650,7 @@ export function PdfPreview({
         pageFigureRefs.current = Array.from({ length: pageCount }, () => null);
         setStrokesByPage(createEmptyStrokePages(pageCount));
         setTextNotesByPage(createEmptyTextNotePages(pageCount));
+        const nextLinkHotspotsByPage = createEmptyLinkHotspotPages(pageCount);
         setUndoStack([]);
         setRedoStack([]);
         setPointerMarker(null);
@@ -1594,6 +1763,11 @@ export function PdfPreview({
             viewport,
           }).promise;
 
+          nextLinkHotspotsByPage[pageNumber - 1] = await getLinkHotspotsForPage(
+            page,
+            viewport,
+          );
+
           pageSizes[pageNumber - 1] = { width, height };
           pageStatuses[pageNumber - 1] = 'ready';
           setState((currentState) => {
@@ -1623,6 +1797,7 @@ export function PdfPreview({
         }
 
         if (!cancelled) {
+          setLinkHotspotsByPage(nextLinkHotspotsByPage);
           setState((currentState) =>
             currentState.kind === 'loading' || currentState.kind === 'ready'
               ? {
@@ -2073,6 +2248,60 @@ export function PdfPreview({
                       }}
                       draggable={false}
                     />
+                    <div
+                      className="pdf-preview-link-layer"
+                      aria-label={`Links on page ${index + 1}`}
+                    >
+                      {(linkHotspotsByPage[index] ?? []).map((link, linkIndex) => (
+                        <button
+                          key={`${link.url}-${linkIndex}`}
+                          type="button"
+                          className="pdf-preview-link-hotspot"
+                          aria-label={
+                            link.label
+                              ? `Link on page ${index + 1}: ${link.label}`
+                              : `Link on page ${index + 1}`
+                          }
+                          title={link.label || link.url}
+                          style={{
+                            left: `${link.rect.left}px`,
+                            top: `${link.rect.top}px`,
+                            width: `${Math.max(18, link.rect.width)}px`,
+                            height: `${Math.max(18, link.rect.height)}px`,
+                          }}
+                          onPointerEnter={(event) => {
+                            showLinkPopover(
+                              index,
+                              link,
+                              event.clientX,
+                              event.clientY,
+                            );
+                          }}
+                          onPointerLeave={hideLinkPopoverSoon}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            showLinkPopover(
+                              index,
+                              link,
+                              event.clientX,
+                              event.clientY,
+                            );
+                          }}
+                          onFocus={(event) => {
+                            const bounds =
+                              event.currentTarget.getBoundingClientRect();
+                            showLinkPopover(
+                              index,
+                              link,
+                              bounds.left + bounds.width / 2,
+                              bounds.top + bounds.height / 2,
+                            );
+                          }}
+                          onBlur={hideLinkPopoverSoon}
+                        />
+                      ))}
+                    </div>
                     <svg
                       aria-hidden="true"
                       className={`pdf-preview-overlay ${pointerDiagnostics.overlayClass}`}
@@ -2158,6 +2387,64 @@ export function PdfPreview({
           </div>
         ) : null}
       </div>
+
+      {activeLinkPopover ? (
+        <div
+          className="pdf-preview-link-popover"
+          role="toolbar"
+          aria-label="Link actions"
+          onPointerEnter={clearLinkPopoverHideTimer}
+          onPointerLeave={hideLinkPopoverSoon}
+          style={{
+            left: `${Math.max(
+              12,
+              Math.min(activeLinkPopover.x + 14, window.innerWidth - 292),
+            )}px`,
+            top: `${Math.max(
+              12,
+              Math.min(activeLinkPopover.y + 14, window.innerHeight - 140),
+            )}px`,
+          }}
+        >
+          <div className="pdf-preview-link-popover-label">
+            {activeLinkPopover.link.label || activeLinkPopover.link.url}
+          </div>
+          <div className="pdf-preview-link-popover-actions">
+            <IconButton
+              label="Open link"
+              title="Open"
+              icon="open"
+              onClick={() => {
+                setActiveLinkPopover(null);
+                void handleOpenLink(activeLinkPopover.link.url);
+              }}
+            />
+            <IconButton
+              label="Download link"
+              title="Download"
+              icon="export"
+              onClick={() => {
+                setActiveLinkPopover(null);
+                void handleDownloadLink(activeLinkPopover.link.url);
+              }}
+            />
+            {activeLinkPopover.link.isIndicoEvent ? (
+              <IconButton
+                label="Open in IndicoInk"
+                title="Open in IndicoInk"
+                icon="event"
+                onClick={() => {
+                  setActiveLinkPopover(null);
+                  void handleOpenLinkInIndicoInk(
+                    parseIndicoEventUrl(activeLinkPopover.link.url)
+                      ?.canonicalEventUrl ?? activeLinkPopover.link.url,
+                  );
+                }}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {textNoteDraft ? (
         <div className="pdf-preview-note-dialog">
