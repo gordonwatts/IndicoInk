@@ -410,14 +410,14 @@ export function PdfPreview({
       return null;
     }
 
-      return {
-        pageIndex: anchoredPageIndex,
-        pageOffsetRatio: clamp01(
-          (scrollContainer.scrollTop - anchoredPageTop) / anchoredPageHeight,
-        ),
-        scrollLeft: scrollContainer.scrollLeft,
-        scrollTop: scrollContainer.scrollTop,
-      };
+    return {
+      pageIndex: anchoredPageIndex,
+      pageOffsetRatio: clamp01(
+        (scrollContainer.scrollTop - anchoredPageTop) / anchoredPageHeight,
+      ),
+      scrollLeft: scrollContainer.scrollLeft,
+      scrollTop: scrollContainer.scrollTop,
+    };
   }, [scrollContainerRef]);
 
   React.useEffect(() => {
