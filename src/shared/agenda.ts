@@ -2,6 +2,7 @@ export type AgendaTalkSummary = {
   id: string;
   conferenceId: string;
   contributionId: string;
+  contributionUrl: string;
   sortStartsAt: number | null;
   dayLabel: string;
   title: string;

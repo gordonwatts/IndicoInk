@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 
+let clipboardWriteTextMock: ReturnType<typeof vi.fn>;
+
 describe('App', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'scrollY', {
@@ -22,6 +24,24 @@ describe('App', () => {
     });
     Object.defineProperty(globalThis, 'ResizeObserver', {
       value: ResizeObserverMock,
+      configurable: true,
+    });
+    clipboardWriteTextMock = vi.fn().mockResolvedValue(undefined);
+    if (navigator.clipboard) {
+      Object.defineProperty(navigator.clipboard, 'writeText', {
+        value: clipboardWriteTextMock,
+        configurable: true,
+      });
+    } else {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: clipboardWriteTextMock,
+        },
+        configurable: true,
+      });
+    }
+    Object.defineProperty(document, 'execCommand', {
+      value: vi.fn().mockReturnValue(true),
       configurable: true,
     });
     window.scrollTo = vi.fn();
@@ -395,9 +415,7 @@ describe('App', () => {
     );
   });
 
-  it(
-    'prompts for an API key when a slide download requires private access',
-    async () => {
+  it('prompts for an API key when a slide download requires private access', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-private-deck',
@@ -502,9 +520,7 @@ describe('App', () => {
         name: 'Home',
       }),
     ).toBeTruthy();
-  },
-    20_000,
-  );
+  }, 20_000);
 
   it('supports keyboard navigation into the shell destinations', async () => {
     const user = userEvent.setup();
@@ -946,12 +962,11 @@ describe('App', () => {
     );
 
     await user.click(
-      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole(
-        'button',
-        {
-          name: 'Library',
-        },
-      ),
+      within(
+        screen.getByRole('navigation', { name: 'Destinations' }),
+      ).getByRole('button', {
+        name: 'Library',
+      }),
     );
 
     expect(await screen.findByText('2 annotated slides')).toBeTruthy();
@@ -974,6 +989,8 @@ describe('App', () => {
         id: 'talk-chooser',
         conferenceId: libraryEvent.id,
         contributionId: 'contribution-chooser',
+        contributionUrl:
+          'https://indico.example.org/event/chooser-2026/contributions/contribution-chooser/',
         sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
         dayLabel: 'Friday, June 12, 2026',
         title: 'Opening the right deck',
@@ -1039,6 +1056,22 @@ describe('App', () => {
     expect(screen.getByText('Main deck · 10 pages')).toBeTruthy();
     expect(screen.getByText('Alternate deck · 6 pages')).toBeTruthy();
     expect(screen.getByText('Speaker notes · text/plain')).toBeTruthy();
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Link',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Link',
+      }),
+    );
+    expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
+      'https://indico.example.org/event/chooser-2026/contributions/contribution-chooser/',
+    );
 
     await user.click(
       screen.getByRole('button', {
@@ -1063,10 +1096,33 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
+      (
+        screen.getByRole('button', {
+          name: 'Link',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
       screen.getByRole('button', {
         name: 'Alternate deck',
       }),
     ).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Link',
+      }),
+    );
+    expect(window.indicoInk.openExternalUrl).toHaveBeenLastCalledWith(
+      'https://indico.example.org/materials/alt.pdf',
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Copy PDF link for Alternate deck',
+      }),
+    );
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+      'https://indico.example.org/materials/alt.pdf',
+    );
     expect(window.indicoInk.openTalkDeck).toHaveBeenCalledWith(
       libraryEvent.id,
       'talk-chooser',

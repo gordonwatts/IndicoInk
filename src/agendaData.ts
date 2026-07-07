@@ -92,6 +92,7 @@ export const buildAgendaTalkSummaries = async (
         id: talk.id,
         conferenceId: talk.conferenceId,
         contributionId: talk.contributionId,
+        contributionUrl: talk.contributionUrl,
         sortStartsAt: talk.startsAt,
         dayLabel: formatAgendaDayLabel(talk.startsAt),
         title: talk.title,

@@ -498,6 +498,30 @@ input:focus-visible {
   gap: 6px;
 }
 
+.slides-view-link-actions,
+.agenda-talk-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.agenda-talk-link-actions {
+  justify-content: flex-start;
+}
+
+.slides-view-link-actions .primary-button,
+.agenda-talk-link-actions .primary-button {
+  min-height: 40px;
+}
+
+.slides-view-link-actions .icon-button,
+.agenda-talk-link-actions .icon-button {
+  width: 40px;
+  min-height: 40px;
+  border-radius: 10px;
+}
+
 .slides-view-controls-status {
   display: flex;
   flex-wrap: wrap;

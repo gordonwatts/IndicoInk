@@ -26,6 +26,7 @@ function makeTalk(
     id,
     conferenceId: 'conference-1',
     contributionId: id,
+    contributionUrl: `https://indico.example.org/event/example-2026/contributions/${encodeURIComponent(id)}/`,
     sortStartsAt: Date.UTC(2026, 5, 12, startHour, startMinute, 0, 0),
     dayLabel: 'Friday, June 12, 2026',
     title,
