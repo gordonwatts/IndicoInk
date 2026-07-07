@@ -246,6 +246,56 @@ const createExportFileName = (snapshot: ConferenceExportSnapshot) => {
   return `${baseName} notes.md`;
 };
 
+const formatByteCount = (value: number) => {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0 B';
+  }
+
+  if (value < 1024) {
+    return `${Math.round(value)} B`;
+  }
+
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let scaledValue = value / 1024;
+  let unitIndex = 0;
+
+  while (scaledValue >= 1024 && unitIndex < units.length - 1) {
+    scaledValue /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${scaledValue >= 10 ? scaledValue.toFixed(1) : scaledValue.toFixed(2)} ${units[unitIndex]}`;
+};
+
+const formatDuration = (milliseconds: number) => {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+    return '0:00';
+  }
+
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const formatTransferRate = (bytesPerSecond: number | null) => {
+  if (
+    !bytesPerSecond ||
+    !Number.isFinite(bytesPerSecond) ||
+    bytesPerSecond <= 0
+  ) {
+    return 'Calculating rate...';
+  }
+
+  return `${formatByteCount(bytesPerSecond)}/s`;
+};
+
 function EventSummaryRow({
   event,
   selected,
@@ -1008,6 +1058,38 @@ export function App() {
     slideViewerState.kind === 'closed' ? null : slideViewerState.talkId;
   const activeSlideDeckId =
     slideViewerState.kind === 'closed' ? null : slideViewerState.deckId;
+  const activeSlideDownloadProgress =
+    activeSlideDownloadStatus?.kind === 'downloading'
+      ? (() => {
+          const elapsedMilliseconds = Math.max(
+            0,
+            Date.now() - activeSlideDownloadStatus.startedAt,
+          );
+          const bytesPerSecond =
+            elapsedMilliseconds > 0
+              ? activeSlideDownloadStatus.bytesDownloaded /
+                (elapsedMilliseconds / 1000)
+              : null;
+          const percentComplete =
+            activeSlideDownloadStatus.totalBytes &&
+            activeSlideDownloadStatus.totalBytes > 0
+              ? Math.min(
+                  100,
+                  (activeSlideDownloadStatus.bytesDownloaded /
+                    activeSlideDownloadStatus.totalBytes) *
+                    100,
+                )
+              : null;
+
+          return {
+            elapsedMilliseconds,
+            bytesPerSecond,
+            percentComplete,
+          };
+        })()
+      : null;
+  const activeSlideDownloadPercent =
+    activeSlideDownloadProgress?.percentComplete ?? null;
   const commandBarStatus =
     destination === 'slides' ? (
       activeSlideDownloadStatus?.kind === 'downloading' ? (
@@ -1284,6 +1366,7 @@ export function App() {
           sourceUrl: openResult.sourceUrl,
           displayName: openResult.displayName,
           filePath: openResult.filePath,
+          startedAt: Date.now(),
           kind: 'queued',
           bytesDownloaded: 0,
           totalBytes: null,
@@ -1515,6 +1598,7 @@ export function App() {
     }
 
     await window.indicoInk.cancelDeckDownload(operationId);
+    setDestination('agenda');
   };
   const handleRetryDeckDownload = async () => {
     if (
@@ -1526,6 +1610,16 @@ export function App() {
     }
 
     await openAgendaTalkSlides(selectedAgendaTalk);
+  };
+  const handleRetryPdfLoad = () => {
+    if (!selectedAgendaTalk || !activeSlideSelectedMaterialId) {
+      return;
+    }
+
+    void openAgendaTalkSlides(
+      selectedAgendaTalk,
+      activeSlideSelectedMaterialId,
+    );
   };
   const handleCancelExport = () => {
     if (exportCancellationRef.current) {
@@ -2632,19 +2726,79 @@ export function App() {
                 ) : null}
               </div>
               {selectedAgendaTalk ? (
-                <PdfPreview
-                  filePath={
-                    slideViewerState.kind === 'ready'
-                      ? slideViewerState.filePath
-                      : null
-                  }
-                  title={activeSlideTitle}
-                  conferenceId={activeSlideConferenceId}
-                  talkId={activeSlideTalkId}
-                  onSlideMetricsChange={setSlideViewerMetrics}
-                  workspaceDeckId={activeSlideDeckId}
-                  scrollContainerRef={pageSurfaceRef}
-                />
+                <>
+                  {activeSlideDownloadStatus?.kind === 'downloading' ? (
+                    <div className="dialog-backdrop slide-download-dialog">
+                      <DialogSurface
+                        title={`Downloading ${activeSlideTitle}`}
+                        body={
+                          <div className="slide-download-progress">
+                            <p className="slide-download-progress-copy">
+                              {activeSlideDownloadStatus.message ??
+                                'Preparing download...'}
+                            </p>
+                            <progress
+                              className="slide-download-progress-bar"
+                              value={
+                                activeSlideDownloadProgress?.percentComplete ??
+                                undefined
+                              }
+                              max={100}
+                            />
+                            <div className="slide-download-progress-stats">
+                              <StatusLabel
+                                label={`${formatByteCount(activeSlideDownloadStatus.bytesDownloaded)} downloaded`}
+                                tone="neutral"
+                                icon="info"
+                              />
+                              <StatusLabel
+                                label={
+                                  activeSlideDownloadPercent !== null
+                                    ? `${Math.round(activeSlideDownloadPercent)}% complete`
+                                    : 'Awaiting size information'
+                                }
+                                tone="neutral"
+                                icon="refresh"
+                              />
+                              <StatusLabel
+                                label={`Elapsed ${formatDuration(activeSlideDownloadProgress?.elapsedMilliseconds ?? 0)}`}
+                                tone="neutral"
+                                icon="info"
+                              />
+                              <StatusLabel
+                                label={formatTransferRate(
+                                  activeSlideDownloadProgress?.bytesPerSecond ??
+                                    null,
+                                )}
+                                tone="neutral"
+                                icon="info"
+                              />
+                            </div>
+                          </div>
+                        }
+                        primaryLabel="Cancel download"
+                        secondaryLabel="Keep waiting"
+                        onPrimary={() => {
+                          void handleCancelDeckDownload();
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <PdfPreview
+                    filePath={
+                      slideViewerState.kind === 'ready'
+                        ? slideViewerState.filePath
+                        : null
+                    }
+                    title={activeSlideTitle}
+                    conferenceId={activeSlideConferenceId}
+                    talkId={activeSlideTalkId}
+                    onSlideMetricsChange={setSlideViewerMetrics}
+                    workspaceDeckId={activeSlideDeckId}
+                    onRetryLoad={handleRetryPdfLoad}
+                    scrollContainerRef={pageSurfaceRef}
+                  />
+                </>
               ) : (
                 <div className="empty-state">
                   <Icon name="agenda" />

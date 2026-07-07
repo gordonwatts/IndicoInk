@@ -178,6 +178,7 @@ export class DeckCacheManager {
       sourceUrl: deck.sourceUrl,
       displayName: deck.displayName,
       filePath,
+      startedAt: this.now(),
       kind: 'queued',
       bytesDownloaded: 0,
       totalBytes: null,

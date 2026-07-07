@@ -21,6 +21,17 @@ describe('PdfPreview', () => {
       value: ResizeObserverMock,
       configurable: true,
     });
+
+    Object.defineProperty(window, 'indicoInk', {
+      value: {
+        readPdfBytes: vi.fn(),
+        loadPdfWorkspaceState: vi.fn(),
+        savePdfWorkspaceState: vi.fn(),
+        loadDeckWorkspaceState: vi.fn(),
+        saveDeckWorkspaceState: vi.fn(),
+      },
+      configurable: true,
+    });
   });
 
   it('shows the compact slide-note controls without jump or download chrome', () => {
@@ -89,5 +100,39 @@ describe('PdfPreview', () => {
       currentSlideNumber: 1,
       currentPageCount: 0,
     });
+  });
+
+  it('shows a loading overlay while the PDF bytes are still pending', async () => {
+    const pendingRead = new Promise<Uint8Array>(() => {});
+    vi.mocked(window.indicoInk.readPdfBytes).mockReturnValueOnce(pendingRead);
+
+    render(<PdfPreview filePath="/tmp/pending.pdf" title="Loading test" />);
+
+    expect(
+      await screen.findByText('Preparing a new render...'),
+    ).toBeTruthy();
+  });
+
+  it('shows a retryable error overlay when loading the PDF fails', async () => {
+    const onRetryLoad = vi.fn();
+    vi.mocked(window.indicoInk.readPdfBytes).mockRejectedValueOnce(
+      new Error('Timed out fetching the PDF.'),
+    );
+
+    render(
+      <PdfPreview
+        filePath="/tmp/broken.pdf"
+        title="Error test"
+        onRetryLoad={onRetryLoad}
+      />,
+    );
+
+    expect(await screen.findByText('PDF preview unavailable')).toBeTruthy();
+    expect(
+      screen.getAllByText('Timed out fetching the PDF.').length,
+    ).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetryLoad).toHaveBeenCalledTimes(1);
   });
 });

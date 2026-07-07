@@ -1062,10 +1062,8 @@ input:focus-visible {
 }
 
 .pdf-preview-pages.is-rendering {
-  position: absolute;
-  inset: 12px;
-  visibility: hidden;
-  pointer-events: none;
+  opacity: 0.72;
+  transition: opacity 160ms ease;
 }
 
 .pdf-preview-page {
@@ -1190,6 +1188,121 @@ input:focus-visible {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.pdf-preview-stage-status {
+  position: sticky;
+  top: 16px;
+  justify-self: end;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(
+    in srgb,
+    var(--surface-panel) 94%,
+    var(--surface-panel-muted)
+  );
+  box-shadow: 0 14px 30px rgba(34, 45, 63, 0.16);
+  pointer-events: auto;
+}
+
+.pdf-preview-stage-status-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pdf-preview-stage-status-copy strong {
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-tight);
+}
+
+.pdf-preview-stage-status-copy span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-standard);
+}
+
+.pdf-preview-stage-status--loading {
+  align-items: flex-start;
+}
+
+.pdf-preview-stage-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid
+    color-mix(in srgb, var(--surface-accent) 18%, var(--border-subtle));
+  border-top-color: var(--surface-accent);
+  animation: pdf-preview-spin 900ms linear infinite;
+}
+
+.pdf-preview-stage-status--error {
+  max-width: min(520px, calc(100% - 32px));
+}
+
+.slide-download-dialog .dialog-surface {
+  width: min(620px, 100%);
+}
+
+.slide-download-progress {
+  display: grid;
+  gap: 14px;
+}
+
+.slide-download-progress-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  line-height: var(--line-height-standard);
+}
+
+.slide-download-progress-bar {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.slide-download-progress-bar::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--surface-panel-muted) 72%, white);
+  border-radius: 999px;
+}
+
+.slide-download-progress-bar::-webkit-progress-value {
+  background: linear-gradient(
+    90deg,
+    var(--surface-accent),
+    color-mix(in srgb, var(--surface-accent) 72%, white)
+  );
+  border-radius: 999px;
+}
+
+.slide-download-progress-bar::-moz-progress-bar {
+  background: linear-gradient(
+    90deg,
+    var(--surface-accent),
+    color-mix(in srgb, var(--surface-accent) 72%, white)
+  );
+  border-radius: 999px;
+}
+
+.slide-download-progress-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@keyframes pdf-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .pdf-preview-pointer-marker {

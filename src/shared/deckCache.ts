@@ -62,6 +62,7 @@ export type DeckCacheDownloadStatus = {
   sourceUrl: string;
   displayName: string;
   filePath: string;
+  startedAt: number;
   kind: 'queued' | 'downloading' | 'ready' | 'error' | 'canceled';
   bytesDownloaded: number;
   totalBytes: number | null;
