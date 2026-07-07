@@ -200,6 +200,35 @@ const normalizeViewportRect = (
 const normalizeLinkHotspotLabel = (value: string) =>
   value.replace(/\s+/g, ' ').trim();
 
+export const isLikelyDownloadableUrl = (value: string) => {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    return false;
+  }
+
+  if (url.pathname.endsWith('/')) {
+    return false;
+  }
+
+  const lastPathSegment = url.pathname.split('/').filter(Boolean).pop() ?? '';
+  const extension = lastPathSegment.includes('.')
+    ? lastPathSegment.slice(lastPathSegment.lastIndexOf('.') + 1)
+    : '';
+
+  return Boolean(
+    lastPathSegment &&
+      !lastPathSegment.startsWith('.') &&
+      extension &&
+      /^[A-Za-z0-9]{1,8}$/.test(extension),
+  );
+};
+
 const getLinkHotspotsForPage = async (
   page: {
     getAnnotations?: (options: { intent: 'display' }) => Promise<any[]>;
@@ -2418,15 +2447,17 @@ export function PdfPreview({
                 void handleOpenLink(activeLinkPopover.link.url);
               }}
             />
-            <IconButton
-              label="Download link"
-              title="Download"
-              icon="export"
-              onClick={() => {
-                setActiveLinkPopover(null);
-                void handleDownloadLink(activeLinkPopover.link.url);
-              }}
-            />
+            {isLikelyDownloadableUrl(activeLinkPopover.link.url) ? (
+              <IconButton
+                label="Download link"
+                title="Download"
+                icon="export"
+                onClick={() => {
+                  setActiveLinkPopover(null);
+                  void handleDownloadLink(activeLinkPopover.link.url);
+                }}
+              />
+            ) : null}
             {activeLinkPopover.link.isIndicoEvent ? (
               <IconButton
                 label="Open in IndicoInk"
