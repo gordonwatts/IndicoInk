@@ -693,6 +693,37 @@ describe('App', () => {
         name: 'Open talk for Designing a calm note-taking workflow',
       }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Open URL',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Copy URL for IndicoInk Small Event 2026',
+      }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open URL',
+      }),
+    );
+    expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
+      libraryEvent.sourceUrl,
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Copy URL for IndicoInk Small Event 2026',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Copied to clipboard')).toBeTruthy();
+    });
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+      libraryEvent.sourceUrl,
+    );
 
     await user.click(
       screen.getByRole('button', {

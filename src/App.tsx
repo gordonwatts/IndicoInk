@@ -2343,6 +2343,32 @@ export function App() {
                       />
                     ) : null}
                   </div>
+                  <div className="agenda-event-summary-actions">
+                    <PrimaryButton
+                      icon="open"
+                      onClick={() => {
+                        void window.indicoInk.openExternalUrl(
+                          selectedAgendaEvent.sourceUrl,
+                        );
+                      }}
+                      disabled={!selectedAgendaEvent.sourceUrl}
+                    >
+                      Open URL
+                    </PrimaryButton>
+                    <IconButton
+                      label={`Copy URL for ${selectedAgendaEvent.title}`}
+                      title="Copy URL"
+                      icon="copy"
+                      onClick={(event) => {
+                        void handleCopyLink(
+                          selectedAgendaEvent.sourceUrl,
+                          event,
+                          'Copied to clipboard',
+                        );
+                      }}
+                      disabled={!selectedAgendaEvent.sourceUrl}
+                    />
+                  </div>
                   {agendaTalksLoading ? (
                     <div className="empty-state agenda-empty-state">
                       <Icon name="agenda" />
