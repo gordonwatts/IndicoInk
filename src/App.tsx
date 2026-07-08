@@ -24,6 +24,7 @@ import type {
   RefreshLibraryEventResult,
 } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import { copyTextToClipboard } from './clipboard';
 import {
   CommandBar,
   DetailsSurface,
@@ -870,6 +871,12 @@ export function App() {
   const [exportState, setExportState] = React.useState<ExportProgressState>({
     kind: 'idle',
   });
+  const [copyTooltip, setCopyTooltip] = React.useState<{
+    message: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const copyTooltipTimerRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     void window.indicoInk.getAppInfo().then(setInfo);
@@ -882,6 +889,15 @@ export function App() {
   React.useEffect(() => {
     void window.indicoInk.getAppSettings().then(setAppSettings);
   }, []);
+
+  React.useEffect(
+    () => () => {
+      if (copyTooltipTimerRef.current !== null) {
+        window.clearTimeout(copyTooltipTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const refreshLibraryEvents = React.useCallback(async () => {
     const events = await window.indicoInk.listLibraryEvents();
@@ -1052,6 +1068,12 @@ export function App() {
     slideViewerState.kind === 'closed'
       ? null
       : slideViewerState.selectedMaterialId;
+  const activeSlideSelectedMaterial =
+    activeSlideMaterials.find(
+      (material) => material.id === activeSlideSelectedMaterialId,
+    ) ??
+    activeSlideMaterials[0] ??
+    null;
   const activeSlideConferenceId =
     slideViewerState.kind === 'closed' ? null : slideViewerState.conferenceId;
   const activeSlideTalkId =
@@ -1447,6 +1469,35 @@ export function App() {
   const openSearchResult = (talk: AgendaTalkSummary) => {
     openAgendaTalkFromIndex(talk);
   };
+  const openIndicoEventInApp = async (eventUrl: string) => {
+    const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
+    if (openedEvent.kind === 'api-key-required') {
+      setApiKeyDialogRequest({
+        kind: 'event',
+        origin: openedEvent.origin,
+        message: openedEvent.message,
+        eventUrl,
+      });
+      setApiKeyValue('');
+      setApiKeyError(openedEvent.message);
+      setOpenEventFeedback({
+        tone: 'warning',
+        message: openedEvent.message,
+      });
+      return;
+    }
+
+    await refreshLibraryEvents();
+    setSelectedEventId(openedEvent.result.conferenceId);
+    setDestination('agenda');
+    setApiKeyDialogRequest(null);
+    setApiKeyValue('');
+    setApiKeyError(null);
+    setOpenEventFeedback({
+      tone: 'success',
+      message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
+    });
+  };
   const handleOpenEvent = async () => {
     setEventUrlTouched(true);
     const validationError = validateEventUrl(eventUrl);
@@ -1465,33 +1516,7 @@ export function App() {
     });
 
     try {
-      const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
-      if (openedEvent.kind === 'api-key-required') {
-        setApiKeyDialogRequest({
-          kind: 'event',
-          origin: openedEvent.origin,
-          message: openedEvent.message,
-          eventUrl,
-        });
-        setApiKeyValue('');
-        setApiKeyError(openedEvent.message);
-        setOpenEventFeedback({
-          tone: 'warning',
-          message: openedEvent.message,
-        });
-        return;
-      }
-
-      await refreshLibraryEvents();
-      setSelectedEventId(openedEvent.result.conferenceId);
-      setDestination('agenda');
-      setApiKeyDialogRequest(null);
-      setApiKeyValue('');
-      setApiKeyError(null);
-      setOpenEventFeedback({
-        tone: 'success',
-        message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
-      });
+      await openIndicoEventInApp(eventUrl);
     } catch (error) {
       setOpenEventFeedback({
         tone: 'error',
@@ -1580,6 +1605,52 @@ export function App() {
     setSelectedEventId(talk.conferenceId);
     setAgendaDayLabel(talk.dayLabel);
     setAgendaMaterialsTalkId(talk.id);
+  };
+  const handleOpenContributionLink = async (url: string | null) => {
+    if (!url) {
+      return;
+    }
+
+    await window.indicoInk.openExternalUrl(url);
+  };
+  const handleOpenSelectedPdfLink = async () => {
+    const sourceUrl = activeSlideSelectedMaterial?.sourceUrl ?? null;
+    if (!sourceUrl) {
+      return;
+    }
+
+    await window.indicoInk.openExternalUrl(sourceUrl);
+  };
+  const showCopyTooltip = React.useCallback(
+    (message: string, clientX: number, clientY: number) => {
+      if (copyTooltipTimerRef.current !== null) {
+        window.clearTimeout(copyTooltipTimerRef.current);
+        copyTooltipTimerRef.current = null;
+      }
+
+      setCopyTooltip({
+        message,
+        x: clientX + 16,
+        y: clientY + 18,
+      });
+      copyTooltipTimerRef.current = window.setTimeout(() => {
+        setCopyTooltip(null);
+        copyTooltipTimerRef.current = null;
+      }, 2500);
+    },
+    [],
+  );
+  const handleCopyLink = async (
+    url: string | null,
+    event: React.MouseEvent<HTMLButtonElement>,
+    message: string,
+  ) => {
+    if (!url) {
+      return;
+    }
+
+    showCopyTooltip(message, event.clientX, event.clientY);
+    await copyTextToClipboard(url);
   };
   const handleSelectSelectedTalkDeck = async (deckId: string) => {
     if (!selectedAgendaTalk) {
@@ -2246,6 +2317,32 @@ export function App() {
               {selectedAgendaEvent ? (
                 <>
                   <div className="agenda-event-summary">
+                    <div className="agenda-event-summary-actions">
+                      <IconButton
+                        label={`Open URL for ${selectedAgendaEvent.title}`}
+                        title="Open URL"
+                        icon="open"
+                        onClick={() => {
+                          void window.indicoInk.openExternalUrl(
+                            selectedAgendaEvent.sourceUrl,
+                          );
+                        }}
+                        disabled={!selectedAgendaEvent.sourceUrl}
+                      />
+                      <IconButton
+                        label={`Copy URL for ${selectedAgendaEvent.title}`}
+                        title="Copy URL"
+                        icon="copy"
+                        onClick={(event) => {
+                          void handleCopyLink(
+                            selectedAgendaEvent.sourceUrl,
+                            event,
+                            'Copied to clipboard',
+                          );
+                        }}
+                        disabled={!selectedAgendaEvent.sourceUrl}
+                      />
+                    </div>
                     <StatusLabel
                       label={selectedAgendaEvent.host}
                       tone="neutral"
@@ -2379,6 +2476,36 @@ export function App() {
                             title={`Materials for ${agendaMaterialsTalk.title}`}
                             body={
                               <div className="agenda-talk-material-dialog">
+                                <div className="agenda-talk-link-actions">
+                                  <PrimaryButton
+                                    icon="open"
+                                    onClick={() => {
+                                      void handleOpenContributionLink(
+                                        agendaMaterialsTalk.contributionUrl,
+                                      );
+                                    }}
+                                    disabled={
+                                      !agendaMaterialsTalk.contributionUrl
+                                    }
+                                  >
+                                    Link
+                                  </PrimaryButton>
+                                  <IconButton
+                                    label={`Copy contribution link for ${agendaMaterialsTalk.title}`}
+                                    title="Copy contribution link"
+                                    icon="copy"
+                                    onClick={(event) => {
+                                      void handleCopyLink(
+                                        agendaMaterialsTalk.contributionUrl,
+                                        event,
+                                        'Copied to clipboard',
+                                      );
+                                    }}
+                                    disabled={
+                                      !agendaMaterialsTalk.contributionUrl
+                                    }
+                                  />
+                                </div>
                                 <div className="agenda-talk-detail-topline">
                                   <StatusLabel
                                     label={agendaMaterialsTalk.dayLabel}
@@ -2666,6 +2793,43 @@ export function App() {
                     icon="back"
                     onClick={() => setDestination('agenda')}
                   />
+                  <div className="slides-view-link-actions">
+                    <PrimaryButton
+                      icon="open"
+                      onClick={() => {
+                        void handleOpenSelectedPdfLink();
+                      }}
+                      disabled={!activeSlideSelectedMaterial?.sourceUrl}
+                    >
+                      Link
+                    </PrimaryButton>
+                    <IconButton
+                      label={`Copy contribution link for ${selectedAgendaTalk?.title ?? 'selected talk'}`}
+                      title="Copy contribution link"
+                      icon="copy"
+                      onClick={(event) => {
+                        void handleCopyLink(
+                          selectedAgendaTalk?.contributionUrl ?? null,
+                          event,
+                          'Copied to clipboard',
+                        );
+                      }}
+                      disabled={!selectedAgendaTalk?.contributionUrl}
+                    />
+                    <IconButton
+                      label={`Copy PDF link for ${activeSlideSelectedMaterial?.title ?? 'selected deck'}`}
+                      title="Copy PDF link"
+                      icon="copy"
+                      onClick={(event) => {
+                        void handleCopyLink(
+                          activeSlideSelectedMaterial?.sourceUrl ?? null,
+                          event,
+                          'Copied to clipboard',
+                        );
+                      }}
+                      disabled={!activeSlideSelectedMaterial?.sourceUrl}
+                    />
+                  </div>
                   {activeSlideMaterials.length > 1 ? (
                     <SegmentedControl
                       options={activeSlideMaterials.map((material) => ({
@@ -2793,6 +2957,7 @@ export function App() {
                     title={activeSlideTitle}
                     conferenceId={activeSlideConferenceId}
                     talkId={activeSlideTalkId}
+                    onOpenIndicoEvent={openIndicoEventInApp}
                     onSlideMetricsChange={setSlideViewerMetrics}
                     workspaceDeckId={activeSlideDeckId}
                     onRetryLoad={handleRetryPdfLoad}
@@ -3391,6 +3556,19 @@ export function App() {
             </div>
           ) : null}
         </main>
+        {copyTooltip ? (
+          <div
+            className="copy-tooltip"
+            role="status"
+            aria-live="polite"
+            style={{
+              left: `${Math.max(12, copyTooltip.x)}px`,
+              top: `${Math.max(12, copyTooltip.y)}px`,
+            }}
+          >
+            {copyTooltip.message}
+          </div>
+        ) : null}
       </section>
     </div>
   );

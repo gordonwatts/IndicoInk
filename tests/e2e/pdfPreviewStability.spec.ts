@@ -138,7 +138,6 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       ),
     ).toBeLessThanOrEqual(4);
     expect(stickyToolbarSample.toolbarHeight).toBeLessThanOrEqual(48);
-
     const visiblePageBeforeResize = await harness.page.evaluate(() => {
       const pageSurface = document.querySelector<HTMLElement>('.page-surface');
       const pages = Array.from(
@@ -156,7 +155,6 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
 
       return visibleIndex >= 0 ? visibleIndex : pages.length - 1;
     });
-
     const firstCanvasWidthBeforeResize = firstCanvasBox?.width ?? 0;
     const initialInnerWidth = await harness.page.evaluate(
       () => window.innerWidth,
@@ -177,7 +175,6 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     expect(firstCanvasBoxAfterResize?.width ?? 0).toBeLessThan(
       firstCanvasWidthBeforeResize,
     );
-
     const visiblePageAfterResize = await harness.page.evaluate(() => {
       const pageSurface = document.querySelector<HTMLElement>('.page-surface');
       const pages = Array.from(
@@ -236,7 +233,6 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     });
 
     expect(visiblePageAfterExpand).toBe(visiblePageAfterResize);
-
     await harness.page.getByRole('button', { name: 'Home' }).click();
     await harness.page.waitForFunction(() => {
       const pageSurface = document.querySelector<HTMLElement>('.page-surface');

@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PdfPreview } from './PdfPreview';
+import { PdfPreview, isLikelyDownloadableUrl } from './PdfPreview';
 
 describe('PdfPreview', () => {
   beforeEach(() => {
@@ -134,5 +134,14 @@ describe('PdfPreview', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetryLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it('only treats file-like URLs as downloadable', () => {
+    expect(isLikelyDownloadableUrl('http://nytimes.com')).toBe(false);
+    expect(isLikelyDownloadableUrl('http://nytimes.com/file.txt')).toBe(true);
+    expect(isLikelyDownloadableUrl('https://example.com/report.pdf')).toBe(
+      true,
+    );
+    expect(isLikelyDownloadableUrl('https://example.com/path/')).toBe(false);
   });
 });
