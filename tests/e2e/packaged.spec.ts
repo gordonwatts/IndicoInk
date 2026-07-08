@@ -161,7 +161,7 @@ test.describe.serial('packaged app', () => {
         .toBe(1);
 
       await harness.page
-        .getByRole('button', { name: 'Back' })
+        .getByRole('button', { name: 'Back', exact: true })
         .click();
 
       await harness.close();
@@ -199,7 +199,7 @@ test.describe.serial('packaged app', () => {
           .toBe(1);
 
         await reloadedHarness.page
-          .getByRole('button', { name: 'Back' })
+          .getByRole('button', { name: 'Back', exact: true })
           .click();
         await reloadedHarness.page
           .getByRole('button', { name: 'Export notes' })
