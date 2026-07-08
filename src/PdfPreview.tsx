@@ -80,6 +80,17 @@ type PointerMarker = {
   tool: PointerTool;
 };
 
+type PdfLinkAnnotation = {
+  annotationType?: number;
+  altText?: string;
+  contents?: string;
+  rect?: number[];
+  subtype?: string;
+  title?: string;
+  unsafeUrl?: string;
+  url?: string;
+};
+
 type PdfLinkHotspot = {
   label: string;
   url: string;
@@ -238,7 +249,9 @@ export const isLikelyDownloadableUrl = (value: string) => {
 
 const getLinkHotspotsForPage = async (
   page: {
-    getAnnotations?: (options: { intent: 'display' }) => Promise<any[]>;
+    getAnnotations?: (
+      options: { intent: 'display' },
+    ) => Promise<PdfLinkAnnotation[]>;
   },
   viewport: {
     convertToViewportRectangle: (rect: number[]) => number[];
@@ -250,17 +263,17 @@ const getLinkHotspotsForPage = async (
 
   for (const annotation of annotations) {
     const url =
-      typeof annotation?.url === 'string'
+      typeof annotation.url === 'string'
         ? annotation.url
-        : typeof annotation?.unsafeUrl === 'string'
+        : typeof annotation.unsafeUrl === 'string'
           ? annotation.unsafeUrl
           : null;
-    const subtype = annotation?.subtype ?? annotation?.annotationType;
+    const subtype = annotation.subtype ?? annotation.annotationType;
     if (!url || (subtype !== 'Link' && subtype !== 2)) {
       continue;
     }
 
-    if (!Array.isArray(annotation?.rect) || annotation.rect.length < 4) {
+    if (!Array.isArray(annotation.rect) || annotation.rect.length < 4) {
       continue;
     }
 
@@ -270,7 +283,7 @@ const getLinkHotspotsForPage = async (
     }
 
     const label = normalizeLinkHotspotLabel(
-      annotation?.contents ?? annotation?.title ?? annotation?.altText ?? url,
+      annotation.contents ?? annotation.title ?? annotation.altText ?? url,
     );
 
     hotspots.push({
