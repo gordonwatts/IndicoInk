@@ -2169,11 +2169,6 @@ export function App() {
       return;
     }
 
-    const scrollContainer = pageSurfaceRef.current;
-    if (!scrollContainer) {
-      return;
-    }
-
     const restoredScroll = agendaScrollPositionsRef.current.get(
       `${selectedEventId}::${selectedAgendaDay ?? ''}`,
     );
@@ -2193,7 +2188,13 @@ export function App() {
       cancelScrollRestoration(agendaScrollFrameRef.current);
     }
 
-    agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
+    const applyRestoredScroll = (remainingFrames: number) => {
+      const scrollContainer = pageSurfaceRef.current;
+      if (!scrollContainer) {
+        agendaScrollFrameRef.current = null;
+        return;
+      }
+
       if (typeof scrollContainer.scrollTo === 'function') {
         scrollContainer.scrollTo({
           left: restoredScroll.scrollLeft,
@@ -2205,11 +2206,22 @@ export function App() {
         scrollContainer.scrollTop = restoredScroll.scrollTop;
       }
 
-      agendaScrollFrameRef.current = null;
+      if (remainingFrames <= 0) {
+        agendaScrollFrameRef.current = null;
+        return;
+      }
+
+      agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
+        applyRestoredScroll(remainingFrames - 1);
+      });
+    };
+
+    agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
+      applyRestoredScroll(3);
     });
   }, [selectedAgendaDay, selectedEventId]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (destination !== 'agenda' || !selectedEventId) {
       return undefined;
     }
@@ -2229,7 +2241,12 @@ export function App() {
         agendaScrollFrameRef.current = null;
       }
     };
-  }, [destination, restoreAgendaScrollPosition, selectedEventId, selectedAgendaDay]);
+  }, [
+    destination,
+    restoreAgendaScrollPosition,
+    selectedEventId,
+    selectedAgendaDay,
+  ]);
 
   return (
     <div
@@ -3084,7 +3101,6 @@ export function App() {
                     onRetryLoad={handleRetryPdfLoad}
                     scrollContainerRef={pageSurfaceRef}
                     onBackToAgenda={() => {
-                      restoreAgendaScrollPosition();
                       setDestination('agenda');
                     }}
                   />

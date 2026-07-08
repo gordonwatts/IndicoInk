@@ -32,17 +32,26 @@ async function openLargeAgenda() {
     })
     .click();
 
-    await expect(
-      harness.page.getByRole('heading', {
-        name: 'IndicoInk Grand Symposium 2026',
-      }),
-    ).toBeVisible();
+  await expect(
+    harness.page.getByRole('heading', {
+      name: 'IndicoInk Grand Symposium 2026',
+    }),
+  ).toBeVisible();
   await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
 
   return harness;
 }
 
-async function openLargeAgendaWithCachedDeck() {
+async function openLargeAgendaWithCachedDeck(
+  cachedDeck: {
+    contributionId: string;
+    sourceUrl: string;
+  } = {
+    contributionId: 'large-1001',
+    sourceUrl:
+      'https://symposium.indico.example.org/event/indicoink-2026/materials/large-1001-slides.pdf',
+  },
+) {
   const userDataDir = mkdtempSync(resolve(tmpdir(), 'indicoink-agenda-perf-'));
 
   await runElectronImportFixtureCommand({
@@ -53,11 +62,8 @@ async function openLargeAgendaWithCachedDeck() {
   const conferenceSourceUrl =
     'https://symposium.indico.example.org/event/indicoink-2026';
   const conferenceId = createConferenceId(conferenceSourceUrl);
-  const talkContributionId = 'large-1001';
-  const deckSourceUrl =
-    'https://symposium.indico.example.org/event/indicoink-2026/materials/large-1001-slides.pdf';
-  const talkId = createTalkId(conferenceId, talkContributionId);
-  const deckId = createDeckId(talkId, deckSourceUrl);
+  const talkId = createTalkId(conferenceId, cachedDeck.contributionId);
+  const deckId = createDeckId(talkId, cachedDeck.sourceUrl);
   const cacheFilePath = resolve(
     userDataDir,
     'deck-cache',
@@ -75,11 +81,11 @@ async function openLargeAgendaWithCachedDeck() {
     })
     .click();
 
-    await expect(
-      harness.page.getByRole('heading', {
-        name: 'IndicoInk Grand Symposium 2026',
-      }),
-    ).toBeVisible();
+  await expect(
+    harness.page.getByRole('heading', {
+      name: 'IndicoInk Grand Symposium 2026',
+    }),
+  ).toBeVisible();
   await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
 
   return harness;
@@ -296,7 +302,7 @@ test('keeps agenda controls reachable by keyboard and names status indicators', 
     expect(focusOrder[0]).toBe('Library');
     expect(focusOrder[1]).toBe('Search');
 
-    const commandButtons = ['Back', 'Refresh', 'Export notes'];
+    const commandButtons = ['Back to library', 'Refresh', 'Export notes'];
     const commandIndexes = commandButtons.map((label) =>
       focusOrder.indexOf(label),
     );
@@ -307,6 +313,44 @@ test('keeps agenda controls reachable by keyboard and names status indicators', 
     const firstTalkCard = harness.page.locator('.agenda-talk-card').first();
     await expect(firstTalkCard.getByText('PDF')).toBeVisible();
     await expect(firstTalkCard.getByText('3 annotated slides')).toBeVisible();
+  } finally {
+    await harness.close();
+  }
+});
+
+test('returns from a talk to the previous agenda scroll position', async () => {
+  const harness = await openLargeAgendaWithCachedDeck({
+    contributionId: 'large-1302',
+    sourceUrl:
+      'https://symposium.indico.example.org/event/indicoink-2026/materials/large-1302-slides.pdf',
+  });
+
+  try {
+    await harness.page.setViewportSize({ width: 1220, height: 900 });
+
+    const pageSurface = harness.page.locator('.page-surface');
+    await pageSurface.evaluate((element) => {
+      element.scrollTop = 920;
+    });
+
+    await harness.page
+      .getByRole('button', {
+        name: 'Open talk for Lunch notes and quick bookmarks',
+      })
+      .click();
+
+    await expect(
+      harness.page.getByRole('button', { name: 'Home' }),
+    ).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await harness.page.getByRole('button', { name: 'Back to agenda' }).click();
+    await expect(harness.page.getByLabel('Agenda day canvas')).toBeVisible();
+
+    await expect
+      .poll(async () => pageSurface.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(850);
   } finally {
     await harness.close();
   }
@@ -325,10 +369,14 @@ test('keeps large agenda and long deck navigation responsive enough', async () =
       })
       .click();
 
-    await expect(harness.page.getByRole('button', { name: 'Home' })).toBeVisible({
+    await expect(
+      harness.page.getByRole('button', { name: 'Home' }),
+    ).toBeVisible({
       timeout: 30_000,
     });
-    await expect(harness.page.locator('.pdf-preview-page').first()).toBeVisible();
+    await expect(
+      harness.page.locator('.pdf-preview-page').first(),
+    ).toBeVisible();
 
     const openTalkElapsed = performance.now() - openTalkStart;
     expect(
@@ -339,7 +387,9 @@ test('keeps large agenda and long deck navigation responsive enough', async () =
     const jumpStart = performance.now();
     await harness.page.getByRole('button', { name: '3' }).click();
 
-    await expect(harness.page.locator('.pdf-preview-page').nth(2)).toBeVisible();
+    await expect(
+      harness.page.locator('.pdf-preview-page').nth(2),
+    ).toBeVisible();
 
     const jumpElapsed = performance.now() - jumpStart;
     expect(
