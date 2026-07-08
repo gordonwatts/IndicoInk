@@ -107,6 +107,13 @@ const filterOptions = [
   { label: 'Slides available', value: 'slides' as const },
 ];
 
+const isEditableKeyboardTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT');
+
 const agendaDayLabelPattern =
   /^([A-Za-z]+),\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/;
 
@@ -862,8 +869,12 @@ export function App() {
     currentPageCount: number;
   }>({ currentSlideNumber: 1, currentPageCount: 0 });
   const agendaScrollFrameRef = React.useRef<number | null>(null);
+  const agendaScrollPositionsRef = React.useRef(
+    new Map<string, { scrollLeft: number; scrollTop: number }>(),
+  );
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
+  const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const deckDownloadPollRef = React.useRef<number | null>(null);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
     null,
@@ -935,6 +946,40 @@ export function App() {
     await refreshLibraryEvents();
     setDestination('library');
   }, [refreshLibraryEvents]);
+
+  React.useEffect(() => {
+    if (destination !== 'search') {
+      return;
+    }
+
+    agendaSearchInputRef.current?.focus();
+  }, [destination]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (event.ctrlKey && !event.metaKey && key === 'f') {
+        event.preventDefault();
+        setDestination('search');
+        return;
+      }
+
+      if (event.altKey && !event.ctrlKey && !event.metaKey && key === 'l') {
+        event.preventDefault();
+        void returnToLibrary();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [returnToLibrary]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -2079,6 +2124,25 @@ export function App() {
     }
   }, [agendaMaterialsTalk?.id, agendaMaterialsTalkId]);
 
+  const handleAgendaScroll = React.useCallback(() => {
+    if (destination !== 'agenda' || !selectedEventId) {
+      return;
+    }
+
+    const scrollContainer = pageSurfaceRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    agendaScrollPositionsRef.current.set(
+      `${selectedEventId}::${selectedAgendaDay ?? ''}`,
+      {
+        scrollLeft: scrollContainer.scrollLeft,
+        scrollTop: scrollContainer.scrollTop,
+      },
+    );
+  }, [destination, selectedAgendaDay, selectedEventId]);
+
   React.useEffect(() => {
     if (destination !== 'agenda' || !selectedEventId) {
       return undefined;
@@ -2088,6 +2152,7 @@ export function App() {
     if (!scrollContainer) {
       return undefined;
     }
+
     const scheduleScrollRestoration =
       window.requestAnimationFrame ??
       ((callback: FrameRequestCallback) =>
@@ -2099,14 +2164,20 @@ export function App() {
       cancelScrollRestoration(agendaScrollFrameRef.current);
     }
 
+    const restoredScroll = agendaScrollPositionsRef.current.get(
+      `${selectedEventId}::${selectedAgendaDay ?? ''}`,
+    );
+
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
       if (typeof scrollContainer.scrollTo === 'function') {
         scrollContainer.scrollTo({
-          top: 0,
+          left: restoredScroll?.scrollLeft ?? 0,
+          top: restoredScroll?.scrollTop ?? 0,
           behavior: 'auto',
         });
       } else {
-        scrollContainer.scrollTop = 0;
+        scrollContainer.scrollLeft = restoredScroll?.scrollLeft ?? 0;
+        scrollContainer.scrollTop = restoredScroll?.scrollTop ?? 0;
       }
       agendaScrollFrameRef.current = null;
     });
@@ -2145,6 +2216,13 @@ export function App() {
               label={item.label}
               shortLabel={item.shortLabel}
               icon={item.icon}
+              title={
+                item.id === 'library'
+                  ? 'Library (Alt+L)'
+                  : item.id === 'search'
+                    ? 'Search (Ctrl+F)'
+                    : item.label
+              }
               onClick={() => {
                 if (item.id === 'library') {
                   void returnToLibrary();
@@ -2192,8 +2270,9 @@ export function App() {
             leading={
               destination === 'library' ? undefined : (
                 <IconButton
-                  label="Back"
+                  label="Back to library"
                   icon="back"
+                  title="Back to library (Alt+L)"
                   onClick={() => {
                     void returnToLibrary();
                   }}
@@ -2208,6 +2287,7 @@ export function App() {
           ref={pageSurfaceRef}
           className={`page-surface${destination === 'slides' ? ' is-slides-view' : ''}`}
           aria-live="polite"
+          onScroll={destination === 'agenda' ? handleAgendaScroll : undefined}
         >
           {destination === 'library' && (
             <section className="page-stack">
@@ -2962,6 +3042,9 @@ export function App() {
                     workspaceDeckId={activeSlideDeckId}
                     onRetryLoad={handleRetryPdfLoad}
                     scrollContainerRef={pageSurfaceRef}
+                    onBackToAgenda={() => {
+                      setDestination('agenda');
+                    }}
                   />
                 </>
               ) : (
@@ -3084,6 +3167,7 @@ export function App() {
                     <label className="field agenda-search-field">
                       <span>Search talks</span>
                       <input
+                        ref={agendaSearchInputRef}
                         value={agendaSearchQuery}
                         onChange={(event) =>
                           setAgendaSearchQuery(event.target.value)

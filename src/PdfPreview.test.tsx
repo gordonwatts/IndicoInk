@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -100,6 +100,45 @@ describe('PdfPreview', () => {
       currentSlideNumber: 1,
       currentPageCount: 0,
     });
+  });
+
+  it('surfaces back-to-agenda and text-mode keyboard shortcuts', () => {
+    const onBackToAgenda = vi.fn();
+
+    render(
+      <PdfPreview
+        filePath={null}
+        title="Compact test"
+        onBackToAgenda={onBackToAgenda}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Back to agenda' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Back to agenda' }).getAttribute(
+        'title',
+      ),
+    ).toBe('Back to agenda (Alt+A)');
+    expect(screen.getByRole('button', { name: 'Text' }).getAttribute('title'))
+      .toBe('Text tool (Ctrl+T)');
+
+    fireEvent.keyDown(window, {
+      key: 't',
+      ctrlKey: true,
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'Text' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+
+    fireEvent.keyDown(window, {
+      key: 'a',
+      altKey: true,
+    });
+
+    expect(onBackToAgenda).toHaveBeenCalledTimes(1);
   });
 
   it('shows a loading overlay while the PDF bytes are still pending', async () => {

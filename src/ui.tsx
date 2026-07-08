@@ -145,12 +145,14 @@ export function NavButton({
   label,
   shortLabel,
   icon,
+  title,
   onClick,
 }: {
   active?: boolean;
   label: string;
   shortLabel?: string;
   icon: IconName;
+  title?: string;
   onClick?: () => void;
 }) {
   return (
@@ -159,7 +161,7 @@ export function NavButton({
       type="button"
       aria-current={active ? 'page' : undefined}
       aria-label={label}
-      title={label}
+      title={title ?? label}
       onClick={onClick}
     >
       <Icon name={icon} />

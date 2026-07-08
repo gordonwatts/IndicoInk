@@ -419,6 +419,13 @@ const getScrollViewportElement = (
   document.querySelector<HTMLElement>('.page-surface') ??
   document.documentElement;
 
+const isEditableKeyboardTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT');
+
 type PdfPreviewProps = {
   filePath: string | null;
   title?: string;
@@ -426,6 +433,7 @@ type PdfPreviewProps = {
   talkId?: string | null;
   workspaceDeckId?: string | null;
   onOpenIndicoEvent?: (eventUrl: string) => Promise<void>;
+  onBackToAgenda?: () => void;
   onRetryLoad?: () => void;
   onSlideMetricsChange?: (metrics: {
     currentSlideNumber: number;
@@ -441,6 +449,7 @@ export function PdfPreview({
   talkId = null,
   workspaceDeckId = null,
   onOpenIndicoEvent,
+  onBackToAgenda,
   onRetryLoad,
   onSlideMetricsChange,
   scrollContainerRef,
@@ -1121,6 +1130,31 @@ export function PdfPreview({
     setCurrentSlideNumber(pageNumber);
   }, []);
 
+  const handlePreviousSlide = React.useCallback(() => {
+    const previousSlide = Math.max(1, currentSlideNumberRef.current - 1);
+    if (previousSlide === currentSlideNumberRef.current) {
+      return;
+    }
+
+    handleJumpToSlideNumber(previousSlide);
+  }, [handleJumpToSlideNumber]);
+
+  const handleNextSlide = React.useCallback(() => {
+    if (currentPageCount < 1) {
+      return;
+    }
+
+    const nextSlide = Math.min(
+      currentPageCount,
+      currentSlideNumberRef.current + 1,
+    );
+    if (nextSlide === currentSlideNumberRef.current) {
+      return;
+    }
+
+    handleJumpToSlideNumber(nextSlide);
+  }, [currentPageCount, handleJumpToSlideNumber]);
+
   const handleGoHome = React.useCallback(() => {
     const scrollContainer = getScrollViewportElement(scrollContainerRef);
     if (scrollContainer) {
@@ -1134,6 +1168,43 @@ export function PdfPreview({
     currentSlideNumberRef.current = 1;
     setCurrentSlideNumber(1);
   }, [scrollContainerRef]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (event.ctrlKey && !event.metaKey && key === 't') {
+        event.preventDefault();
+        setManualTool('text');
+        return;
+      }
+
+      if (event.altKey && !event.ctrlKey && !event.metaKey && key === 'a') {
+        event.preventDefault();
+        onBackToAgenda?.();
+        return;
+      }
+
+      if (key === 'arrowleft' || key === 'pageup') {
+        event.preventDefault();
+        handlePreviousSlide();
+        return;
+      }
+
+      if (key === 'arrowright' || key === 'pagedown') {
+        event.preventDefault();
+        handleNextSlide();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleNextSlide, handlePreviousSlide, onBackToAgenda]);
 
   const handleOpenLink = React.useCallback(
     async (url: string) => {
@@ -2065,6 +2136,14 @@ export function PdfPreview({
       <div className="pdf-preview-toolbar" aria-label="Annotation toolbar">
         <div className="pdf-preview-toolbar-row">
           <div className="pdf-preview-toolbar-actions">
+            {onBackToAgenda ? (
+              <IconButton
+                label="Back to agenda"
+                icon="back"
+                title="Back to agenda (Alt+A)"
+                onClick={onBackToAgenda}
+              />
+            ) : null}
             <IconButton
               label="Home"
               icon="home"
@@ -2080,6 +2159,7 @@ export function PdfPreview({
             <IconButton
               label="Text"
               icon="text"
+              title="Text tool (Ctrl+T)"
               onClick={() => setManualTool('text')}
               pressed={manualTool === 'text'}
             />
