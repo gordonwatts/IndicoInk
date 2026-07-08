@@ -62,6 +62,7 @@ describe('App', () => {
         options?: ScrollToOptions,
       ) {
         this.scrollTop = options?.top ?? 0;
+        this.scrollLeft = options?.left ?? 0;
       }),
       configurable: true,
     });
@@ -249,7 +250,7 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Back',
+        name: 'Back to library',
       }),
     );
 
@@ -557,6 +558,115 @@ describe('App', () => {
     ).toBeTruthy();
   });
 
+  it('shows shortcut hints and routes Ctrl+F and Alt+L', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-1',
+      sourceUrl: 'https://indico.example.org/event/indico-1',
+      title: 'IndicoInk Small Event 2026',
+      dates: 'June 12, 2026',
+      host: 'small.indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '12 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-1',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-1',
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Designing a calm note-taking workflow',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Opening keynote',
+        timeRangeLabel: '09:00 - 09:45',
+        room: 'Auditorium A',
+        bookmarked: true,
+        materialSummary: 'PDF',
+        materials: [
+          {
+            id: 'deck-1',
+            title: 'Opening slides',
+            sourceUrl: 'https://indico.example.org/materials/deck-1.pdf',
+            mimeType: 'application/pdf',
+            selected: true,
+            pageCount: 10,
+          },
+        ],
+        annotatedSlideCount: 3,
+      },
+    ];
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+    window.indicoInk.openLibraryEvent = vi.fn().mockResolvedValue({
+      kind: 'opened',
+      result: {
+        conferenceId: libraryEvent.id,
+        title: libraryEvent.title,
+        talkCount: agendaTalks.length,
+        deckCount: 1,
+        savedAt: Date.now(),
+      },
+    });
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Library',
+      }).getAttribute('title'),
+    ).toBe('Library (Alt+L)');
+    expect(
+      screen.getByRole('button', {
+        name: 'Search',
+      }).getAttribute('title'),
+    ).toBe('Search (Ctrl+F)');
+
+    await screen.findByRole('heading', {
+      name: libraryEvent.title,
+      level: 1,
+    });
+
+    fireEvent.keyDown(window, {
+      key: 'f',
+      ctrlKey: true,
+    });
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Search talks',
+        level: 2,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('searchbox', {
+        name: 'Search talks',
+      }),
+    ).toBe(document.activeElement);
+
+    fireEvent.keyDown(window, {
+      key: 'l',
+      altKey: true,
+    });
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Open an event',
+        level: 1,
+      }),
+    ).toBeTruthy();
+  });
+
   it('opens a stored library event and preserves it when returning to Library', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
@@ -704,6 +814,12 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
+    const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+    expect(pageSurface).toBeTruthy();
+    pageSurface!.scrollTop = 248;
+    pageSurface!.scrollLeft = 36;
+    fireEvent.scroll(pageSurface!);
+
     await user.click(
       screen.getByRole('button', {
         name: 'Open URL for IndicoInk Small Event 2026',
@@ -743,15 +859,23 @@ describe('App', () => {
     ).toBeNull();
     expect(
       screen.getByRole('button', {
-        name: 'Back',
+        name: 'Back to agenda',
       }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Back to agenda',
+      }).getAttribute('title'),
+    ).toBe('Back to agenda (Alt+A)');
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Back',
+        name: 'Back to agenda',
       }),
     );
+
+    expect(pageSurface!.scrollTop).toBe(248);
+    expect(pageSurface!.scrollLeft).toBe(36);
 
     const firstBookmarkButton = screen.getAllByRole('button', {
       name: 'Bookmark talk',
@@ -830,7 +954,7 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Back',
+        name: 'Back to library',
       }),
     );
 
@@ -917,13 +1041,13 @@ describe('App', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Back',
+        name: 'Back to agenda',
       }),
     );
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Back',
+        name: 'Back to library',
       }),
     );
 
@@ -1186,7 +1310,7 @@ describe('App', () => {
     );
   }, 10_000);
 
-  it('scrolls the agenda to the top when switching days', async () => {
+  it('keeps agenda filters selected when switching days', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
       id: 'conference-1',
@@ -1383,13 +1507,6 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        behavior: 'auto',
-        top: 0,
-      }),
-    );
-
     await user.click(
       screen.getByRole('button', {
         name: 'All',
@@ -1432,12 +1549,6 @@ describe('App', () => {
       }),
     ).toBeTruthy();
 
-    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        behavior: 'auto',
-        top: 0,
-      }),
-    );
     expect(
       screen
         .getByRole('button', {
