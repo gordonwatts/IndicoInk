@@ -1372,6 +1372,8 @@ export function App() {
     talk: AgendaTalkSummary,
     deckId?: string,
   ) => {
+    captureAgendaScrollPosition();
+
     const selectedPdfMaterial =
       talk.materials.find(
         (material) =>
@@ -2143,14 +2145,41 @@ export function App() {
     );
   }, [destination, selectedAgendaDay, selectedEventId]);
 
-  React.useEffect(() => {
-    if (destination !== 'agenda' || !selectedEventId) {
-      return undefined;
+  const captureAgendaScrollPosition = React.useCallback(() => {
+    if (!selectedEventId) {
+      return;
     }
 
     const scrollContainer = pageSurfaceRef.current;
     if (!scrollContainer) {
-      return undefined;
+      return;
+    }
+
+    agendaScrollPositionsRef.current.set(
+      `${selectedEventId}::${selectedAgendaDay ?? ''}`,
+      {
+        scrollLeft: scrollContainer.scrollLeft,
+        scrollTop: scrollContainer.scrollTop,
+      },
+    );
+  }, [selectedAgendaDay, selectedEventId]);
+
+  const restoreAgendaScrollPosition = React.useCallback(() => {
+    if (!selectedEventId) {
+      return;
+    }
+
+    const scrollContainer = pageSurfaceRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const restoredScroll = agendaScrollPositionsRef.current.get(
+      `${selectedEventId}::${selectedAgendaDay ?? ''}`,
+    );
+
+    if (!restoredScroll) {
+      return;
     }
 
     const scheduleScrollRestoration =
@@ -2164,31 +2193,43 @@ export function App() {
       cancelScrollRestoration(agendaScrollFrameRef.current);
     }
 
-    const restoredScroll = agendaScrollPositionsRef.current.get(
-      `${selectedEventId}::${selectedAgendaDay ?? ''}`,
-    );
-
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
       if (typeof scrollContainer.scrollTo === 'function') {
         scrollContainer.scrollTo({
-          left: restoredScroll?.scrollLeft ?? 0,
-          top: restoredScroll?.scrollTop ?? 0,
+          left: restoredScroll.scrollLeft,
+          top: restoredScroll.scrollTop,
           behavior: 'auto',
         });
       } else {
-        scrollContainer.scrollLeft = restoredScroll?.scrollLeft ?? 0;
-        scrollContainer.scrollTop = restoredScroll?.scrollTop ?? 0;
+        scrollContainer.scrollLeft = restoredScroll.scrollLeft;
+        scrollContainer.scrollTop = restoredScroll.scrollTop;
       }
+
       agendaScrollFrameRef.current = null;
     });
+  }, [selectedAgendaDay, selectedEventId]);
+
+  React.useEffect(() => {
+    if (destination !== 'agenda' || !selectedEventId) {
+      return undefined;
+    }
+
+    const scrollContainer = pageSurfaceRef.current;
+    if (!scrollContainer) {
+      return undefined;
+    }
+
+    restoreAgendaScrollPosition();
 
     return () => {
+      const cancelScrollRestoration =
+        window.cancelAnimationFrame ?? window.clearTimeout;
       if (agendaScrollFrameRef.current !== null) {
         cancelScrollRestoration(agendaScrollFrameRef.current);
         agendaScrollFrameRef.current = null;
       }
     };
-  }, [destination, selectedEventId, selectedAgendaDay]);
+  }, [destination, restoreAgendaScrollPosition, selectedEventId, selectedAgendaDay]);
 
   return (
     <div
@@ -3043,6 +3084,7 @@ export function App() {
                     onRetryLoad={handleRetryPdfLoad}
                     scrollContainerRef={pageSurfaceRef}
                     onBackToAgenda={() => {
+                      restoreAgendaScrollPosition();
                       setDestination('agenda');
                     }}
                   />
