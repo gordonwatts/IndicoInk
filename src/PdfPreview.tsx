@@ -1459,6 +1459,12 @@ export function PdfPreview({
           return;
         }
 
+        if (textNoteDraft && eventKind === 'pointerdown') {
+          event.preventDefault();
+          textNoteEditorRef.current?.blur();
+          return;
+        }
+
         const pageSize =
           state.kind === 'loading' || state.kind === 'ready'
             ? state.pageSizes[pageIndex]
@@ -1660,18 +1666,26 @@ export function PdfPreview({
               bounds.height,
           );
 
-          updateTextNotePage(pageIndex, (currentTextNotes) =>
-            currentTextNotes.map((note) =>
-              note.id === textNoteDragState.noteId
-                ? {
-                    ...note,
-                    x: nextX,
-                    y: nextY,
-                    updatedAt: Date.now(),
-                  }
-                : note,
-            ),
-          );
+          if (textNoteDraft?.noteId === textNoteDragState.noteId) {
+            setTextNoteDraft((currentDraft) =>
+              currentDraft
+                ? { ...currentDraft, x: nextX, y: nextY }
+                : currentDraft,
+            );
+          } else {
+            updateTextNotePage(pageIndex, (currentTextNotes) =>
+              currentTextNotes.map((note) =>
+                note.id === textNoteDragState.noteId
+                  ? {
+                      ...note,
+                      x: nextX,
+                      y: nextY,
+                      updatedAt: Date.now(),
+                    }
+                  : note,
+              ),
+            );
+          }
           event.preventDefault();
         }
 
@@ -2605,16 +2619,18 @@ export function PdfPreview({
                           textNoteDraft?.mode === 'edit' &&
                           textNoteDraft.pageIndex === index &&
                           textNoteDraft.noteId === note.id;
+                        const displayedNote =
+                          isEditing && textNoteDraft ? textNoteDraft : note;
 
                         return (
                           <article
                             key={note.id}
                             className="pdf-preview-text-note"
                             style={{
-                              left: `${clamp01(note.x) * 100}%`,
-                              top: `${clamp01(note.y) * 100}%`,
+                              left: `${clamp01(displayedNote.x) * 100}%`,
+                              top: `${clamp01(displayedNote.y) * 100}%`,
                               width: `${clampTextNoteWidth(
-                                note.width ?? DEFAULT_TEXT_NOTE_WIDTH,
+                                displayedNote.width ?? DEFAULT_TEXT_NOTE_WIDTH,
                               ) * 100}%`,
                             }}
                           >
@@ -2659,10 +2675,16 @@ export function PdfPreview({
                               <button
                                 type="button"
                                 className="pdf-preview-text-note-text"
-                                onPointerDown={(event) =>
-                                  event.stopPropagation()
-                                }
-                                onClick={() => handleEditTextNote(index, note)}
+                                onPointerDown={(event) => {
+                                  if (manualTool === 'text') {
+                                    event.stopPropagation();
+                                  }
+                                }}
+                                onClick={() => {
+                                  if (manualTool === 'text') {
+                                    handleEditTextNote(index, note);
+                                  }
+                                }}
                               >
                                 {note.text}
                               </button>
