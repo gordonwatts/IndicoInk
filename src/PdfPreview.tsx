@@ -496,6 +496,7 @@ export function PdfPreview({
     null,
   );
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
+  const textNoteEditorRef = React.useRef<HTMLTextAreaElement | null>(null);
   const persistenceHydratedRef = React.useRef(false);
   const linkPopoverHideTimerRef = React.useRef<number | null>(null);
   const copyTooltipHideTimerRef = React.useRef<number | null>(null);
@@ -1089,6 +1090,7 @@ export function PdfPreview({
 
   const focusTextNoteEditor = React.useCallback(
     (element: HTMLTextAreaElement | null) => {
+      textNoteEditorRef.current = element;
       if (element) {
         element.focus();
         element.setSelectionRange(element.value.length, element.value.length);
@@ -1427,6 +1429,7 @@ export function PdfPreview({
           if (interactionMode === 'text' && pagePoint) {
             event.preventDefault();
             if (textNoteDraft) {
+              textNoteEditorRef.current?.blur();
               return;
             }
             const noteId = createTextNoteId();
