@@ -116,6 +116,7 @@ type TextNoteDraft = {
   noteId: string | null;
   x: number;
   y: number;
+  width: number;
   text: string;
 };
 
@@ -125,6 +126,13 @@ type TextNoteDragState = {
   pageIndex: number;
   startOffsetX: number;
   startOffsetY: number;
+};
+
+type TextNoteResizeState = {
+  pointerId: number;
+  pageIndex: number;
+  startClientX: number;
+  startWidth: number;
 };
 
 type PointerInteractionResolution = {
@@ -411,6 +419,9 @@ const createTextNoteId = () =>
   `text-note-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const DEFAULT_TEXT_NOTE_WIDTH = 0.26;
+const clampTextNoteWidth = (value: number) =>
+  Math.max(0.12, Math.min(0.8, value));
 
 const getScrollViewportElement = (
   scrollContainerRef?: React.RefObject<HTMLElement | null>,
@@ -479,6 +490,8 @@ export function PdfPreview({
     React.useState<TextNoteDraft | null>(null);
   const [textNoteDragState, setTextNoteDragState] =
     React.useState<TextNoteDragState | null>(null);
+  const [textNoteResizeState, setTextNoteResizeState] =
+    React.useState<TextNoteResizeState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
   const [linkHotspotsByPage, setLinkHotspotsByPage] = React.useState<
@@ -965,6 +978,7 @@ export function PdfPreview({
       slideId: createSlideId(effectiveDeckId, textNoteDraft.pageIndex + 1),
       x: clamp01(textNoteDraft.x),
       y: clamp01(textNoteDraft.y),
+      width: clampTextNoteWidth(textNoteDraft.width),
       text: trimmedText,
       createdAt: now,
       updatedAt: now,
@@ -1069,6 +1083,7 @@ export function PdfPreview({
         pageIndex,
         x: note.x,
         y: note.y,
+        width: clampTextNoteWidth(note.width ?? DEFAULT_TEXT_NOTE_WIDTH),
         text: note.text,
       });
     },
@@ -1126,6 +1141,28 @@ export function PdfPreview({
       });
     },
     [recordWorkspaceSnapshot],
+  );
+
+  const handleTextNoteResizeStart = React.useCallback(
+    (
+      pageIndex: number,
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      if (!textNoteDraft) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setTextNoteResizeState({
+        pointerId: event.pointerId,
+        pageIndex,
+        startClientX: event.clientX,
+        startWidth: textNoteDraft.width,
+      });
+    },
+    [textNoteDraft],
   );
 
   const handleZoomIn = React.useCallback(() => {
@@ -1393,6 +1430,35 @@ export function PdfPreview({
   const handlePagePointerEvent = React.useCallback(
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
+        if (
+          textNoteResizeState?.pointerId === event.pointerId &&
+          textNoteResizeState.pageIndex === pageIndex
+        ) {
+          if (eventKind === 'pointermove') {
+            const pageWidth = event.currentTarget.getBoundingClientRect().width;
+            if (pageWidth > 0) {
+              setTextNoteDraft((currentDraft) =>
+                currentDraft
+                  ? {
+                      ...currentDraft,
+                      width: clampTextNoteWidth(
+                        textNoteResizeState.startWidth +
+                          (event.clientX - textNoteResizeState.startClientX) /
+                            pageWidth,
+                      ),
+                    }
+                  : currentDraft,
+              );
+            }
+          }
+
+          if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+            setTextNoteResizeState(null);
+          }
+          event.preventDefault();
+          return;
+        }
+
         const pageSize =
           state.kind === 'loading' || state.kind === 'ready'
             ? state.pageSizes[pageIndex]
@@ -1444,6 +1510,7 @@ export function PdfPreview({
               pageIndex,
               x: pagePoint.x,
               y: pagePoint.y,
+              width: DEFAULT_TEXT_NOTE_WIDTH,
               text: '',
             });
             return;
@@ -1647,6 +1714,7 @@ export function PdfPreview({
       recordWorkspaceSnapshot,
       textNoteDragState,
       textNoteDraft,
+      textNoteResizeState,
       updateStrokePage,
       updateTextNotePage,
       scrollContainerRef,
@@ -2545,6 +2613,9 @@ export function PdfPreview({
                             style={{
                               left: `${clamp01(note.x) * 100}%`,
                               top: `${clamp01(note.y) * 100}%`,
+                              width: `${clampTextNoteWidth(
+                                note.width ?? DEFAULT_TEXT_NOTE_WIDTH,
+                              ) * 100}%`,
                             }}
                           >
                             <button
@@ -2597,18 +2668,6 @@ export function PdfPreview({
                               </button>
                             )}
                             <div className="pdf-preview-text-note-actions">
-                              {!isEditing ? (
-                                <IconButton
-                                  label={`Edit note on page ${index + 1}`}
-                                  icon="pen"
-                                  onPointerDown={(event) =>
-                                    event.stopPropagation()
-                                  }
-                                  onClick={() =>
-                                    handleEditTextNote(index, note)
-                                  }
-                                />
-                              ) : null}
                               <IconButton
                                 label={`Delete note on page ${index + 1}`}
                                 icon="trash"
@@ -2620,6 +2679,16 @@ export function PdfPreview({
                                 }
                               />
                             </div>
+                            {isEditing ? (
+                              <button
+                                type="button"
+                                className="pdf-preview-text-note-resize-handle"
+                                aria-label={`Resize note on page ${index + 1}`}
+                                onPointerDown={(event) =>
+                                  handleTextNoteResizeStart(index, event)
+                                }
+                              />
+                            ) : null}
                           </article>
                         );
                       })}
@@ -2630,6 +2699,7 @@ export function PdfPreview({
                           style={{
                             left: `${clamp01(textNoteDraft.x) * 100}%`,
                             top: `${clamp01(textNoteDraft.y) * 100}%`,
+                            width: `${clampTextNoteWidth(textNoteDraft.width) * 100}%`,
                           }}
                         >
                           <textarea
@@ -2652,6 +2722,14 @@ export function PdfPreview({
                             onKeyDown={handleTextNoteEditorKeyDown}
                             rows={3}
                             placeholder="Type your note"
+                          />
+                          <button
+                            type="button"
+                            className="pdf-preview-text-note-resize-handle"
+                            aria-label={`Resize note on page ${index + 1}`}
+                            onPointerDown={(event) =>
+                              handleTextNoteResizeStart(index, event)
+                            }
                           />
                         </article>
                       ) : null}

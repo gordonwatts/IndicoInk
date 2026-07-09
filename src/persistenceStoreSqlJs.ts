@@ -210,6 +210,7 @@ const normalizeTextNote = (note: unknown): TextNote | null => {
     slideId: string;
     x: number;
     y: number;
+    width?: number;
     text: string;
     createdAt?: number;
     updatedAt?: number;
@@ -223,6 +224,7 @@ const normalizeTextNote = (note: unknown): TextNote | null => {
     slideId: candidate.slideId,
     x: candidate.x,
     y: candidate.y,
+    width: candidate.width,
     text: candidate.text,
     createdAt: Number(candidate.createdAt ?? 0),
     updatedAt: Number(candidate.updatedAt ?? 0),
@@ -1137,6 +1139,7 @@ export class PersistenceStore {
         : JSON.stringify({
             x: annotation.x,
             y: annotation.y,
+            width: annotation.width,
             text: annotation.text,
           });
 
@@ -1347,6 +1350,7 @@ export class PersistenceStore {
             slideId: slide.id,
             x: annotation.x,
             y: annotation.y,
+            width: annotation.width,
             text: annotation.text,
             createdAt: annotation.createdAt,
             updatedAt: annotation.updatedAt,
@@ -1417,6 +1421,7 @@ export class PersistenceStore {
             slideId: slide.id,
             x: annotation.x,
             y: annotation.y,
+            width: annotation.width,
             text: annotation.text,
             createdAt: annotation.createdAt,
             updatedAt: annotation.updatedAt,
@@ -1521,6 +1526,7 @@ export class PersistenceStore {
             slideId,
             x: note.x,
             y: note.y,
+            width: note.width,
             text: note.text,
             createdAt: note.createdAt ?? now,
             updatedAt: note.updatedAt ?? now,
@@ -1616,6 +1622,7 @@ export class PersistenceStore {
             slideId,
             x: note.x,
             y: note.y,
+            width: note.width,
             text: note.text,
             createdAt: note.createdAt ?? now,
             updatedAt: note.updatedAt ?? now,
