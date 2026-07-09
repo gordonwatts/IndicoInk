@@ -1078,21 +1078,6 @@ input:focus-visible {
   overflow-anchor: none;
 }
 
-.pdf-preview-note-dialog {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(13, 20, 33, 0.3);
-  backdrop-filter: blur(6px);
-}
-
-.pdf-preview-note-dialog .dialog-surface {
-  width: min(560px, 100%);
-}
-
 .pdf-preview-pages {
   display: grid;
   gap: 12px;
@@ -1273,6 +1258,7 @@ input:focus-visible {
 
 .pdf-preview-text-note-text {
   display: block;
+  width: 100%;
   padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid rgba(58, 67, 81, 0.16);
@@ -1283,6 +1269,23 @@ input:focus-visible {
   line-height: var(--line-height-standard);
   white-space: pre-wrap;
   word-break: break-word;
+  text-align: left;
+  cursor: text;
+}
+
+.pdf-preview-text-note-editor {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 2px solid var(--surface-accent);
+  background: color-mix(in srgb, var(--surface-panel) 92%, #f8e9a0);
+  color: var(--text-primary);
+  box-shadow: 0 10px 22px rgba(36, 46, 61, 0.14);
+  font: inherit;
+  line-height: var(--line-height-standard);
 }
 
 .pdf-preview-text-note-actions {

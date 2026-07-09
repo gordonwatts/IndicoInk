@@ -81,12 +81,19 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Text' }).click();
   await sheet.click({ position: { x: noteX, y: noteY } });
 
-  const dialog = page.getByRole('dialog', { name: 'Add note' });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Note text').fill('Acceptance note');
-  await dialog.getByRole('button', { name: 'Add note' }).click();
+  const editor = page.getByRole('textbox', { name: 'Note text on page 1' });
+  await expect(editor).toBeVisible();
+  await editor.fill('Acceptance note');
+  await editor.press('Enter');
 
   await expect(page.getByText('Acceptance note')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Acceptance note' }).click();
+  await expect(editor).toBeVisible();
+  await editor.fill('Edited acceptance note');
+  await editor.press('Enter');
+
+  await expect(page.getByText('Edited acceptance note')).toBeVisible();
 }
 
 test.describe.serial('packaged app', () => {
