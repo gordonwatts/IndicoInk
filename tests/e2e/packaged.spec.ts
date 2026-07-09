@@ -84,12 +84,15 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   const editor = page.getByRole('textbox', { name: 'Note text on page 1' });
   await expect(editor).toBeVisible();
   await editor.fill('Acceptance note');
-  await editor.press('Enter');
+  await sheet.click({ position: { x: 16, y: 16 } });
 
   await expect(page.getByText('Acceptance note')).toBeVisible();
 
   await page.getByRole('button', { name: 'Acceptance note' }).click();
   await expect(editor).toBeVisible();
+  await expect
+    .poll(() => editor.evaluate((element) => element.selectionStart))
+    .toBe('Acceptance note'.length);
   await editor.fill('Edited acceptance note');
   await editor.press('Enter');
 

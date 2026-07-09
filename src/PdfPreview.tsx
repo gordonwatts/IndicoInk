@@ -1087,6 +1087,16 @@ export function PdfPreview({
     [closeTextNoteDraft, commitTextNoteDraft],
   );
 
+  const focusTextNoteEditor = React.useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      if (element) {
+        element.focus();
+        element.setSelectionRange(element.value.length, element.value.length);
+      }
+    },
+    [],
+  );
+
   const handleTextNoteDragStart = React.useCallback(
     (
       pageIndex: number,
@@ -1416,6 +1426,9 @@ export function PdfPreview({
 
           if (interactionMode === 'text' && pagePoint) {
             event.preventDefault();
+            if (textNoteDraft) {
+              return;
+            }
             const noteId = createTextNoteId();
             activeInkActionRef.current = {
               kind: 'text',
@@ -1630,6 +1643,7 @@ export function PdfPreview({
       state,
       recordWorkspaceSnapshot,
       textNoteDragState,
+      textNoteDraft,
       updateStrokePage,
       updateTextNotePage,
       scrollContainerRef,
@@ -2548,7 +2562,7 @@ export function PdfPreview({
                               <textarea
                                 className="pdf-preview-text-note-editor"
                                 aria-label={`Note text on page ${index + 1}`}
-                                autoFocus
+                                ref={focusTextNoteEditor}
                                 value={textNoteDraft.text}
                                 onPointerDown={(event) =>
                                   event.stopPropagation()
@@ -2563,6 +2577,7 @@ export function PdfPreview({
                                       : currentDraft,
                                   )
                                 }
+                                onBlur={commitTextNoteDraft}
                                 onKeyDown={handleTextNoteEditorKeyDown}
                                 rows={3}
                               />
@@ -2617,7 +2632,7 @@ export function PdfPreview({
                           <textarea
                             className="pdf-preview-text-note-editor"
                             aria-label={`Note text on page ${index + 1}`}
-                            autoFocus
+                            ref={focusTextNoteEditor}
                             value={textNoteDraft.text}
                             onPointerDown={(event) => event.stopPropagation()}
                             onChange={(event) =>
@@ -2630,6 +2645,7 @@ export function PdfPreview({
                                   : currentDraft,
                               )
                             }
+                            onBlur={commitTextNoteDraft}
                             onKeyDown={handleTextNoteEditorKeyDown}
                             rows={3}
                             placeholder="Type your note"
