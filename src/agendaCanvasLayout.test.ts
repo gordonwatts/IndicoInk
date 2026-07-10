@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agendaCanvasHeaderHeight,
   agendaCanvasRowHeight,
+  agendaCanvasTalkGap,
   agendaCanvasTalkMinHeight,
   agendaCanvasTrackPadding,
   agendaTimeGutterWidth,
@@ -243,6 +244,32 @@ describe('agenda canvas layout', () => {
     expect(lastPlacement).toBeDefined();
     expect(session!.trackHeightPx).toBeGreaterThanOrEqual(
       lastPlacement!.topPx + lastPlacement!.heightPx + agendaCanvasTrackPadding,
+    );
+  });
+
+  it('aligns talk cards with their scheduled times without overlap', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk('first-timed-talk', 9, 0, 15, 'First timed talk'),
+      makeTalk('second-timed-talk', 9, 15, 15, 'Second timed talk'),
+    ]);
+    const session = layout.columns.find(
+      (block) => block.title === 'Stacked session',
+    );
+    const firstPlacement = session?.talkPlacements[0];
+    const secondPlacement = session?.talkPlacements[1];
+    const halfHourMarkerIndex = layout.timeMarkers.indexOf(9 * 60 + 30);
+
+    expect(firstPlacement).toBeDefined();
+    expect(secondPlacement).toBeDefined();
+    expect(firstPlacement!.topPx).toBe(
+      agendaCanvasHeaderHeight + agendaCanvasTrackPadding,
+    );
+    expect(secondPlacement!.topPx).toBeGreaterThanOrEqual(
+      firstPlacement!.topPx + firstPlacement!.heightPx + agendaCanvasTalkGap,
+    );
+    expect(halfHourMarkerIndex).toBeGreaterThanOrEqual(0);
+    expect(layout.timeMarkerTopPx[halfHourMarkerIndex]!).toBeGreaterThanOrEqual(
+      secondPlacement!.topPx + secondPlacement!.heightPx + agendaCanvasTalkGap,
     );
   });
 

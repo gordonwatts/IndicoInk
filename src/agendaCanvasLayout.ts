@@ -329,6 +329,7 @@ function buildTimeAxis(
     endMinutes: number;
     trackHeightPx: number;
     columnIndex: number;
+    isTalk: boolean;
   }>,
   markerStart: number,
   markerEnd: number,
@@ -356,6 +357,10 @@ function buildTimeAxis(
     let changed = false;
 
     blocks.forEach((block) => {
+      if (!block.isTalk) {
+        return;
+      }
+
       const startIndex = boundaries.indexOf(block.startMinutes);
       const endIndex = boundaries.indexOf(block.endMinutes);
       if (startIndex < 0 || endIndex <= startIndex) {
@@ -381,7 +386,7 @@ function buildTimeAxis(
     const boundaryTopPx = buildBoundaryTopMap();
     const blocksByColumn = new Map<number, typeof blocks>();
     blocks.forEach((block) => {
-      if (block.columnIndex < 0) {
+      if (block.columnIndex < 0 || block.isTalk) {
         return;
       }
 
@@ -598,16 +603,105 @@ export function buildAgendaCanvasLayout(
     timeMarkers.push(minute);
   }
 
-  const timeAxis = buildTimeAxis(solvedBlocks, markerStart, markerEnd);
+  const buildTimeAxisBlocks = (blocks: typeof solvedBlocks) => [
+    ...blocks.map((block) => ({
+      startMinutes: block.startMinutes,
+      endMinutes: block.endMinutes,
+      trackHeightPx: block.trackHeightPx,
+      columnIndex: block.columnIndex,
+      isTalk: false,
+    })),
+    ...blocks.flatMap((block) =>
+      block.talkPlacements.flatMap((placement) => {
+        const startMinutes = getAgendaTalkStartMinutes(placement.talk);
+        if (startMinutes === null) {
+          return [];
+        }
+
+        return [
+          {
+            startMinutes,
+            endMinutes: getAgendaTalkEndMinutes(placement.talk),
+            trackHeightPx:
+              placement.heightPx +
+              agendaCanvasTalkGap +
+              (startMinutes === block.startMinutes
+                ? agendaCanvasHeaderHeight + agendaCanvasTrackPadding
+                : 0),
+            columnIndex: block.columnIndex,
+            isTalk: true,
+          },
+        ];
+      }),
+    ),
+  ];
+
+  let axisBlocks = solvedBlocks;
+  let timeAxis = buildTimeAxis(
+    buildTimeAxisBlocks(axisBlocks),
+    markerStart,
+    markerEnd,
+  );
+
+  let axisAlignedColumns: AgendaCanvasColumnLayout[] = [];
+  for (let iteration = 0; iteration < 8; iteration += 1) {
+    axisAlignedColumns = axisBlocks.map((block) => {
+      const blockTopPx = timeAxis.getTopForMinute(block.startMinutes);
+      const talkPlacements = block.talkPlacements.map((placement) => {
+        const talkStartMinutes = getAgendaTalkStartMinutes(placement.talk);
+        if (talkStartMinutes === null) {
+          return placement;
+        }
+
+        return {
+          ...placement,
+          topPx:
+            Math.max(
+              agendaCanvasHeaderHeight + agendaCanvasTrackPadding,
+              timeAxis.getTopForMinute(talkStartMinutes) - blockTopPx,
+            ),
+        };
+      });
+      const lastTalkBottomPx = talkPlacements.reduce(
+        (maxBottom, placement) =>
+          Math.max(maxBottom, placement.topPx + placement.heightPx),
+        0,
+      );
+
+      return {
+        ...block,
+        talkPlacements,
+        trackHeightPx: Math.max(
+          block.trackHeightPx,
+          lastTalkBottomPx + agendaCanvasTrackPadding,
+        ),
+        blockTopPx,
+      };
+    });
+
+    const nextAxisBlocks = axisAlignedColumns.map((block) => ({
+      ...block,
+      trackHeightPx: block.trackHeightPx,
+    }));
+    const heightsChanged = nextAxisBlocks.some(
+      (block, index) =>
+        block.trackHeightPx !== axisBlocks[index]?.trackHeightPx,
+    );
+    axisBlocks = nextAxisBlocks;
+    if (!heightsChanged) {
+      break;
+    }
+
+    timeAxis = buildTimeAxis(
+      buildTimeAxisBlocks(axisBlocks),
+      markerStart,
+      markerEnd,
+    );
+  }
+
   const timeMarkerTopPx = timeMarkers.map((minute) =>
     timeAxis.getTopForMinute(minute),
   );
-  const axisAlignedColumns = solvedBlocks.map((block) => {
-    return {
-      ...block,
-      blockTopPx: timeAxis.getTopForMinute(block.startMinutes),
-    };
-  }) satisfies AgendaCanvasColumnLayout[];
   const canvasHeightPx = Math.max(
     axisAlignedColumns.reduce(
       (maxHeight, block) =>
