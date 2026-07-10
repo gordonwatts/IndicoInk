@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agendaCanvasHeaderHeight,
   agendaCanvasRowHeight,
+  agendaCanvasTalkMinHeight,
   agendaCanvasTrackPadding,
   agendaTimeGutterWidth,
   buildAgendaCanvasLayout,
@@ -204,6 +205,16 @@ describe('agenda canvas layout', () => {
     expect(height).toBeLessThan(220);
   });
 
+  it('budgets enough height for long real-world talk titles', () => {
+    const title = 'A '.repeat(80).trim();
+    const height = estimateAgendaTalkCardHeightForWidth(
+      makeTalk('long-title-talk', 9, 0, 30, title),
+      320,
+    );
+
+    expect(height).toBeGreaterThan(agendaCanvasTalkMinHeight);
+  });
+
   it('keeps the session background behind every placed talk', () => {
     const layout = buildAgendaCanvasLayout([
       makeTalk(
@@ -237,8 +248,8 @@ describe('agenda canvas layout', () => {
 
   it('keeps visually tall blocks apart when their scheduled times touch', () => {
     const layout = buildAgendaCanvasLayout([
-      makeTalk('first-block-talk', 9, 0, 15, 'First block', 'First block'),
-      makeTalk('second-block-talk', 9, 15, 15, 'Second block', 'Second block'),
+      makeTalk('first-block-talk', 9, 0, 30, 'First block', 'First block'),
+      makeTalk('second-block-talk', 9, 30, 15, 'Second block', 'Second block'),
     ]);
     const blocks = layout.columns
       .filter((block) => !block.spanFullWidth)
@@ -247,6 +258,11 @@ describe('agenda canvas layout', () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[1]!.blockTopPx).toBeGreaterThanOrEqual(
       blocks[0]!.blockTopPx + blocks[0]!.trackHeightPx,
+    );
+    const secondBlockMarkerIndex = layout.timeMarkers.indexOf(9 * 60 + 30);
+    expect(secondBlockMarkerIndex).toBeGreaterThanOrEqual(0);
+    expect(blocks[1]!.blockTopPx).toBe(
+      layout.timeMarkerTopPx[secondBlockMarkerIndex]!,
     );
   });
 });
