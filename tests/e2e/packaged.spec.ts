@@ -148,8 +148,11 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await expect(page.getByText('Edited acceptance note')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pen' }).click();
+  const strokeCount = await page.locator('.pdf-preview-overlay line').count();
   await page.getByRole('button', { name: 'Edited acceptance note' }).click();
-  await expect(editor).toHaveCount(0);
+  await expect(editor).toBeVisible();
+  await expect(page.locator('.pdf-preview-overlay line')).toHaveCount(strokeCount);
+  await editor.press('Escape');
 }
 
 test.describe.serial('packaged app', () => {

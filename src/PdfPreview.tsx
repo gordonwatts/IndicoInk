@@ -2675,16 +2675,8 @@ export function PdfPreview({
                               <button
                                 type="button"
                                 className="pdf-preview-text-note-text"
-                                onPointerDown={(event) => {
-                                  if (manualTool === 'text') {
-                                    event.stopPropagation();
-                                  }
-                                }}
-                                onClick={() => {
-                                  if (manualTool === 'text') {
-                                    handleEditTextNote(index, note);
-                                  }
-                                }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={() => handleEditTextNote(index, note)}
                               >
                                 {note.text}
                               </button>
