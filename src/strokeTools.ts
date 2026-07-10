@@ -7,6 +7,8 @@ import {
 export type InkStroke = {
   id: string;
   pageNumber: number;
+  /** The selector value captured when this stroke was started. */
+  baseWidth?: number;
   points: NormalizedPagePoint[];
 };
 

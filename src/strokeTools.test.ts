@@ -34,6 +34,17 @@ describe('strokeTools', () => {
       x2: 50,
       y2: 60,
     });
+
+    expect(
+      createStrokeSegmentList(
+        [
+          { x: 0.1, y: 0.2, pressure: 0.2, time: 1 },
+          { x: 0.5, y: 0.6, pressure: 0.8, time: 2 },
+        ],
+        pageSize,
+        6,
+      )[0]?.width,
+    ).toBeCloseTo(7.5, 5);
   });
 
   it('skips zero-sized pages when rendering or hit-testing strokes', () => {

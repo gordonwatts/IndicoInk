@@ -1553,6 +1553,7 @@ export function PdfPreview({
                 {
                   id: strokeId,
                   pageNumber: pageIndex + 1,
+                  baseWidth: selectedPenThickness,
                   points: [pagePoint],
                 },
               ];
@@ -2481,6 +2482,8 @@ export function PdfPreview({
               const strokeSegments = hasRenderablePageSize
                 ? pageStrokes.flatMap((stroke) => {
                     const strokePoints = getRenderableStrokePoints(stroke);
+                    const strokeBaseWidth =
+                      stroke.baseWidth ?? DEFAULT_PEN_THICKNESS;
 
                     if (strokePoints.length === 1) {
                       const point = strokePoints[0]!;
@@ -2491,10 +2494,7 @@ export function PdfPreview({
                           cx={point.x * pageSize.width}
                           cy={point.y * pageSize.height}
                           r={
-                            getStrokeWidth(
-                              point.pressure,
-                              selectedPenThickness,
-                            ) / 2
+                            getStrokeWidth(point.pressure, strokeBaseWidth) / 2
                           }
                           fill="#111111"
                         />,
@@ -2504,7 +2504,7 @@ export function PdfPreview({
                     return createStrokeSegmentList(
                       strokePoints,
                       pageSize,
-                      selectedPenThickness,
+                      strokeBaseWidth,
                     ).map((segment, segmentIndex) => (
                       <line
                         key={`${stroke.id}-${segmentIndex}`}

@@ -5,6 +5,7 @@ import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 
 import type { NormalizedPagePoint } from './inkGeometry';
+import { DEFAULT_PEN_THICKNESS } from './strokeTools';
 import type { InkStroke } from './strokeTools';
 import type {
   Annotation,
@@ -139,8 +140,10 @@ const getFileName = (value: string) => {
 
 const toBoolean = (value: unknown) => value === 1 || value === true;
 
-const serializePoints = (points: NormalizedPagePoint[]) =>
-  JSON.stringify(points);
+const serializeStrokePayload = (
+  points: NormalizedPagePoint[],
+  baseWidth?: number,
+) => JSON.stringify({ points, baseWidth });
 
 const createEmptyPageState = (): PdfWorkspacePageState => ({
   strokes: [],
@@ -178,6 +181,7 @@ const normalizeStroke = (stroke: unknown): InkStroke | null => {
   const candidate = stroke as {
     id: string;
     pageNumber: number;
+    baseWidth?: unknown;
     points: Array<unknown>;
   };
   const points = candidate.points.filter(
@@ -193,6 +197,10 @@ const normalizeStroke = (stroke: unknown): InkStroke | null => {
   return {
     id: candidate.id,
     pageNumber: candidate.pageNumber,
+    ...(typeof candidate.baseWidth === 'number' &&
+    Number.isFinite(candidate.baseWidth)
+      ? { baseWidth: candidate.baseWidth }
+      : {}),
     points,
   };
 };
@@ -251,15 +259,22 @@ const normalizePageState = (value: unknown): PdfWorkspacePageState => {
   } as PdfWorkspacePageState;
 };
 
-const deserializePoints = (value: string): NormalizedPagePoint[] =>
+const deserializeStrokePayload = (
+  value: string,
+): { points: NormalizedPagePoint[]; baseWidth: number } =>
   (() => {
     try {
       const parsed = JSON.parse(value) as unknown;
-      if (!Array.isArray(parsed)) {
-        return [];
+      const pointsValue = Array.isArray(parsed)
+        ? parsed
+        : parsed && typeof parsed === 'object' && 'points' in parsed
+          ? (parsed as { points?: unknown }).points
+          : null;
+      if (!Array.isArray(pointsValue)) {
+        return { points: [], baseWidth: DEFAULT_PEN_THICKNESS };
       }
 
-      return parsed.filter(
+      const points = pointsValue.filter(
         (point): point is NormalizedPagePoint =>
           typeof point === 'object' &&
           point !== null &&
@@ -268,8 +283,21 @@ const deserializePoints = (value: string): NormalizedPagePoint[] =>
           typeof (point as Record<string, unknown>).pressure === 'number' &&
           typeof (point as Record<string, unknown>).time === 'number',
       );
+      const parsedBaseWidth =
+        parsed && typeof parsed === 'object' && 'baseWidth' in parsed
+          ? (parsed as { baseWidth?: unknown }).baseWidth
+          : DEFAULT_PEN_THICKNESS;
+
+      return {
+        points,
+        baseWidth:
+          typeof parsedBaseWidth === 'number' &&
+          Number.isFinite(parsedBaseWidth)
+            ? parsedBaseWidth
+            : DEFAULT_PEN_THICKNESS,
+      };
     } catch {
-      return [];
+      return { points: [], baseWidth: DEFAULT_PEN_THICKNESS };
     }
   })();
 
@@ -615,7 +643,7 @@ const rowToAnnotation = (row: Record<string, unknown>): Annotation => {
 
   return {
     ...base,
-    points: deserializePoints(String(row.payload_json)),
+    ...deserializeStrokePayload(String(row.payload_json)),
   };
 };
 
@@ -1135,7 +1163,7 @@ export class PersistenceStore {
     const db = await this.getDb();
     const payloadJson =
       'points' in annotation
-        ? serializePoints(annotation.points)
+        ? serializeStrokePayload(annotation.points, annotation.baseWidth)
         : JSON.stringify({
             x: annotation.x,
             y: annotation.y,
@@ -1333,6 +1361,9 @@ export class PersistenceStore {
           .map((annotation) => ({
             id: annotation.id,
             pageNumber: slide.slideNumber,
+            ...(annotation.baseWidth === undefined
+              ? {}
+              : { baseWidth: annotation.baseWidth }),
             points: annotation.points,
           })),
       ),
@@ -1404,6 +1435,9 @@ export class PersistenceStore {
           .map((annotation) => ({
             id: annotation.id,
             pageNumber: slide.slideNumber,
+            ...(annotation.baseWidth === undefined
+              ? {}
+              : { baseWidth: annotation.baseWidth }),
             points: annotation.points,
           })),
       ),
@@ -1511,6 +1545,9 @@ export class PersistenceStore {
             talkId,
             deckId,
             slideId,
+            ...(stroke.baseWidth === undefined
+              ? {}
+              : { baseWidth: stroke.baseWidth }),
             points: stroke.points,
             createdAt: now,
             updatedAt: now,
@@ -1607,6 +1644,9 @@ export class PersistenceStore {
             talkId,
             deckId,
             slideId,
+            ...(stroke.baseWidth === undefined
+              ? {}
+              : { baseWidth: stroke.baseWidth }),
             points: stroke.points,
             createdAt: now,
             updatedAt: now,

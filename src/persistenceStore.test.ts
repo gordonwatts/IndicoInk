@@ -178,6 +178,7 @@ describe('persistence store', () => {
           {
             id: 'stroke-1',
             pageNumber: 1,
+            baseWidth: 6,
             points: [
               { x: 0.1, y: 0.2, pressure: 0.4, time: 1 },
               { x: 0.3, y: 0.4, pressure: 0.8, time: 2 },
@@ -226,6 +227,7 @@ describe('persistence store', () => {
 
     expect(restored?.pageCount).toBe(2);
     expect(restored?.strokesByPage[0]).toHaveLength(1);
+    expect(restored?.strokesByPage[0]?.[0]?.baseWidth).toBe(6);
     expect(restored?.strokesByPage[1]).toHaveLength(1);
     expect(restored?.textNotesByPage?.[1]).toHaveLength(1);
     expect(restored?.scrollLeft).toBe(45);
