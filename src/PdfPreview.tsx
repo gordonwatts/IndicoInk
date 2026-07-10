@@ -1734,6 +1734,7 @@ export function PdfPreview({
       resolvePointerInteraction,
       state,
       recordWorkspaceSnapshot,
+      selectedPenThickness,
       textNoteDragState,
       textNoteDraft,
       textNoteResizeState,
