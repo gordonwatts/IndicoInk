@@ -3,7 +3,11 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PdfPreview, isLikelyDownloadableUrl } from './PdfPreview';
+import {
+  PdfPreview,
+  isLikelyDownloadableUrl,
+  PEN_POINTER_MARKER_RADIUS,
+} from './PdfPreview';
 
 describe('PdfPreview', () => {
   beforeEach(() => {
@@ -29,6 +33,8 @@ describe('PdfPreview', () => {
         savePdfWorkspaceState: vi.fn(),
         loadDeckWorkspaceState: vi.fn(),
         saveDeckWorkspaceState: vi.fn(),
+        getAppSettings: vi.fn(),
+        setAppSettings: vi.fn(),
       },
       configurable: true,
     });
@@ -49,6 +55,11 @@ describe('PdfPreview', () => {
     expect(screen.getByRole('button', { name: 'Text' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Eraser' })).toBeTruthy();
     expect(
+      screen
+        .getByRole('slider', { name: 'Pen thickness' })
+        .getAttribute('value'),
+    ).toBe('2');
+    expect(
       screen.queryByRole('button', { name: 'Cancel download' }),
     ).toBeNull();
     expect(screen.queryByRole('button', { name: 'Retry download' })).toBeNull();
@@ -58,6 +69,10 @@ describe('PdfPreview', () => {
       currentSlideNumber: 1,
       currentPageCount: 0,
     });
+  });
+
+  it('keeps the pen pointer overlay point-like', () => {
+    expect(PEN_POINTER_MARKER_RADIUS).toBeLessThanOrEqual(3);
   });
 
   it('returns to the first slide from the home control', async () => {
@@ -113,16 +128,15 @@ describe('PdfPreview', () => {
       />,
     );
 
+    expect(screen.getByRole('button', { name: 'Back to agenda' })).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: 'Back to agenda' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Back to agenda' }).getAttribute(
-        'title',
-      ),
+      screen
+        .getByRole('button', { name: 'Back to agenda' })
+        .getAttribute('title'),
     ).toBe('Back to agenda (Alt+A)');
-    expect(screen.getByRole('button', { name: 'Text' }).getAttribute('title'))
-      .toBe('Text tool (Ctrl+T)');
+    expect(
+      screen.getByRole('button', { name: 'Text' }).getAttribute('title'),
+    ).toBe('Text tool (Ctrl+T)');
 
     fireEvent.keyDown(window, {
       key: 't',
@@ -147,9 +161,7 @@ describe('PdfPreview', () => {
 
     render(<PdfPreview filePath="/tmp/pending.pdf" title="Loading test" />);
 
-    expect(
-      await screen.findByText('Preparing a new render...'),
-    ).toBeTruthy();
+    expect(await screen.findByText('Preparing a new render...')).toBeTruthy();
   });
 
   it('shows a retryable error overlay when loading the PDF fails', async () => {

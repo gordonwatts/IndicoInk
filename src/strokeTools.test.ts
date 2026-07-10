@@ -13,8 +13,9 @@ describe('strokeTools', () => {
   };
 
   it('scales stroke width with pressure up to 50 percent', () => {
-    expect(getStrokeWidth(0)).toBeCloseTo(4, 5);
-    expect(getStrokeWidth(1)).toBeCloseTo(6, 5);
+    expect(getStrokeWidth(0)).toBeCloseTo(2, 5);
+    expect(getStrokeWidth(1)).toBeCloseTo(3, 5);
+    expect(getStrokeWidth(1, 6)).toBeCloseTo(9, 5);
   });
 
   it('builds screen-space segments for rendered strokes', () => {

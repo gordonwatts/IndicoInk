@@ -18,17 +18,22 @@ export type StrokeSegment = {
   width: number;
 };
 
-export const BASE_STROKE_WIDTH = 4;
+export const DEFAULT_PEN_THICKNESS = 2;
+export const MIN_PEN_THICKNESS = 1;
+export const MAX_PEN_THICKNESS = 8;
 export const STROKE_PRESSURE_SCALE = 0.5;
 export const ERASER_HIT_RADIUS = 12;
 
-export const getStrokeWidth = (pressure: number) =>
-  BASE_STROKE_WIDTH *
-  (1 + Math.max(0, Math.min(pressure, 1)) * STROKE_PRESSURE_SCALE);
+export const getStrokeWidth = (
+  pressure: number,
+  baseWidth = DEFAULT_PEN_THICKNESS,
+) =>
+  baseWidth * (1 + Math.max(0, Math.min(pressure, 1)) * STROKE_PRESSURE_SCALE);
 
 export const createStrokeSegmentList = (
   points: NormalizedPagePoint[],
   pageSize: PageSize,
+  baseWidth = DEFAULT_PEN_THICKNESS,
 ): StrokeSegment[] => {
   if (points.length < 2 || pageSize.width <= 0 || pageSize.height <= 0) {
     return [];
@@ -45,8 +50,8 @@ export const createStrokeSegmentList = (
       x2: screenPoint.x,
       y2: screenPoint.y,
       width:
-        (getStrokeWidth(previousPoint.pressure) +
-          getStrokeWidth(point.pressure)) /
+        (getStrokeWidth(previousPoint.pressure, baseWidth) +
+          getStrokeWidth(point.pressure, baseWidth)) /
         2,
     };
   });

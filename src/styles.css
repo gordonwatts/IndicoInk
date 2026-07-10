@@ -954,6 +954,27 @@ input:focus-visible {
   color: #b64545;
 }
 
+.pdf-preview-thickness-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pdf-preview-thickness-control input {
+  width: 76px;
+  accent-color: var(--accent);
+}
+
+.pdf-preview-thickness-control output {
+  min-width: 3ch;
+  text-align: right;
+}
+
 .pdf-preview-navigator {
   display: grid;
   gap: 6px;
@@ -1455,7 +1476,7 @@ input:focus-visible {
 .pdf-preview-pointer-marker {
   fill: rgba(15, 23, 42, 0.12);
   stroke: rgba(15, 23, 42, 0.75);
-  stroke-width: 1.5;
+  stroke-width: 0.75;
 }
 
 .pdf-preview-pointer-marker.pen {
