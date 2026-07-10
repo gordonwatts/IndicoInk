@@ -1078,21 +1078,6 @@ input:focus-visible {
   overflow-anchor: none;
 }
 
-.pdf-preview-note-dialog {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(13, 20, 33, 0.3);
-  backdrop-filter: blur(6px);
-}
-
-.pdf-preview-note-dialog .dialog-surface {
-  width: min(560px, 100%);
-}
-
 .pdf-preview-pages {
   display: grid;
   gap: 12px;
@@ -1220,12 +1205,16 @@ input:focus-visible {
   position: absolute;
   display: grid;
   gap: 6px;
-  width: min(210px, calc(100% - 20px));
+  min-width: 120px;
+  max-width: calc(100% - 20px);
   transform: translate(-8px, -8px);
   pointer-events: auto;
 }
 
 .pdf-preview-text-note-drag-handle {
+  position: absolute;
+  top: 0;
+  left: -30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1237,6 +1226,8 @@ input:focus-visible {
   background: color-mix(in srgb, var(--surface-panel) 86%, #f8e9a0);
   box-shadow: 0 10px 22px rgba(36, 46, 61, 0.14);
   cursor: grab;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
 
 .pdf-preview-text-note-drag-handle:active {
@@ -1273,6 +1264,7 @@ input:focus-visible {
 
 .pdf-preview-text-note-text {
   display: block;
+  width: 100%;
   padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid rgba(58, 67, 81, 0.16);
@@ -1283,12 +1275,66 @@ input:focus-visible {
   line-height: var(--line-height-standard);
   white-space: pre-wrap;
   word-break: break-word;
+  text-align: left;
+  cursor: text;
+}
+
+.pdf-preview-text-note:hover .pdf-preview-text-note-drag-handle,
+.pdf-preview-text-note:focus-within .pdf-preview-text-note-drag-handle {
+  opacity: 1;
+}
+
+.pdf-preview-text-note-editor {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 2px solid var(--surface-accent);
+  background: color-mix(in srgb, var(--surface-panel) 92%, #f8e9a0);
+  color: var(--text-primary);
+  box-shadow: 0 10px 22px rgba(36, 46, 61, 0.14);
+  font: inherit;
+  line-height: var(--line-height-standard);
 }
 
 .pdf-preview-text-note-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.pdf-preview-text-note:hover .pdf-preview-text-note-actions,
+.pdf-preview-text-note:focus-within .pdf-preview-text-note-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pdf-preview-text-note-actions .icon-button {
+  width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+}
+
+.pdf-preview-text-note-resize-handle {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  bottom: 8px;
+  z-index: 2;
+  width: 12px;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent calc(100% - 2px),
+    var(--surface-accent) calc(100% - 2px)
+  );
+  cursor: ew-resize;
 }
 
 .pdf-preview-stage-status {

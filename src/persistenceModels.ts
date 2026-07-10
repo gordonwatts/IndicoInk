@@ -93,6 +93,7 @@ export type TextNote = {
   slideId: string;
   x: number;
   y: number;
+  width?: number | undefined;
   text: string;
   createdAt: number;
   updatedAt: number;

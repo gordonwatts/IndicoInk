@@ -25,7 +25,7 @@ import { copyTextToClipboard } from './clipboard';
 import { parseIndicoEventUrl } from './indicoEvent';
 import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
 import type { PdfWorkspacePageState } from './shared/pdfWorkspace';
-import { DialogSurface, IconButton, SegmentedControl } from './ui';
+import { IconButton, SegmentedControl } from './ui';
 import {
   createConferenceId,
   createDeckId,
@@ -116,6 +116,7 @@ type TextNoteDraft = {
   noteId: string | null;
   x: number;
   y: number;
+  width: number;
   text: string;
 };
 
@@ -125,6 +126,13 @@ type TextNoteDragState = {
   pageIndex: number;
   startOffsetX: number;
   startOffsetY: number;
+};
+
+type TextNoteResizeState = {
+  pointerId: number;
+  pageIndex: number;
+  startClientX: number;
+  startWidth: number;
 };
 
 type PointerInteractionResolution = {
@@ -411,6 +419,9 @@ const createTextNoteId = () =>
   `text-note-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const DEFAULT_TEXT_NOTE_WIDTH = 0.26;
+const clampTextNoteWidth = (value: number) =>
+  Math.max(0.12, Math.min(0.8, value));
 
 const getScrollViewportElement = (
   scrollContainerRef?: React.RefObject<HTMLElement | null>,
@@ -479,6 +490,8 @@ export function PdfPreview({
     React.useState<TextNoteDraft | null>(null);
   const [textNoteDragState, setTextNoteDragState] =
     React.useState<TextNoteDragState | null>(null);
+  const [textNoteResizeState, setTextNoteResizeState] =
+    React.useState<TextNoteResizeState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
   const [linkHotspotsByPage, setLinkHotspotsByPage] = React.useState<
@@ -496,6 +509,7 @@ export function PdfPreview({
     null,
   );
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
+  const textNoteEditorRef = React.useRef<HTMLTextAreaElement | null>(null);
   const persistenceHydratedRef = React.useRef(false);
   const linkPopoverHideTimerRef = React.useRef<number | null>(null);
   const copyTooltipHideTimerRef = React.useRef<number | null>(null);
@@ -964,6 +978,7 @@ export function PdfPreview({
       slideId: createSlideId(effectiveDeckId, textNoteDraft.pageIndex + 1),
       x: clamp01(textNoteDraft.x),
       y: clamp01(textNoteDraft.y),
+      width: clampTextNoteWidth(textNoteDraft.width),
       text: trimmedText,
       createdAt: now,
       updatedAt: now,
@@ -1068,8 +1083,33 @@ export function PdfPreview({
         pageIndex,
         x: note.x,
         y: note.y,
+        width: clampTextNoteWidth(note.width ?? DEFAULT_TEXT_NOTE_WIDTH),
         text: note.text,
       });
+    },
+    [],
+  );
+
+  const handleTextNoteEditorKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeTextNoteDraft();
+      } else if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        commitTextNoteDraft();
+      }
+    },
+    [closeTextNoteDraft, commitTextNoteDraft],
+  );
+
+  const focusTextNoteEditor = React.useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      textNoteEditorRef.current = element;
+      if (element) {
+        element.focus();
+        element.setSelectionRange(element.value.length, element.value.length);
+      }
     },
     [],
   );
@@ -1101,6 +1141,28 @@ export function PdfPreview({
       });
     },
     [recordWorkspaceSnapshot],
+  );
+
+  const handleTextNoteResizeStart = React.useCallback(
+    (
+      pageIndex: number,
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      if (!textNoteDraft) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setTextNoteResizeState({
+        pointerId: event.pointerId,
+        pageIndex,
+        startClientX: event.clientX,
+        startWidth: textNoteDraft.width,
+      });
+    },
+    [textNoteDraft],
   );
 
   const handleZoomIn = React.useCallback(() => {
@@ -1368,6 +1430,41 @@ export function PdfPreview({
   const handlePagePointerEvent = React.useCallback(
     (pageIndex: number, eventKind: PointerEventKind) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
+        if (
+          textNoteResizeState?.pointerId === event.pointerId &&
+          textNoteResizeState.pageIndex === pageIndex
+        ) {
+          if (eventKind === 'pointermove') {
+            const pageWidth = event.currentTarget.getBoundingClientRect().width;
+            if (pageWidth > 0) {
+              setTextNoteDraft((currentDraft) =>
+                currentDraft
+                  ? {
+                      ...currentDraft,
+                      width: clampTextNoteWidth(
+                        textNoteResizeState.startWidth +
+                          (event.clientX - textNoteResizeState.startClientX) /
+                            pageWidth,
+                      ),
+                    }
+                  : currentDraft,
+              );
+            }
+          }
+
+          if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+            setTextNoteResizeState(null);
+          }
+          event.preventDefault();
+          return;
+        }
+
+        if (textNoteDraft && eventKind === 'pointerdown') {
+          event.preventDefault();
+          textNoteEditorRef.current?.blur();
+          return;
+        }
+
         const pageSize =
           state.kind === 'loading' || state.kind === 'ready'
             ? state.pageSizes[pageIndex]
@@ -1403,6 +1500,10 @@ export function PdfPreview({
 
           if (interactionMode === 'text' && pagePoint) {
             event.preventDefault();
+            if (textNoteDraft) {
+              textNoteEditorRef.current?.blur();
+              return;
+            }
             const noteId = createTextNoteId();
             activeInkActionRef.current = {
               kind: 'text',
@@ -1415,6 +1516,7 @@ export function PdfPreview({
               pageIndex,
               x: pagePoint.x,
               y: pagePoint.y,
+              width: DEFAULT_TEXT_NOTE_WIDTH,
               text: '',
             });
             return;
@@ -1564,18 +1666,26 @@ export function PdfPreview({
               bounds.height,
           );
 
-          updateTextNotePage(pageIndex, (currentTextNotes) =>
-            currentTextNotes.map((note) =>
-              note.id === textNoteDragState.noteId
-                ? {
-                    ...note,
-                    x: nextX,
-                    y: nextY,
-                    updatedAt: Date.now(),
-                  }
-                : note,
-            ),
-          );
+          if (textNoteDraft?.noteId === textNoteDragState.noteId) {
+            setTextNoteDraft((currentDraft) =>
+              currentDraft
+                ? { ...currentDraft, x: nextX, y: nextY }
+                : currentDraft,
+            );
+          } else {
+            updateTextNotePage(pageIndex, (currentTextNotes) =>
+              currentTextNotes.map((note) =>
+                note.id === textNoteDragState.noteId
+                  ? {
+                      ...note,
+                      x: nextX,
+                      y: nextY,
+                      updatedAt: Date.now(),
+                    }
+                  : note,
+              ),
+            );
+          }
           event.preventDefault();
         }
 
@@ -1617,6 +1727,8 @@ export function PdfPreview({
       state,
       recordWorkspaceSnapshot,
       textNoteDragState,
+      textNoteDraft,
+      textNoteResizeState,
       updateStrokePage,
       updateTextNotePage,
       scrollContainerRef,
@@ -2502,50 +2614,139 @@ export function PdfPreview({
                       className="pdf-preview-text-notes"
                       aria-label={`Text notes on page ${index + 1}`}
                     >
-                      {pageTextNotes.map((note) => (
+                      {pageTextNotes.map((note) => {
+                        const isEditing =
+                          textNoteDraft?.mode === 'edit' &&
+                          textNoteDraft.pageIndex === index &&
+                          textNoteDraft.noteId === note.id;
+                        const displayedNote =
+                          isEditing && textNoteDraft ? textNoteDraft : note;
+
+                        return (
+                          <article
+                            key={note.id}
+                            className="pdf-preview-text-note"
+                            style={{
+                              left: `${clamp01(displayedNote.x) * 100}%`,
+                              top: `${clamp01(displayedNote.y) * 100}%`,
+                              width: `${clampTextNoteWidth(
+                                displayedNote.width ?? DEFAULT_TEXT_NOTE_WIDTH,
+                              ) * 100}%`,
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="pdf-preview-text-note-drag-handle"
+                              aria-label={`Drag note on page ${index + 1}`}
+                              onPointerDown={(event) =>
+                                handleTextNoteDragStart(index, note, event)
+                              }
+                              title="Drag note"
+                            >
+                              <span
+                                className="pdf-preview-text-note-grip"
+                                aria-hidden="true"
+                              />
+                            </button>
+                            {isEditing ? (
+                              <textarea
+                                className="pdf-preview-text-note-editor"
+                                aria-label={`Note text on page ${index + 1}`}
+                                ref={focusTextNoteEditor}
+                                value={textNoteDraft.text}
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onChange={(event) =>
+                                  setTextNoteDraft((currentDraft) =>
+                                    currentDraft
+                                      ? {
+                                          ...currentDraft,
+                                          text: event.target.value,
+                                        }
+                                      : currentDraft,
+                                  )
+                                }
+                                onBlur={commitTextNoteDraft}
+                                onKeyDown={handleTextNoteEditorKeyDown}
+                                rows={3}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                className="pdf-preview-text-note-text"
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={() => handleEditTextNote(index, note)}
+                              >
+                                {note.text}
+                              </button>
+                            )}
+                            <div className="pdf-preview-text-note-actions">
+                              <IconButton
+                                label={`Delete note on page ${index + 1}`}
+                                icon="trash"
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onClick={() =>
+                                  handleDeleteTextNote(index, note.id)
+                                }
+                              />
+                            </div>
+                            {isEditing ? (
+                              <button
+                                type="button"
+                                className="pdf-preview-text-note-resize-handle"
+                                aria-label={`Resize note on page ${index + 1}`}
+                                onPointerDown={(event) =>
+                                  handleTextNoteResizeStart(index, event)
+                                }
+                              />
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                      {textNoteDraft?.mode === 'create' &&
+                      textNoteDraft.pageIndex === index ? (
                         <article
-                          key={note.id}
                           className="pdf-preview-text-note"
                           style={{
-                            left: `${clamp01(note.x) * 100}%`,
-                            top: `${clamp01(note.y) * 100}%`,
+                            left: `${clamp01(textNoteDraft.x) * 100}%`,
+                            top: `${clamp01(textNoteDraft.y) * 100}%`,
+                            width: `${clampTextNoteWidth(textNoteDraft.width) * 100}%`,
                           }}
                         >
+                          <textarea
+                            className="pdf-preview-text-note-editor"
+                            aria-label={`Note text on page ${index + 1}`}
+                            ref={focusTextNoteEditor}
+                            value={textNoteDraft.text}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onChange={(event) =>
+                              setTextNoteDraft((currentDraft) =>
+                                currentDraft
+                                  ? {
+                                      ...currentDraft,
+                                      text: event.target.value,
+                                    }
+                                  : currentDraft,
+                              )
+                            }
+                            onBlur={commitTextNoteDraft}
+                            onKeyDown={handleTextNoteEditorKeyDown}
+                            rows={3}
+                            placeholder="Type your note"
+                          />
                           <button
                             type="button"
-                            className="pdf-preview-text-note-drag-handle"
-                            aria-label={`Drag note on page ${index + 1}`}
+                            className="pdf-preview-text-note-resize-handle"
+                            aria-label={`Resize note on page ${index + 1}`}
                             onPointerDown={(event) =>
-                              handleTextNoteDragStart(index, note, event)
+                              handleTextNoteResizeStart(index, event)
                             }
-                            title="Drag note"
-                          >
-                            <span
-                              className="pdf-preview-text-note-grip"
-                              aria-hidden="true"
-                            />
-                          </button>
-                          <div className="pdf-preview-text-note-text">
-                            {note.text}
-                          </div>
-                          <div className="pdf-preview-text-note-actions">
-                            <IconButton
-                              label={`Edit note on page ${index + 1}`}
-                              icon="pen"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => handleEditTextNote(index, note)}
-                            />
-                            <IconButton
-                              label={`Delete note on page ${index + 1}`}
-                              icon="trash"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() =>
-                                handleDeleteTextNote(index, note.id)
-                              }
-                            />
-                          </div>
+                          />
                         </article>
-                      ))}
+                      ) : null}
                     </div>
                   </div>
                 </figure>
@@ -2639,37 +2840,6 @@ export function PdfPreview({
           }}
         >
           {copyTooltip.message}
-        </div>
-      ) : null}
-
-      {textNoteDraft ? (
-        <div className="pdf-preview-note-dialog">
-          <DialogSurface
-            title={textNoteDraft.mode === 'edit' ? 'Edit note' : 'Add note'}
-            body={
-              <label className="field pdf-preview-note-field">
-                <span>Note text</span>
-                <textarea
-                  value={textNoteDraft.text}
-                  onChange={(event) =>
-                    setTextNoteDraft((currentDraft) =>
-                      currentDraft
-                        ? { ...currentDraft, text: event.target.value }
-                        : currentDraft,
-                    )
-                  }
-                  rows={4}
-                  placeholder="Type your note"
-                />
-              </label>
-            }
-            primaryLabel={
-              textNoteDraft.mode === 'edit' ? 'Save note' : 'Add note'
-            }
-            secondaryLabel="Cancel"
-            onPrimary={commitTextNoteDraft}
-            onSecondary={closeTextNoteDraft}
-          />
         </div>
       ) : null}
     </section>

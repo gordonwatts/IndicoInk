@@ -81,12 +81,78 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Text' }).click();
   await sheet.click({ position: { x: noteX, y: noteY } });
 
-  const dialog = page.getByRole('dialog', { name: 'Add note' });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Note text').fill('Acceptance note');
-  await dialog.getByRole('button', { name: 'Add note' }).click();
+  const editor = page.getByRole('textbox', { name: 'Note text on page 1' });
+  await expect(editor).toBeVisible();
+  await editor.fill('Acceptance note');
+  await sheet.click({ position: { x: 16, y: 16 } });
 
   await expect(page.getByText('Acceptance note')).toBeVisible();
+  const dragHandle = page.getByRole('button', {
+    name: 'Drag note on page 1',
+  });
+  await dragHandle.hover();
+  await expect
+    .poll(() => dragHandle.evaluate((element) => getComputedStyle(element).opacity))
+    .toBe('1');
+
+  await page.getByRole('button', { name: 'Acceptance note' }).click();
+  await expect(editor).toBeVisible();
+  await expect
+    .poll(() => editor.evaluate((element) => element.selectionStart))
+    .toBe('Acceptance note'.length);
+
+  const editorBox = await editor.boundingBox();
+  const resizeHandle = page.getByRole('button', {
+    name: 'Resize note on page 1',
+  });
+  const resizeHandleBox = await resizeHandle.boundingBox();
+  if (!editorBox || !resizeHandleBox) {
+    throw new Error('Acceptance text-note resize handle was not visible.');
+  }
+  await page.mouse.move(
+    resizeHandleBox.x + resizeHandleBox.width / 2,
+    resizeHandleBox.y + resizeHandleBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    resizeHandleBox.x + resizeHandleBox.width / 2 + 48,
+    resizeHandleBox.y + resizeHandleBox.height / 2,
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await editor.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(editorBox.width + 20);
+
+  const editorPositionBeforeDrag = await editor.boundingBox();
+  const dragHandleBox = await dragHandle.boundingBox();
+  if (!editorPositionBeforeDrag || !dragHandleBox) {
+    throw new Error('Acceptance text-note drag handle was not visible.');
+  }
+  await page.mouse.move(
+    dragHandleBox.x + dragHandleBox.width / 2,
+    dragHandleBox.y + dragHandleBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    dragHandleBox.x + dragHandleBox.width / 2 + 36,
+    dragHandleBox.y + dragHandleBox.height / 2 + 24,
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await editor.boundingBox())?.x ?? 0)
+    .toBeGreaterThan(editorPositionBeforeDrag.x + 20);
+
+  await editor.fill('Edited acceptance note');
+  await editor.press('Enter');
+
+  await expect(page.getByText('Edited acceptance note')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pen' }).click();
+  const strokeCount = await page.locator('.pdf-preview-overlay line').count();
+  await page.getByRole('button', { name: 'Edited acceptance note' }).click();
+  await expect(editor).toBeVisible();
+  await expect(page.locator('.pdf-preview-overlay line')).toHaveCount(strokeCount);
+  await editor.press('Escape');
 }
 
 test.describe.serial('packaged app', () => {
