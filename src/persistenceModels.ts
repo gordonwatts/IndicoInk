@@ -80,6 +80,7 @@ export type PenStroke = {
   talkId: string;
   deckId: string;
   slideId: string;
+  baseWidth?: number;
   points: NormalizedPagePoint[];
   createdAt: number;
   updatedAt: number;

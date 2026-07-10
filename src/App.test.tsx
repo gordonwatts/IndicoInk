@@ -77,6 +77,7 @@ describe('App', () => {
         .mockResolvedValue('C:/Users/test/AppData/Roaming/IndicoInk'),
       getAppSettings: vi.fn().mockResolvedValue({
         recordLogging: false,
+        penThickness: 2,
       }),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       openPdf: vi.fn().mockResolvedValue({
@@ -141,6 +142,7 @@ describe('App', () => {
       getConferenceExportSnapshot: vi.fn().mockResolvedValue(null),
       setAppSettings: vi.fn().mockResolvedValue({
         recordLogging: false,
+        penThickness: 2,
       }),
       showExportSaveDialog: vi.fn().mockResolvedValue({
         canceled: true,
@@ -622,14 +624,18 @@ describe('App', () => {
     );
 
     expect(
-      screen.getByRole('button', {
-        name: 'Library',
-      }).getAttribute('title'),
+      screen
+        .getByRole('button', {
+          name: 'Library',
+        })
+        .getAttribute('title'),
     ).toBe('Library (Alt+L)');
     expect(
-      screen.getByRole('button', {
-        name: 'Search',
-      }).getAttribute('title'),
+      screen
+        .getByRole('button', {
+          name: 'Search',
+        })
+        .getAttribute('title'),
     ).toBe('Search (Ctrl+F)');
 
     await screen.findByRole('heading', {
@@ -837,9 +843,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText('Copied to clipboard')).toBeTruthy();
     });
-    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
-      libraryEvent.sourceUrl,
-    );
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(libraryEvent.sourceUrl);
 
     await user.click(
       screen.getByRole('button', {
@@ -863,9 +867,11 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('button', {
-        name: 'Back to agenda',
-      }).getAttribute('title'),
+      screen
+        .getByRole('button', {
+          name: 'Back to agenda',
+        })
+        .getAttribute('title'),
     ).toBe('Back to agenda (Alt+A)');
 
     await user.click(

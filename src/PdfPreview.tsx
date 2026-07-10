@@ -18,6 +18,8 @@ import {
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
   createStrokeSegmentList,
+  DEFAULT_PEN_THICKNESS,
+  getStrokeWidth,
   strokeHitsPoint,
   type InkStroke,
 } from './strokeTools';
@@ -249,17 +251,17 @@ export const isLikelyDownloadableUrl = (value: string) => {
 
   return Boolean(
     lastPathSegment &&
-      !lastPathSegment.startsWith('.') &&
-      extension &&
-      /^[A-Za-z0-9]{1,8}$/.test(extension),
+    !lastPathSegment.startsWith('.') &&
+    extension &&
+    /^[A-Za-z0-9]{1,8}$/.test(extension),
   );
 };
 
 const getLinkHotspotsForPage = async (
   page: {
-    getAnnotations?: (
-      options: { intent: 'display' },
-    ) => Promise<PdfLinkAnnotation[]>;
+    getAnnotations?: (options: {
+      intent: 'display';
+    }) => Promise<PdfLinkAnnotation[]>;
   },
   viewport: {
     convertToViewportRectangle: (rect: number[]) => number[];
@@ -451,7 +453,11 @@ type PdfPreviewProps = {
     currentPageCount: number;
   }) => void;
   scrollContainerRef?: React.RefObject<HTMLElement | null>;
+  penThickness?: number;
+  onPenThicknessChange?: (value: number) => void | Promise<void>;
 };
+
+export const PEN_POINTER_MARKER_RADIUS = 2.5;
 
 export function PdfPreview({
   filePath,
@@ -464,10 +470,14 @@ export function PdfPreview({
   onRetryLoad,
   onSlideMetricsChange,
   scrollContainerRef,
+  penThickness = DEFAULT_PEN_THICKNESS,
+  onPenThicknessChange,
 }: PdfPreviewProps) {
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
   const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
+  const [selectedPenThickness, setSelectedPenThickness] =
+    React.useState(penThickness);
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -499,8 +509,11 @@ export function PdfPreview({
   >([]);
   const [activeLinkPopover, setActiveLinkPopover] =
     React.useState<LinkPopoverState>(null);
-  const [copyTooltip, setCopyTooltip] =
-    React.useState<CopyTooltipState>(null);
+  const [copyTooltip, setCopyTooltip] = React.useState<CopyTooltipState>(null);
+
+  React.useEffect(() => {
+    setSelectedPenThickness(penThickness);
+  }, [penThickness]);
   const [persistenceError, setPersistenceError] = React.useState<string | null>(
     null,
   );
@@ -1144,10 +1157,7 @@ export function PdfPreview({
   );
 
   const handleTextNoteResizeStart = React.useCallback(
-    (
-      pageIndex: number,
-      event: React.PointerEvent<HTMLButtonElement>,
-    ) => {
+    (pageIndex: number, event: React.PointerEvent<HTMLButtonElement>) => {
       if (!textNoteDraft) {
         return;
       }
@@ -1268,12 +1278,9 @@ export function PdfPreview({
     };
   }, [handleNextSlide, handlePreviousSlide, onBackToAgenda]);
 
-  const handleOpenLink = React.useCallback(
-    async (url: string) => {
-      await window.indicoInk.openExternalUrl(url);
-    },
-    [],
-  );
+  const handleOpenLink = React.useCallback(async (url: string) => {
+    await window.indicoInk.openExternalUrl(url);
+  }, []);
 
   const handleDownloadLink = React.useCallback(async (url: string) => {
     const anchor = document.createElement('a');
@@ -1546,6 +1553,7 @@ export function PdfPreview({
                 {
                   id: strokeId,
                   pageNumber: pageIndex + 1,
+                  baseWidth: selectedPenThickness,
                   points: [pagePoint],
                 },
               ];
@@ -1726,6 +1734,7 @@ export function PdfPreview({
       resolvePointerInteraction,
       state,
       recordWorkspaceSnapshot,
+      selectedPenThickness,
       textNoteDragState,
       textNoteDraft,
       textNoteResizeState,
@@ -2217,7 +2226,9 @@ export function PdfPreview({
         const scrollContainerBox = scrollContainer.getBoundingClientRect();
         const pageFigureBox = pageFigure.getBoundingClientRect();
         const pageTop =
-          pageFigureBox.top - scrollContainerBox.top + scrollContainer.scrollTop;
+          pageFigureBox.top -
+          scrollContainerBox.top +
+          scrollContainer.scrollTop;
         const nextScrollTop =
           pageTop +
           viewportRestore.pageOffsetRatio * Math.max(1, pageFigureBox.height);
@@ -2281,6 +2292,23 @@ export function PdfPreview({
               onClick={() => setManualTool('eraser')}
               pressed={manualTool === 'eraser'}
             />
+            <label className="pdf-preview-thickness-control">
+              <span>Thickness</span>
+              <input
+                aria-label="Pen thickness"
+                type="range"
+                min="1"
+                max="8"
+                step="1"
+                value={selectedPenThickness}
+                onChange={(event) => {
+                  const nextThickness = Number(event.target.value);
+                  setSelectedPenThickness(nextThickness);
+                  void onPenThicknessChange?.(nextThickness);
+                }}
+              />
+              <output>{selectedPenThickness}px</output>
+            </label>
           </div>
           <SegmentedControl
             options={mouseModeOptions}
@@ -2455,6 +2483,8 @@ export function PdfPreview({
               const strokeSegments = hasRenderablePageSize
                 ? pageStrokes.flatMap((stroke) => {
                     const strokePoints = getRenderableStrokePoints(stroke);
+                    const strokeBaseWidth =
+                      stroke.baseWidth ?? DEFAULT_PEN_THICKNESS;
 
                     if (strokePoints.length === 1) {
                       const point = strokePoints[0]!;
@@ -2464,27 +2494,31 @@ export function PdfPreview({
                           key={`${stroke.id}-point`}
                           cx={point.x * pageSize.width}
                           cy={point.y * pageSize.height}
-                          r={point.pressure > 0 ? 2.5 + point.pressure * 2 : 3}
+                          r={
+                            getStrokeWidth(point.pressure, strokeBaseWidth) / 2
+                          }
                           fill="#111111"
                         />,
                       ];
                     }
 
-                    return createStrokeSegmentList(strokePoints, pageSize).map(
-                      (segment, segmentIndex) => (
-                        <line
-                          key={`${stroke.id}-${segmentIndex}`}
-                          x1={segment.x1}
-                          y1={segment.y1}
-                          x2={segment.x2}
-                          y2={segment.y2}
-                          stroke="#111111"
-                          strokeWidth={segment.width}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      ),
-                    );
+                    return createStrokeSegmentList(
+                      strokePoints,
+                      pageSize,
+                      strokeBaseWidth,
+                    ).map((segment, segmentIndex) => (
+                      <line
+                        key={`${stroke.id}-${segmentIndex}`}
+                        x1={segment.x1}
+                        y1={segment.y1}
+                        x2={segment.x2}
+                        y2={segment.y2}
+                        stroke="#111111"
+                        strokeWidth={segment.width}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ));
                   })
                 : [];
 
@@ -2532,54 +2566,56 @@ export function PdfPreview({
                       className="pdf-preview-link-layer"
                       aria-label={`Links on page ${index + 1}`}
                     >
-                      {(linkHotspotsByPage[index] ?? []).map((link, linkIndex) => (
-                        <button
-                          key={`${link.url}-${linkIndex}`}
-                          type="button"
-                          className="pdf-preview-link-hotspot"
-                          aria-label={
-                            link.label
-                              ? `Link on page ${index + 1}: ${link.label}`
-                              : `Link on page ${index + 1}`
-                          }
-                          style={{
-                            left: `${link.rect.left}px`,
-                            top: `${link.rect.top}px`,
-                            width: `${Math.max(18, link.rect.width)}px`,
-                            height: `${Math.max(18, link.rect.height)}px`,
-                          }}
-                          onPointerEnter={(event) => {
-                            showLinkPopover(
-                              index,
-                              link,
-                              event.clientX,
-                              event.clientY,
-                            );
-                          }}
-                          onPointerLeave={hideLinkPopoverSoon}
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            showLinkPopover(
-                              index,
-                              link,
-                              event.clientX,
-                              event.clientY,
-                            );
-                          }}
-                          onFocus={(event) => {
-                            const bounds =
-                              event.currentTarget.getBoundingClientRect();
-                            showLinkPopover(
-                              index,
-                              link,
-                              bounds.left + bounds.width / 2,
-                              bounds.top + bounds.height / 2,
-                            );
-                          }}
-                          onBlur={hideLinkPopoverSoon}
-                        />
-                      ))}
+                      {(linkHotspotsByPage[index] ?? []).map(
+                        (link, linkIndex) => (
+                          <button
+                            key={`${link.url}-${linkIndex}`}
+                            type="button"
+                            className="pdf-preview-link-hotspot"
+                            aria-label={
+                              link.label
+                                ? `Link on page ${index + 1}: ${link.label}`
+                                : `Link on page ${index + 1}`
+                            }
+                            style={{
+                              left: `${link.rect.left}px`,
+                              top: `${link.rect.top}px`,
+                              width: `${Math.max(18, link.rect.width)}px`,
+                              height: `${Math.max(18, link.rect.height)}px`,
+                            }}
+                            onPointerEnter={(event) => {
+                              showLinkPopover(
+                                index,
+                                link,
+                                event.clientX,
+                                event.clientY,
+                              );
+                            }}
+                            onPointerLeave={hideLinkPopoverSoon}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              showLinkPopover(
+                                index,
+                                link,
+                                event.clientX,
+                                event.clientY,
+                              );
+                            }}
+                            onFocus={(event) => {
+                              const bounds =
+                                event.currentTarget.getBoundingClientRect();
+                              showLinkPopover(
+                                index,
+                                link,
+                                bounds.left + bounds.width / 2,
+                                bounds.top + bounds.height / 2,
+                              );
+                            }}
+                            onBlur={hideLinkPopoverSoon}
+                          />
+                        ),
+                      )}
                     </div>
                     <svg
                       aria-hidden="true"
@@ -2594,7 +2630,7 @@ export function PdfPreview({
                             key="pointer-marker"
                             cx={marker.point.x * pageSize.width}
                             cy={marker.point.y * pageSize.height}
-                            r="5"
+                            r={PEN_POINTER_MARKER_RADIUS}
                             className="pdf-preview-pointer-marker pen"
                           />
                         ) : (
@@ -2629,9 +2665,12 @@ export function PdfPreview({
                             style={{
                               left: `${clamp01(displayedNote.x) * 100}%`,
                               top: `${clamp01(displayedNote.y) * 100}%`,
-                              width: `${clampTextNoteWidth(
-                                displayedNote.width ?? DEFAULT_TEXT_NOTE_WIDTH,
-                              ) * 100}%`,
+                              width: `${
+                                clampTextNoteWidth(
+                                  displayedNote.width ??
+                                    DEFAULT_TEXT_NOTE_WIDTH,
+                                ) * 100
+                              }%`,
                             }}
                           >
                             <button
@@ -2675,7 +2714,9 @@ export function PdfPreview({
                               <button
                                 type="button"
                                 className="pdf-preview-text-note-text"
-                                onPointerDown={(event) => event.stopPropagation()}
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
                                 onClick={() => handleEditTextNote(index, note)}
                               >
                                 {note.text}

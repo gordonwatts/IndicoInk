@@ -9,6 +9,7 @@ import {
 } from './agendaCanvasLayout';
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
+import { DEFAULT_PEN_THICKNESS } from './strokeTools';
 import type {
   AgendaTalkMaterialSummary,
   AgendaTalkSummary,
@@ -927,6 +928,7 @@ export function App() {
       try {
         const updatedSettings = await window.indicoInk.setAppSettings({
           recordLogging: enabled,
+          penThickness: appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS,
         });
         setAppSettings(updatedSettings);
       } catch (error) {
@@ -939,7 +941,27 @@ export function App() {
         setIsSavingAppSettings(false);
       }
     },
-    [],
+    [appSettings?.penThickness],
+  );
+
+  const setPenThickness = React.useCallback(
+    async (penThickness: number) => {
+      setAppSettingsError(null);
+      try {
+        const updatedSettings = await window.indicoInk.setAppSettings({
+          recordLogging: appSettings?.recordLogging ?? false,
+          penThickness,
+        });
+        setAppSettings(updatedSettings);
+      } catch (error) {
+        setAppSettingsError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to save pen thickness.',
+        );
+      }
+    },
+    [appSettings?.recordLogging],
   );
 
   const returnToLibrary = React.useCallback(async () => {
@@ -3100,6 +3122,10 @@ export function App() {
                     workspaceDeckId={activeSlideDeckId}
                     onRetryLoad={handleRetryPdfLoad}
                     scrollContainerRef={pageSurfaceRef}
+                    penThickness={
+                      appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
+                    }
+                    onPenThicknessChange={setPenThickness}
                     onBackToAgenda={() => {
                       setDestination('agenda');
                     }}
