@@ -45,6 +45,7 @@ export const agendaCanvasTalkMinHeight = 156;
 export const agendaCanvasTalkGap = 12;
 export const agendaCanvasHeaderHeight = 72;
 const agendaCanvasTalkActionRowHeight = 40;
+const agendaCanvasTalkLayoutSafetyPx = 8;
 
 type TalkRange = {
   startMinutes: number | null;
@@ -134,7 +135,8 @@ export function estimateAgendaTalkCardHeightForWidth(
       (titleLineCount - 1) * 22 +
       (speakerLineCount - 1) * 18 +
       (summaryLineCount - 1) * 16 +
-      (hasMaterialActions ? agendaCanvasTalkActionRowHeight : 0),
+      (hasMaterialActions ? agendaCanvasTalkActionRowHeight : 0) +
+      agendaCanvasTalkLayoutSafetyPx,
   );
 }
 
@@ -538,10 +540,27 @@ export function buildAgendaCanvasLayout(
   const timeMarkerTopPx = timeMarkers.map((minute) =>
     timeAxis.getTopForMinute(minute),
   );
-  const axisAlignedColumns = solvedBlocks.map((block) => ({
-    ...block,
-    blockTopPx: timeAxis.getTopForMinute(block.startMinutes),
-  })) satisfies AgendaCanvasColumnLayout[];
+  const lastBottomByColumn = new Map<number, number>();
+  const axisAlignedColumns = solvedBlocks.map((block) => {
+    const timeAlignedTopPx = timeAxis.getTopForMinute(block.startMinutes);
+    const previousBottomPx =
+      block.columnIndex >= 0
+        ? (lastBottomByColumn.get(block.columnIndex) ?? 0)
+        : 0;
+    const blockTopPx = Math.max(timeAlignedTopPx, previousBottomPx);
+
+    if (block.columnIndex >= 0) {
+      lastBottomByColumn.set(
+        block.columnIndex,
+        blockTopPx + block.trackHeightPx,
+      );
+    }
+
+    return {
+      ...block,
+      blockTopPx,
+    };
+  }) satisfies AgendaCanvasColumnLayout[];
   const canvasHeightPx = Math.max(
     axisAlignedColumns.reduce(
       (maxHeight, block) =>

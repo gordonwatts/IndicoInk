@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agendaCanvasHeaderHeight,
   agendaCanvasRowHeight,
+  agendaCanvasTrackPadding,
   agendaTimeGutterWidth,
   buildAgendaCanvasLayout,
   estimateAgendaTalkCardHeightForWidth,
@@ -201,5 +202,51 @@ describe('agenda canvas layout', () => {
 
     expect(height).toBeGreaterThanOrEqual(160);
     expect(height).toBeLessThan(220);
+  });
+
+  it('keeps the session background behind every placed talk', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk(
+        'first-dense-talk',
+        9,
+        0,
+        15,
+        'A long title that needs several lines in a dense agenda card',
+        'Dense session',
+      ),
+      makeTalk(
+        'last-dense-talk',
+        9,
+        15,
+        15,
+        'The last talk in the session must remain inside its background',
+        'Dense session',
+      ),
+    ]);
+    const session = layout.columns.find(
+      (block) => block.title === 'Dense session',
+    );
+    const lastPlacement = session?.talkPlacements.at(-1);
+
+    expect(session).toBeDefined();
+    expect(lastPlacement).toBeDefined();
+    expect(session!.trackHeightPx).toBeGreaterThanOrEqual(
+      lastPlacement!.topPx + lastPlacement!.heightPx + agendaCanvasTrackPadding,
+    );
+  });
+
+  it('keeps visually tall blocks apart when their scheduled times touch', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk('first-block-talk', 9, 0, 15, 'First block', 'First block'),
+      makeTalk('second-block-talk', 9, 15, 15, 'Second block', 'Second block'),
+    ]);
+    const blocks = layout.columns
+      .filter((block) => !block.spanFullWidth)
+      .sort((left, right) => left.blockTopPx - right.blockTopPx);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]!.blockTopPx).toBeGreaterThanOrEqual(
+      blocks[0]!.blockTopPx + blocks[0]!.trackHeightPx,
+    );
   });
 });
