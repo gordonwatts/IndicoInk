@@ -1572,7 +1572,7 @@ input:focus-visible {
 }
 
 .agenda-shell-main {
-  min-width: 100%;
+  min-width: 100vw;
   width: max-content;
 }
 

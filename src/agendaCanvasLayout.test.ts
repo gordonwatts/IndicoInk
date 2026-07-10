@@ -165,6 +165,9 @@ describe('agenda canvas layout', () => {
     expect(getResponsiveAgendaColumnWidth(1500, 1)).toBeGreaterThan(
       getResponsiveAgendaColumnWidth(1500, 3),
     );
+    expect(getResponsiveAgendaColumnWidth(1280, 3)).toBeLessThanOrEqual(
+      Math.floor((1280 - agendaTimeGutterWidth - 16) / 3),
+    );
     expect(getResponsiveAgendaColumnWidth(1024, 3)).toBeLessThanOrEqual(420);
     expect(getResponsiveAgendaColumnWidth(1024, 3)).toBeGreaterThanOrEqual(300);
     expect(getResponsiveAgendaColumnWidth(700, 2)).toBeGreaterThanOrEqual(

@@ -197,7 +197,9 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
     expect(widthSamples.some((sample) => sample.gutterProbeHitsAgenda)).toBe(
       false,
     );
-    expect(Math.max(...canvasWidths)).toBeGreaterThan(viewportWidth);
+    expect(Math.max(...canvasWidths)).toBeGreaterThanOrEqual(
+      Math.max(...sessionWidths) * 3 + Math.max(...gutterWidths) - 1,
+    );
   } finally {
     await harness.close();
   }

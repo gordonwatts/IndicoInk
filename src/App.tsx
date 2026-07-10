@@ -520,7 +520,7 @@ function AgendaTimelineCanvas({
 }: {
   visibleAgendaTalks: AgendaTalkSummary[];
   selectedAgendaTalkId: string | null;
-  viewportRef: React.RefObject<HTMLDivElement | null>;
+  viewportRef: React.RefObject<HTMLElement | null>;
   onOpenTalk: (talk: AgendaTalkSummary) => void;
   onOpenTalkSlides: (talk: AgendaTalkSummary) => void;
   onOpenTalkMaterials: (talk: AgendaTalkSummary) => void;
@@ -873,7 +873,6 @@ export function App() {
   const agendaScrollPositionsRef = React.useRef(
     new Map<string, { scrollLeft: number; scrollTop: number }>(),
   );
-  const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const deckDownloadPollRef = React.useRef<number | null>(null);
@@ -2593,17 +2592,14 @@ export function App() {
                       </div>
 
                       <div className="agenda-shell-grid">
-                        <div
-                          className="agenda-shell-main"
-                          ref={agendaCanvasMeasureRef}
-                        >
+                        <div className="agenda-shell-main">
                           {visibleAgendaTalks.length ? (
                             <AgendaTimelineCanvas
                               visibleAgendaTalks={visibleAgendaTalks}
                               selectedAgendaTalkId={
                                 selectedAgendaTalk?.id ?? null
                               }
-                              viewportRef={agendaCanvasMeasureRef}
+                              viewportRef={pageSurfaceRef}
                               onOpenTalk={(talk) => {
                                 setSelectedAgendaTalkId(talk.id);
                                 setSelectedEventId(talk.conferenceId);
