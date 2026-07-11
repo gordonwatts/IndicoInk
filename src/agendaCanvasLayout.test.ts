@@ -202,4 +202,41 @@ describe('agenda canvas layout', () => {
     expect(height).toBeGreaterThanOrEqual(160);
     expect(height).toBeLessThan(220);
   });
+
+  it('uses rendered card measurements to extend talks and their session', () => {
+    const firstTalk = makeTalk(
+      'materials-talk',
+      14,
+      0,
+      30,
+      'A material-rich talk whose browser-rendered content is taller',
+      'Plenary',
+    );
+    const lastTalk = makeTalk(
+      'last-talk',
+      14,
+      30,
+      30,
+      'The final talk in the plenary',
+      'Plenary',
+    );
+
+    const layout = buildAgendaCanvasLayout([firstTalk, lastTalk], {
+      measuredTalkHeightsPx: {
+        [firstTalk.id]: 244,
+        [lastTalk.id]: 208,
+      },
+    });
+    const plenary = layout.columns[0]!;
+    const firstPlacement = plenary.talkPlacements[0]!;
+    const lastPlacement = plenary.talkPlacements[1]!;
+
+    expect(firstPlacement.heightPx).toBe(244);
+    expect(lastPlacement.topPx).toBeGreaterThanOrEqual(
+      firstPlacement.topPx + firstPlacement.heightPx + 12,
+    );
+    expect(plenary.trackHeightPx).toBeGreaterThanOrEqual(
+      lastPlacement.topPx + lastPlacement.heightPx + 12,
+    );
+  });
 });

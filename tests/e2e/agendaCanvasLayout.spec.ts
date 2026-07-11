@@ -156,6 +156,7 @@ async function collectAgendaMetrics(page: Page) {
 
       return {
         label: session.getAttribute('aria-label') ?? 'Unnamed session',
+        height: Math.round(sessionRect.height),
         cards,
         overlaps,
       };
@@ -203,6 +204,22 @@ async function collectAgendaMetrics(page: Page) {
           ];
         }),
       ),
+      sessionOverflows: sessions.flatMap((session) =>
+        session.cards.flatMap((card) => {
+          if (card.visualBottom <= session.height + 1) {
+            return [];
+          }
+
+          return [
+            {
+              session: session.label,
+              title: card.title,
+              sessionHeight: session.height,
+              visualBottom: card.visualBottom,
+            },
+          ];
+        }),
+      ),
       markerRegressions,
       firstTalkMeta:
         document
@@ -241,6 +258,8 @@ test('renders agenda canvas cards without same-column overlap', async () => {
     const layoutReport = await collectAgendaMetrics(harness.page);
 
     expect(layoutReport.overlaps).toEqual([]);
+    expect(layoutReport.cardOverflows).toEqual([]);
+    expect(layoutReport.sessionOverflows).toEqual([]);
     expect(layoutReport.markerRegressions).toEqual([]);
     expect(layoutReport.firstTalkMeta).toContain('PDF');
     expect(layoutReport.firstTalkMeta).toContain('annotated slide');

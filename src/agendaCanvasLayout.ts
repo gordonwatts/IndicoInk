@@ -269,12 +269,14 @@ function buildSessionBlocks(talks: AgendaTalkSummary[]) {
 function buildColumnPlacements(
   talks: AgendaTalkSummary[],
   availableWidthPx: number,
+  measuredTalkHeightsPx: Readonly<Record<string, number>>,
 ) {
   const orderedTalks = [...talks].sort(compareAgendaTalks);
   let cursorTop = agendaCanvasHeaderHeight + agendaCanvasTrackPadding;
   const talkPlacements = orderedTalks.map((talk) => {
     const heightPx = Math.max(
       estimateAgendaTalkCardHeightForWidth(talk, availableWidthPx),
+      measuredTalkHeightsPx[talk.id] ?? 0,
       Math.round(
         (getAgendaTalkDurationMinutes(talk) / 30) * agendaCanvasRowHeight,
       ),
@@ -436,7 +438,10 @@ export function getResponsiveAgendaColumnWidth(
 
 export function buildAgendaCanvasLayout(
   talks: AgendaTalkSummary[],
-  options: { columnWidthPx?: number } = {},
+  options: {
+    columnWidthPx?: number;
+    measuredTalkHeightsPx?: Readonly<Record<string, number>>;
+  } = {},
 ): AgendaCanvasLayout {
   const blocks = buildSessionBlocks(talks);
   const sessionBlocks = blocks.filter((block) => !block.spanFullWidth);
@@ -516,6 +521,7 @@ export function buildAgendaCanvasLayout(
       block.spanFullWidth
         ? Math.max(240, canvasWidthPx - agendaTimeGutterWidth - 24)
         : Math.max(240, columnWidthPx - 24),
+      options.measuredTalkHeightsPx ?? {},
     );
 
     return {
