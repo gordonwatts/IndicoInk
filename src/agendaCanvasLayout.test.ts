@@ -117,6 +117,122 @@ describe('agenda canvas layout', () => {
     expect(sessionBlocks[1]?.blockTopPx).toBeLessThan(
       sessionBlocks[2]?.blockTopPx ?? 0,
     );
+    expect(
+      (sessionBlocks[0]?.blockTopPx ?? 0) +
+        (sessionBlocks[0]?.trackHeightPx ?? 0),
+    ).toBeLessThanOrEqual(sessionBlocks[1]?.blockTopPx ?? 0);
+    expect(
+      (sessionBlocks[1]?.blockTopPx ?? 0) +
+        (sessionBlocks[1]?.trackHeightPx ?? 0),
+    ).toBeLessThanOrEqual(sessionBlocks[2]?.blockTopPx ?? 0);
+  });
+
+  it('aligns talk starts to the shared time axis instead of stacking cards', () => {
+    const talks = [
+      makeTalk('plenary-1', 14, 0, 15, 'Opening talk', 'Keynote session'),
+      makeTalk('plenary-2', 14, 15, 15, 'Second talk', 'Keynote session'),
+      makeTalk('plenary-3', 14, 30, 30, 'Third talk', 'Keynote session'),
+    ];
+    const layout = buildAgendaCanvasLayout(talks, {
+      measuredTalkHeightsPx: {
+        'plenary-1': 176,
+        'plenary-2': 228,
+        'plenary-3': 184,
+      },
+    });
+    const session = layout.columns[0]!;
+    const absoluteTalkTops = session.talkPlacements.map(
+      (placement) => session.blockTopPx + placement.topPx,
+    );
+    const marker1400 = layout.timeMarkers.indexOf(14 * 60);
+    const marker1430 = layout.timeMarkers.indexOf(14 * 60 + 30);
+
+    expect(absoluteTalkTops[0]).toBe(layout.timeMarkerTopPx[marker1400]);
+    expect(absoluteTalkTops[1]).toBeLessThan(
+      layout.timeMarkerTopPx[marker1430]!,
+    );
+    expect(absoluteTalkTops[2]).toBe(layout.timeMarkerTopPx[marker1430]);
+  });
+
+  it('aligns simultaneous talk starts across parallel sessions', () => {
+    const talks = [
+      makeTalk('track-a-1', 19, 30, 20, 'Track A first', 'Track A'),
+      makeTalk('track-a-2', 19, 50, 20, 'Track A second', 'Track A'),
+      makeTalk('track-b-1', 19, 30, 20, 'Track B first', 'Track B'),
+      makeTalk('track-b-2', 19, 50, 20, 'Track B second', 'Track B'),
+    ];
+    const layout = buildAgendaCanvasLayout(talks, {
+      measuredTalkHeightsPx: {
+        'track-a-1': 244,
+        'track-a-2': 176,
+        'track-b-1': 164,
+        'track-b-2': 232,
+      },
+    });
+    const absoluteTopByTalkId = Object.fromEntries(
+      layout.columns.flatMap((session) =>
+        session.talkPlacements.map((placement) => [
+          placement.talk.id,
+          session.blockTopPx + placement.topPx,
+        ]),
+      ),
+    );
+
+    expect(absoluteTopByTalkId['track-a-1']).toBe(
+      absoluteTopByTalkId['track-b-1'],
+    );
+    expect(absoluteTopByTalkId['track-a-2']).toBe(
+      absoluteTopByTalkId['track-b-2'],
+    );
+  });
+
+  it('keeps a shared session below the tallest preceding parallel track', () => {
+    const trackATalk = makeTalk(
+      'track-a-last',
+      20,
+      50,
+      20,
+      'Tall final talk in track A',
+      'Track A',
+    );
+    const trackBTalk = makeTalk(
+      'track-b-last',
+      20,
+      50,
+      20,
+      'Short final talk in track B',
+      'Track B',
+    );
+    const sharedTalk = makeTalk(
+      'poster-talk',
+      21,
+      15,
+      30,
+      'Poster session with coffee break',
+      'Poster session with coffee break',
+    );
+    const layout = buildAgendaCanvasLayout(
+      [trackATalk, trackBTalk, sharedTalk],
+      {
+        measuredTalkHeightsPx: {
+          [trackATalk.id]: 252,
+          [trackBTalk.id]: 172,
+          [sharedTalk.id]: 184,
+        },
+      },
+    );
+    const parallelBlocks = layout.columns.filter(
+      (block) => !block.spanFullWidth,
+    );
+    const sharedBlock = layout.columns.find((block) => block.spanFullWidth)!;
+
+    expect(
+      Math.max(
+        ...parallelBlocks.map(
+          (block) => block.blockTopPx + block.trackHeightPx,
+        ),
+      ),
+    ).toBeLessThanOrEqual(sharedBlock.blockTopPx);
   });
 
   it('keeps repeated parallel session slots separate after a break', () => {
@@ -151,9 +267,12 @@ describe('agenda canvas layout', () => {
     const firstSlotTrackBlock = trackBlocks.find(
       (block) => block.startMinutes === 14 * 60 + 30,
     );
+    const firstSlotTalkTop =
+      (firstSlotTrackBlock?.blockTopPx ?? 0) +
+      (firstSlotTrackBlock?.talkPlacements[0]?.topPx ?? 0);
     const firstSlotMarkerIndex = layout.timeMarkers.indexOf(14 * 60 + 30);
     expect(firstSlotMarkerIndex).toBeGreaterThanOrEqual(0);
-    expect(Math.round(firstSlotTrackBlock?.blockTopPx ?? -1)).toBe(
+    expect(Math.round(firstSlotTalkTop)).toBe(
       Math.round(layout.timeMarkerTopPx[firstSlotMarkerIndex] ?? -2),
     );
   });

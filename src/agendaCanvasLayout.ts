@@ -303,7 +303,7 @@ function buildColumnPlacements(
 }
 
 function buildTimeBoundaries(
-  blocks: Array<{
+  constraints: Array<{
     startMinutes: number;
     endMinutes: number;
   }>,
@@ -315,24 +315,24 @@ function buildTimeBoundaries(
     boundaries.add(minute);
   }
 
-  blocks.forEach((block) => {
-    boundaries.add(block.startMinutes);
-    boundaries.add(block.endMinutes);
+  constraints.forEach((constraint) => {
+    boundaries.add(constraint.startMinutes);
+    boundaries.add(constraint.endMinutes);
   });
 
   return [...boundaries].sort((left, right) => left - right);
 }
 
 function buildTimeAxis(
-  blocks: Array<{
+  constraints: Array<{
     startMinutes: number;
     endMinutes: number;
-    trackHeightPx: number;
+    minimumHeightPx: number;
   }>,
   markerStart: number,
   markerEnd: number,
 ) {
-  const boundaries = buildTimeBoundaries(blocks, markerStart, markerEnd);
+  const boundaries = buildTimeBoundaries(constraints, markerStart, markerEnd);
   const segmentHeights = boundaries.slice(0, -1).map((minute, index) => {
     const nextMinute = boundaries[index + 1] ?? minute + 30;
     return Math.max(
@@ -344,9 +344,9 @@ function buildTimeAxis(
   for (let iteration = 0; iteration < 8; iteration += 1) {
     let changed = false;
 
-    blocks.forEach((block) => {
-      const startIndex = boundaries.indexOf(block.startMinutes);
-      const endIndex = boundaries.indexOf(block.endMinutes);
+    constraints.forEach((constraint) => {
+      const startIndex = boundaries.indexOf(constraint.startMinutes);
+      const endIndex = boundaries.indexOf(constraint.endMinutes);
       if (startIndex < 0 || endIndex <= startIndex) {
         return;
       }
@@ -354,11 +354,11 @@ function buildTimeAxis(
       const currentHeight = segmentHeights
         .slice(startIndex, endIndex)
         .reduce((total, height) => total + height, 0);
-      if (currentHeight >= block.trackHeightPx) {
+      if (currentHeight >= constraint.minimumHeightPx) {
         return;
       }
 
-      const deficit = block.trackHeightPx - currentHeight;
+      const deficit = constraint.minimumHeightPx - currentHeight;
       const segmentCount = endIndex - startIndex;
       const extraPerSegment = Math.ceil(deficit / segmentCount);
       for (let index = startIndex; index < endIndex; index += 1) {
@@ -540,14 +540,93 @@ export function buildAgendaCanvasLayout(
     timeMarkers.push(minute);
   }
 
-  const timeAxis = buildTimeAxis(solvedBlocks, markerStart, markerEnd);
+  const agendaSessionHeaderOffsetPx =
+    agendaCanvasHeaderHeight + agendaCanvasTrackPadding;
+  const talkConstraints = solvedBlocks.flatMap((block) =>
+    block.talkPlacements.map((placement) => {
+      const startMinutes = getAgendaTalkStartMinutes(placement.talk) ?? 0;
+      const endMinutes = Math.max(
+        startMinutes + 1,
+        getAgendaTalkEndMinutes(placement.talk),
+      );
+
+      return {
+        startMinutes,
+        endMinutes,
+        minimumHeightPx: placement.heightPx + agendaCanvasTalkGap,
+      };
+    }),
+  );
+  const sessionTransitionConstraints = [...Array(columnCount).keys()].flatMap(
+    (columnIndex) => {
+      const columnBlocks = solvedBlocks
+        .filter(
+          (block) => block.spanFullWidth || block.columnIndex === columnIndex,
+        )
+        .sort((left, right) => left.startMinutes - right.startMinutes);
+
+      return columnBlocks.slice(1).flatMap((block, index) => {
+        const previousBlock = columnBlocks[index];
+        const previousPlacement = previousBlock?.talkPlacements.at(-1);
+        if (!previousBlock || !previousPlacement) {
+          return [];
+        }
+
+        const previousTalkStart =
+          getAgendaTalkStartMinutes(previousPlacement.talk) ??
+          previousBlock.startMinutes;
+        if (block.startMinutes <= previousTalkStart) {
+          return [];
+        }
+
+        return [
+          {
+            startMinutes: previousTalkStart,
+            endMinutes: block.startMinutes,
+            minimumHeightPx:
+              previousPlacement.heightPx +
+              agendaCanvasTrackPadding +
+              agendaCanvasTalkGap +
+              agendaSessionHeaderOffsetPx,
+          },
+        ];
+      });
+    },
+  );
+  const timeAxis = buildTimeAxis(
+    [...talkConstraints, ...sessionTransitionConstraints],
+    markerStart,
+    markerEnd,
+  );
   const timeMarkerTopPx = timeMarkers.map((minute) =>
     timeAxis.getTopForMinute(minute),
   );
-  const axisAlignedColumns = solvedBlocks.map((block) => ({
-    ...block,
-    blockTopPx: timeAxis.getTopForMinute(block.startMinutes),
-  })) satisfies AgendaCanvasColumnLayout[];
+  const axisAlignedColumns = solvedBlocks.map((block) => {
+    const blockTopPx =
+      timeAxis.getTopForMinute(block.startMinutes) -
+      agendaSessionHeaderOffsetPx;
+    const talkPlacements = block.talkPlacements.map((placement) => {
+      const talkStartMinutes =
+        getAgendaTalkStartMinutes(placement.talk) ?? block.startMinutes;
+
+      return {
+        ...placement,
+        topPx: timeAxis.getTopForMinute(talkStartMinutes) - blockTopPx,
+      };
+    });
+    const lastTalkBottomPx = talkPlacements.reduce(
+      (maxBottomPx, placement) =>
+        Math.max(maxBottomPx, placement.topPx + placement.heightPx),
+      agendaSessionHeaderOffsetPx,
+    );
+
+    return {
+      ...block,
+      blockTopPx,
+      talkPlacements,
+      trackHeightPx: lastTalkBottomPx + agendaCanvasTrackPadding,
+    };
+  }) satisfies AgendaCanvasColumnLayout[];
   const canvasHeightPx = Math.max(
     axisAlignedColumns.reduce(
       (maxHeight, block) =>

@@ -298,9 +298,9 @@ test('keeps the ACAT talk-details pane out of the agenda canvas', async () => {
     );
     expect(firstSlotTrackBlocks).toHaveLength(3);
     firstSlotTrackBlocks.forEach((block) => {
-      expect(Math.abs(block.top - geometry.marker1430Top)).toBeLessThanOrEqual(
-        2,
-      );
+      expect(
+        Math.abs(block.firstCardTop - geometry.marker1430Top),
+      ).toBeLessThanOrEqual(2);
     });
     expect(geometry.cardLeft).toBeGreaterThan(0);
     expect(geometry.cardRight).toBeLessThan(geometry.canvasRight);

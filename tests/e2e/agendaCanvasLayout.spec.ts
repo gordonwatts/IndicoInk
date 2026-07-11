@@ -131,6 +131,12 @@ async function collectAgendaMetrics(page: Page) {
             card
               .querySelector('.agenda-talk-card-title')
               ?.textContent?.trim() ?? 'Untitled talk',
+          startLabel:
+            card
+              .querySelector('.agenda-talk-card-time')
+              ?.textContent?.split('-')[0]
+              ?.trim() ?? '',
+          absoluteTop: Math.round(rect.top),
           top: Math.round(rect.top - sessionRect.top),
           bottom: Math.round(rect.bottom - sessionRect.top),
           visualBottom: Math.round(
@@ -157,6 +163,10 @@ async function collectAgendaMetrics(page: Page) {
       return {
         label: session.getAttribute('aria-label') ?? 'Unnamed session',
         height: Math.round(sessionRect.height),
+        top: Math.round(sessionRect.top),
+        bottom: Math.round(sessionRect.bottom),
+        left: Math.round(sessionRect.left),
+        right: Math.round(sessionRect.right),
         cards,
         overlaps,
       };
@@ -167,6 +177,16 @@ async function collectAgendaMetrics(page: Page) {
         '.agenda-time-marker--absolute',
       ),
     ].map((marker) => marker.getBoundingClientRect().top);
+    const markerTopByLabel = Object.fromEntries(
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '.agenda-time-marker--absolute',
+        ),
+      ].map((marker) => [
+        marker.textContent?.trim() ?? '',
+        Math.round(marker.getBoundingClientRect().top),
+      ]),
+    );
     const markerRegressions = markerTops.flatMap((top, index) => {
       const previous = markerTops[index - 1];
       if (previous === undefined || top > previous) {
@@ -175,6 +195,43 @@ async function collectAgendaMetrics(page: Page) {
 
       return [{ index, previous, top }];
     });
+    const cardsByStartLabel = sessions
+      .flatMap((session) => session.cards)
+      .reduce<Record<string, (typeof sessions)[number]['cards']>>(
+        (groups, card) => {
+          if (!card.startLabel) {
+            return groups;
+          }
+
+          const cards = groups[card.startLabel] ?? [];
+          cards.push(card);
+          groups[card.startLabel] = cards;
+          return groups;
+        },
+        {},
+      );
+    const sessionBlockOverlaps = sessions.flatMap((session, index) =>
+      sessions.slice(index + 1).flatMap((otherSession) => {
+        const overlapsHorizontally =
+          Math.min(session.right, otherSession.right) -
+            Math.max(session.left, otherSession.left) >
+          1;
+        const overlapsVertically =
+          Math.min(session.bottom, otherSession.bottom) -
+            Math.max(session.top, otherSession.top) >
+          1;
+        if (!overlapsHorizontally || !overlapsVertically) {
+          return [];
+        }
+
+        return [
+          {
+            first: session.label,
+            second: otherSession.label,
+          },
+        ];
+      }),
+    );
 
     return {
       scrollWidth,
@@ -220,6 +277,37 @@ async function collectAgendaMetrics(page: Page) {
           ];
         }),
       ),
+      sessionBlockOverlaps,
+      simultaneousStartMisalignments: Object.entries(cardsByStartLabel).flatMap(
+        ([startLabel, cards]) => {
+          const tops = cards.map((card) => card.absoluteTop);
+          if (tops.length < 2 || Math.max(...tops) - Math.min(...tops) <= 1) {
+            return [];
+          }
+
+          return [{ startLabel, tops }];
+        },
+      ),
+      timeMarkerMisalignments: sessions.flatMap((session) =>
+        session.cards.flatMap((card) => {
+          const markerTop = markerTopByLabel[card.startLabel];
+          if (
+            markerTop === undefined ||
+            Math.abs(markerTop - card.absoluteTop) <= 1
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              title: card.title,
+              startLabel: card.startLabel,
+              cardTop: card.absoluteTop,
+              markerTop,
+            },
+          ];
+        }),
+      ),
       markerRegressions,
       firstTalkMeta:
         document
@@ -260,6 +348,9 @@ test('renders agenda canvas cards without same-column overlap', async () => {
     expect(layoutReport.overlaps).toEqual([]);
     expect(layoutReport.cardOverflows).toEqual([]);
     expect(layoutReport.sessionOverflows).toEqual([]);
+    expect(layoutReport.sessionBlockOverlaps).toEqual([]);
+    expect(layoutReport.simultaneousStartMisalignments).toEqual([]);
+    expect(layoutReport.timeMarkerMisalignments).toEqual([]);
     expect(layoutReport.markerRegressions).toEqual([]);
     expect(layoutReport.firstTalkMeta).toContain('PDF');
     expect(layoutReport.firstTalkMeta).toContain('annotated slide');
