@@ -70,6 +70,13 @@ type ApiKeyDialogRequest =
       conferenceId: string;
       talkId: string;
       deckId: string;
+    }
+  | {
+      kind: 'refresh';
+      origin: string;
+      message: string;
+      eventUrl: string;
+      decision?: 'keep' | 'replace';
     };
 
 const destinations: Array<{
@@ -1168,6 +1175,23 @@ export function App() {
           return;
         }
 
+        if (result.kind === 'api-key-required') {
+          setRefreshState({
+            kind: 'error',
+            message: result.message,
+          });
+          setApiKeyDialogRequest({
+            kind: 'refresh',
+            origin: result.origin,
+            message: result.message,
+            eventUrl: event.sourceUrl,
+            ...(decision ? { decision } : {}),
+          });
+          setApiKeyValue('');
+          setApiKeyError(result.message);
+          return;
+        }
+
         await refreshLibraryEvents();
         setRefreshState({
           kind: 'done',
@@ -1707,6 +1731,35 @@ export function App() {
           tone: 'success',
           message: `Opened ${reopenedEvent.result.title} with ${reopenedEvent.result.talkCount} talks.`,
         });
+        return;
+      }
+
+      if (request.kind === 'refresh') {
+        const refreshedEvent = await window.indicoInk.refreshLibraryEvent(
+          request.eventUrl,
+          request.decision,
+        );
+        if (refreshedEvent.kind === 'api-key-required') {
+          setApiKeyError(refreshedEvent.message);
+          setRefreshState({ kind: 'error', message: refreshedEvent.message });
+          return;
+        }
+        if (refreshedEvent.kind === 'conflict') {
+          setRefreshState({
+            kind: 'conflict',
+            message: 'The upstream PDF changed for an annotated deck.',
+            conflicts: refreshedEvent.conflicts,
+          });
+        } else {
+          await refreshLibraryEvents();
+          setRefreshState({
+            kind: 'done',
+            message: `Refreshed ${refreshedEvent.title}: ${refreshedEvent.changedTalkCount} changed, ${refreshedEvent.removedTalkCount} removed, ${refreshedEvent.newlyAvailableDeckCount} new PDF${refreshedEvent.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
+          });
+        }
+        setApiKeyDialogRequest(null);
+        setApiKeyValue('');
+        setApiKeyError(null);
         return;
       }
 
@@ -3624,16 +3677,23 @@ export function App() {
                 title={
                   apiKeyDialogRequest.kind === 'event'
                     ? 'Private event'
-                    : 'Private slides'
+                    : apiKeyDialogRequest.kind === 'refresh'
+                      ? 'API key required to refresh'
+                      : 'Private slides'
                 }
                 body={
                   <div className="dialog-copy">
                     <p>
                       {apiKeyDialogRequest.kind === 'event'
                         ? 'This event'
-                        : 'This slide deck'}{' '}
+                        : apiKeyDialogRequest.kind === 'refresh'
+                          ? 'Refreshing this event'
+                          : 'This slide deck'}{' '}
                       at <strong>{apiKeyDialogRequest.origin}</strong> needs an
-                      API key before it can be opened.
+                      API key before it can be{' '}
+                      {apiKeyDialogRequest.kind === 'refresh'
+                        ? 'refreshed.'
+                        : 'opened.'}
                     </p>
                     <label className="field">
                       <span>API key</span>
