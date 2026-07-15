@@ -291,9 +291,11 @@ async function collectAgendaMetrics(page: Page) {
       timeMarkerMisalignments: sessions.flatMap((session) =>
         session.cards.flatMap((card) => {
           const markerTop = markerTopByLabel[card.startLabel];
+          // The session and track borders add one pixel each between the
+          // layout coordinate and the card's border box.
           if (
             markerTop === undefined ||
-            Math.abs(markerTop - card.absoluteTop) <= 1
+            Math.abs(markerTop - card.absoluteTop) <= 2
           ) {
             return [];
           }
