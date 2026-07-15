@@ -529,6 +529,72 @@ function AgendaTimelineCanvas({
   const [viewportWidthPx, setViewportWidthPx] = React.useState(
     layoutAgendaTimeGutterWidth + layoutAgendaCanvasColumnWidth * 3,
   );
+  const [measuredTalkHeightsPx, setMeasuredTalkHeightsPx] = React.useState<
+    Record<string, number>
+  >({});
+  const talkCardElementsRef = React.useRef(new Map<string, HTMLElement>());
+  const talkCardResizeObserverRef = React.useRef<ResizeObserver | null>(null);
+
+  React.useLayoutEffect(() => {
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const nextMeasurements: Record<string, number> = {};
+      entries.forEach((entry) => {
+        const talkId = (entry.target as HTMLElement).dataset.talkId;
+        if (!talkId) {
+          return;
+        }
+
+        nextMeasurements[talkId] = Math.ceil(
+          entry.target.getBoundingClientRect().height,
+        );
+      });
+
+      setMeasuredTalkHeightsPx((currentMeasurements) => {
+        const changedEntries = Object.entries(nextMeasurements).filter(
+          ([talkId, heightPx]) =>
+            Math.abs((currentMeasurements[talkId] ?? 0) - heightPx) > 1,
+        );
+        if (changedEntries.length === 0) {
+          return currentMeasurements;
+        }
+
+        return {
+          ...currentMeasurements,
+          ...Object.fromEntries(changedEntries),
+        };
+      });
+    });
+
+    talkCardResizeObserverRef.current = observer;
+    talkCardElementsRef.current.forEach((element) => observer.observe(element));
+
+    return () => {
+      observer.disconnect();
+      talkCardResizeObserverRef.current = null;
+    };
+  }, []);
+
+  const registerTalkCard = React.useCallback(
+    (talkId: string, element: HTMLElement | null) => {
+      const previousElement = talkCardElementsRef.current.get(talkId);
+      if (previousElement && previousElement !== element) {
+        talkCardResizeObserverRef.current?.unobserve(previousElement);
+      }
+
+      if (!element) {
+        talkCardElementsRef.current.delete(talkId);
+        return;
+      }
+
+      talkCardElementsRef.current.set(talkId, element);
+      talkCardResizeObserverRef.current?.observe(element);
+    },
+    [],
+  );
 
   React.useEffect(() => {
     const viewport = viewportRef.current;
@@ -578,8 +644,9 @@ function AgendaTimelineCanvas({
     () =>
       buildAgendaCanvasLayout(visibleAgendaTalks, {
         columnWidthPx: responsiveColumnWidthPx,
+        measuredTalkHeightsPx,
       }),
-    [visibleAgendaTalks, responsiveColumnWidthPx],
+    [visibleAgendaTalks, responsiveColumnWidthPx, measuredTalkHeightsPx],
   );
 
   return (
@@ -675,6 +742,8 @@ function AgendaTimelineCanvas({
                         }}
                       >
                         <article
+                          ref={(element) => registerTalkCard(talk.id, element)}
+                          data-talk-id={talk.id}
                           className={`agenda-talk-card${talk.id === selectedAgendaTalkId ? ' is-selected' : ''}`}
                           role="button"
                           tabIndex={0}
