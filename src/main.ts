@@ -20,12 +20,13 @@ import {
 import { buildAgendaTalkSummaries } from './agendaData';
 import { importIndicoEvent } from './indicoImport';
 import { refreshIndicoEvent } from './indicoRefresh';
-import { IndicoHttpError } from './indicoHttp';
+import { classifyRefreshError } from './refreshResult';
 import { IndicoCredentialStore } from './indicoCredentials';
 import {
   getIndicoApiKeyPromptMessage,
   isLikelyIndicoApiKeyError,
 } from './indicoHttp';
+import { IndicoHttpError } from './indicoHttp';
 import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
@@ -48,7 +49,10 @@ import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
 import { parseIndicoEventUrl } from './indicoEvent';
-import type { OpenLibraryEventResult } from './shared/library';
+import type {
+  OpenLibraryEventResult,
+  RefreshLibraryEventResult,
+} from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import {
   coerceAppSettings,
@@ -463,18 +467,28 @@ ipcMain.handle(
     _event,
     eventUrl: string,
     decision?: 'keep' | 'replace',
-  ): Promise<unknown> => {
+  ): Promise<RefreshLibraryEventResult> => {
     const identity = parseIndicoEventUrl(eventUrl);
     if (!identity) {
       throw new Error('The provided URL is not a valid Indico event.');
     }
 
     const apiKey = await getCredentialStore().getApiKey(identity.origin);
-    return refreshIndicoEvent(getPersistenceStore(), eventUrl, {
-      fetchImpl: session.defaultSession.fetch.bind(session.defaultSession),
-      ...(apiKey ? { apiKey } : {}),
-      ...(decision ? { decision } : {}),
-    });
+
+    try {
+      return await refreshIndicoEvent(getPersistenceStore(), eventUrl, {
+        fetchImpl: session.defaultSession.fetch.bind(session.defaultSession),
+        ...(apiKey ? { apiKey } : {}),
+        ...(decision ? { decision } : {}),
+      });
+    } catch (error) {
+      const refreshError = classifyRefreshError(error, identity);
+      if (refreshError) {
+        return refreshError;
+      }
+
+      throw error;
+    }
   },
 );
 

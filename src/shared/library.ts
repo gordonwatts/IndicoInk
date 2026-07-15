@@ -43,6 +43,12 @@ export type RefreshConflict = {
 
 export type RefreshLibraryEventResult =
   | {
+      kind: 'api-key-required';
+      conferenceId: string;
+      origin: string;
+      message: string;
+    }
+  | {
       kind: 'refreshed';
       conferenceId: string;
       title: string;

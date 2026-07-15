@@ -531,6 +531,83 @@ describe('App', () => {
     ).toBeTruthy();
   }, 20_000);
 
+  it('prompts for a replacement API key and retries an event refresh', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-refresh-auth',
+      sourceUrl: 'https://indico.example.org/event/refresh-auth',
+      title: 'Refresh Auth Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.openLibraryEvent = vi.fn().mockResolvedValue({
+      kind: 'opened',
+      result: {
+        conferenceId: libraryEvent.id,
+        title: libraryEvent.title,
+        talkCount: 2,
+        deckCount: 0,
+        savedAt: Date.now(),
+      },
+    });
+    window.indicoInk.refreshLibraryEvent = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: 'api-key-required',
+        conferenceId: libraryEvent.id,
+        origin: 'https://indico.example.org',
+        message: 'This Indico event requires an API key.',
+      })
+      .mockResolvedValueOnce({
+        kind: 'refreshed',
+        conferenceId: libraryEvent.id,
+        title: libraryEvent.title,
+        talkCount: 2,
+        deckCount: 0,
+        changedTalkCount: 0,
+        removedTalkCount: 0,
+        newlyAvailableDeckCount: 0,
+      });
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'API key required to refresh',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/needs an API key before it can be refreshed/)).toBeTruthy();
+
+    await user.type(screen.getByLabelText('API key'), 'replacement-key');
+    await user.click(screen.getByRole('button', { name: 'Save key' }));
+
+    expect(window.indicoInk.saveIndicoApiKey).toHaveBeenCalledWith(
+      'https://indico.example.org',
+      'replacement-key',
+    );
+    expect(window.indicoInk.refreshLibraryEvent).toHaveBeenLastCalledWith(
+      libraryEvent.sourceUrl,
+      undefined,
+    );
+    expect(
+      await screen.findByText(/Refreshed Refresh Auth Event: 0 changed/),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('API key')).toBeNull();
+  });
+
   it('supports keyboard navigation into the shell destinations', async () => {
     const user = userEvent.setup();
 
