@@ -21,7 +21,8 @@ async function openLiveEvent(eventUrl: string) {
   return harness;
 }
 
-test('renders the FNAL Energy Frontier workshop talks', async (_fixtures, testInfo) => {
+test('renders the FNAL Energy Frontier workshop talks', async ({ browserName }, testInfo) => {
+  void browserName;
   testInfo.skip(
     Boolean(process.env.CI),
     'FNAL live-event checks run locally but are skipped in GitHub Actions.',
@@ -55,7 +56,8 @@ test('renders the FNAL Energy Frontier workshop talks', async (_fixtures, testIn
   }
 });
 
-test('separates Wednesday Energy Frontier session blocks vertically', async (_fixtures, testInfo) => {
+test('separates Wednesday Energy Frontier session blocks vertically', async ({ browserName }, testInfo) => {
+  void browserName;
   testInfo.skip(
     Boolean(process.env.CI),
     'FNAL live-event checks run locally but are skipped in GitHub Actions.',
