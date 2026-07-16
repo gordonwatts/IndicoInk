@@ -162,6 +162,8 @@ const buildConferenceExportSnapshot = async (
 
   const talks = await store.listTalksByConference(conferenceId);
   const exportTalks: ExportTalkSnapshot[] = [];
+  const restoredDecks: Array<{ talkTitle: string; deckDisplayName: string }> =
+    [];
 
   for (const talk of talks) {
     const decks = await store.listDecksByTalk(talk.id);
@@ -179,6 +181,20 @@ const buildConferenceExportSnapshot = async (
         const annotations = await store.listAnnotationsBySlide(slide.id);
         if (!annotations.length) {
           continue;
+        }
+
+        const availability =
+          await getDeckCacheManager().ensureDeckAvailable(deck);
+        if (availability.kind !== 'ready') {
+          throw new Error(
+            `Unable to restore ${deck.displayName} for “${talk.title}”: ${availability.message}`,
+          );
+        }
+        if (availability.restored) {
+          restoredDecks.push({
+            talkTitle: talk.title,
+            deckDisplayName: deck.displayName,
+          });
         }
 
         exportSlides.push({
@@ -236,6 +252,7 @@ const buildConferenceExportSnapshot = async (
       exportedAt: Date.now(),
     },
     talks: exportTalks,
+    ...(restoredDecks.length ? { restoredDecks } : {}),
   };
 };
 
@@ -359,8 +376,8 @@ const createWindow = () => {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    });
-  };
+  });
+};
 
 app.setName('IndicoInk');
 ensureAppSettings();

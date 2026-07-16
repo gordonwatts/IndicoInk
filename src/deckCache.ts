@@ -1,6 +1,6 @@
 import { mkdirSync, existsSync, unlinkSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { open } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -86,7 +86,7 @@ export class DeckCacheManager {
     const filePath = this.getCacheFilePath(deck.conferenceId, deck.id);
     mkdirSync(dirname(filePath), { recursive: true });
 
-    if (existsSync(filePath)) {
+    if (await this.isValidPdfCache(filePath)) {
       return {
         kind: 'ready',
         conferenceId: deck.conferenceId,
@@ -204,6 +204,62 @@ export class DeckCacheManager {
     };
   }
 
+  async ensureDeckAvailable(
+    deck: Deck,
+  ): Promise<
+    | { kind: 'ready'; restored: boolean; filePath: string }
+    | { kind: 'api-key-required'; message: string; filePath: string }
+    | { kind: 'error'; message: string; filePath: string }
+  > {
+    const filePath = this.getCacheFilePath(deck.conferenceId, deck.id);
+    if (await this.isValidPdfCache(filePath)) {
+      return { kind: 'ready', restored: false, filePath };
+    }
+
+    const openResult = await this.openDeck(deck);
+    if (openResult.kind === 'ready') {
+      return { kind: 'ready', restored: false, filePath };
+    }
+    if (openResult.kind === 'api-key-required') {
+      return {
+        kind: 'api-key-required',
+        message: openResult.message,
+        filePath,
+      };
+    }
+    if (openResult.kind === 'error') {
+      return { kind: 'error', message: openResult.message, filePath };
+    }
+
+    let status = this.getDownloadStatus(openResult.operationId);
+    while (
+      status &&
+      status.kind !== 'ready' &&
+      status.kind !== 'canceled' &&
+      status.kind !== 'error'
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      status = this.getDownloadStatus(openResult.operationId);
+    }
+
+    if (status?.kind === 'ready') {
+      return { kind: 'ready', restored: true, filePath };
+    }
+    if (status?.kind === 'canceled' || status?.kind === 'error') {
+      return {
+        kind: 'error',
+        message: status.message ?? `Failed to restore ${deck.displayName}.`,
+        filePath,
+      };
+    }
+
+    return {
+      kind: 'error',
+      message: `Failed to restore ${deck.displayName}.`,
+      filePath,
+    };
+  }
+
   private async performDownload(
     record: DownloadRecord,
     response: DeckCacheFetchResponse,
@@ -266,6 +322,21 @@ export class DeckCacheManager {
       status.message =
         error instanceof Error ? error.message : 'Failed to download PDF.';
       status.updatedAt = this.now();
+    }
+  }
+
+  private async isValidPdfCache(filePath: string) {
+    if (!existsSync(filePath)) {
+      return false;
+    }
+
+    try {
+      const bytes = await readFile(filePath);
+      return (
+        bytes.byteLength > 5 && bytes.subarray(0, 5).toString() === '%PDF-'
+      );
+    } catch {
+      return false;
     }
   }
 

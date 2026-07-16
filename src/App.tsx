@@ -1911,7 +1911,7 @@ export function App() {
     exportCancellationRef.current = cancellationState;
     setExportState({
       kind: 'preparing',
-      label: 'Preparing export from annotated talks...',
+      label: 'Preparing export and restoring missing PDF decks...',
     });
 
     try {
@@ -1931,6 +1931,14 @@ export function App() {
           label: 'No annotated slides are available to export.',
         });
         return;
+      }
+
+      if (snapshot.restoredDecks?.length) {
+        const restored = snapshot.restoredDecks[0]!;
+        setExportState({
+          kind: 'preparing',
+          label: `Restored ${restored.deckDisplayName} for ${restored.talkTitle}. Preparing export...`,
+        });
       }
 
       const saveResult = await window.indicoInk.showExportSaveDialog({

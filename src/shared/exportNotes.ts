@@ -65,6 +65,7 @@ export type ExportTalkSnapshot = {
 export type ConferenceExportSnapshot = {
   conference: ExportConferenceSummary;
   talks: ExportTalkSnapshot[];
+  restoredDecks?: Array<{ talkTitle: string; deckDisplayName: string }>;
 };
 
 export type ExportRenderedSlide = {

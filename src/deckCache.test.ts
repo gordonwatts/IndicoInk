@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -66,6 +66,46 @@ describe('deck cache manager', () => {
       }),
     );
     expect(existsSync(filePath)).toBe(true);
+  });
+
+  it('treats an empty or non-PDF cache entry as a miss and restores it', async () => {
+    const cacheRoot = createTempDir('deck-cache-invalid');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(makeDownloadResponse());
+    const manager = new DeckCacheManager(cacheRoot, fetchDeckBytes);
+    const deck = makeDeck();
+    const filePath = manager.getCacheFilePath(deck.conferenceId, deck.id);
+
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, 'partial download');
+
+    await expect(manager.ensureDeckAvailable(deck)).resolves.toEqual({
+      kind: 'ready',
+      restored: true,
+      filePath,
+    });
+    expect(fetchDeckBytes).toHaveBeenCalledOnce();
+    expect(existsSync(filePath)).toBe(true);
+  });
+
+  it('waits for export recovery and preserves a valid cache during a failed refresh', async () => {
+    const cacheRoot = createTempDir('deck-cache-recovery-error');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(
+      makeDownloadResponse({
+        ok: false,
+        status: 503,
+        statusText: 'Unavailable',
+      }),
+    );
+    const manager = new DeckCacheManager(cacheRoot, fetchDeckBytes);
+    const deck = makeDeck();
+    const filePath = manager.getCacheFilePath(deck.conferenceId, deck.id);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, 'not a pdf');
+
+    await expect(manager.ensureDeckAvailable(deck)).resolves.toEqual(
+      expect.objectContaining({ kind: 'error', filePath }),
+    );
+    expect(readFileSync(filePath, 'utf8')).toBe('not a pdf');
   });
 
   it('cancels an interrupted download and removes the partial cache file', async () => {
