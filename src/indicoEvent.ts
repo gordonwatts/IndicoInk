@@ -3,6 +3,8 @@ import { createConferenceId } from './persistenceModels';
 const eventPathPattern = /^\/event\/([^/?#]+)(?:\/.*)?$/;
 const eventOpenPathPattern =
   /^\/event\/[^/?#]+(?:\/timetable(?:\/[^/?#]*)?)?\/?$/;
+const eventSessionPathPattern =
+  /^\/event\/[^/?#]+\/sessions\/[^/?#]+(?:\/.*)?$/;
 
 const isTrustedIndicoHostname = (hostname: string) =>
   hostname === 'indico.global' ||
@@ -78,6 +80,22 @@ export const parseIndicoEventLinkUrl = (value: string) => {
   }
 
   return eventOpenPathPattern.test(url.pathname) ? identity : null;
+};
+
+export const parseIndicoEventSessionUrl = (value: string) => {
+  const identity = parseIndicoEventUrl(value);
+  if (!identity) {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
+
+  return eventSessionPathPattern.test(url.pathname) ? identity : null;
 };
 
 export const createIndicoEventExportUrl = (

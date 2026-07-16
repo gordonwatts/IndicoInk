@@ -84,6 +84,11 @@ const openLibraryEvent = async (
 ): Promise<OpenLibraryEventResult> =>
   ipcRenderer.invoke('library:open-event', eventUrl, apiKey);
 
+const resolveLinkedAgendaUrl = async (
+  sessionUrl: string,
+): Promise<string | null> =>
+  ipcRenderer.invoke('agenda:resolve-linked-agenda', sessionUrl);
+
 const saveIndicoApiKey = async (
   origin: string,
   apiKey: string,
@@ -160,6 +165,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   deleteLibraryEvent,
   refreshLibraryEvent,
   openLibraryEvent,
+  resolveLinkedAgendaUrl,
   saveIndicoApiKey,
   listIndicoApiKeys,
   deleteIndicoApiKey,
@@ -207,6 +213,7 @@ export type IndicoInkApi = {
     eventUrl: string,
     apiKey?: string,
   ) => Promise<OpenLibraryEventResult>;
+  resolveLinkedAgendaUrl: (sessionUrl: string) => Promise<string | null>;
   saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
   listIndicoApiKeys: () => Promise<IndicoApiKeySummary[]>;
   deleteIndicoApiKey: (origin: string) => Promise<void>;

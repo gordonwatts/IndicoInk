@@ -12,7 +12,7 @@ import {
   createTalkId,
 } from './persistenceModels';
 import { PersistenceStore } from './persistenceStore';
-import { refreshIndicoEvent } from './indicoRefresh';
+import { refreshIndicoEvent, resolveLinkedAgendaUrl } from './indicoRefresh';
 
 const makeStore = () =>
   new PersistenceStore(
@@ -181,5 +181,52 @@ describe('refreshIndicoEvent', () => {
     expect(talk?.upstreamStatus).toBe('changed');
 
     await store.close();
+  });
+});
+
+describe('resolveLinkedAgendaUrl', () => {
+  it('resolves an existing session URL to its linked agenda attachment', async () => {
+    const sessionUrl =
+      'https://indico.example.org/event/current-meeting/sessions/42/';
+    const linkedAgendaUrl =
+      'https://indico.example.org/event/other-meeting/#day-2026-07-07';
+    const response = await resolveLinkedAgendaUrl(
+      'https://indico.example.org/event/current-meeting',
+      sessionUrl,
+      {
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: { get: vi.fn().mockReturnValue(null) },
+          text: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              results: [
+                {
+                  title: 'Current meeting',
+                  sessions: [
+                    {
+                      id: '42',
+                      title: 'Linked session',
+                      url: sessionUrl,
+                      contributions: [],
+                      session: {
+                        folders: [
+                          {
+                            attachments: [{ link_url: linkedAgendaUrl }],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              ],
+            }),
+          ),
+        }),
+      },
+    );
+
+    expect(response).toBe(linkedAgendaUrl);
   });
 });

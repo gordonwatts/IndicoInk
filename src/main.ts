@@ -19,7 +19,7 @@ import {
 } from './libraryData';
 import { buildAgendaTalkSummaries } from './agendaData';
 import { importIndicoEvent } from './indicoImport';
-import { refreshIndicoEvent } from './indicoRefresh';
+import { refreshIndicoEvent, resolveLinkedAgendaUrl } from './indicoRefresh';
 import { classifyRefreshError } from './refreshResult';
 import { IndicoCredentialStore } from './indicoCredentials';
 import {
@@ -48,7 +48,7 @@ import {
 import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
-import { parseIndicoEventUrl } from './indicoEvent';
+import { parseIndicoEventSessionUrl, parseIndicoEventUrl } from './indicoEvent';
 import type {
   OpenLibraryEventResult,
   RefreshLibraryEventResult,
@@ -453,6 +453,22 @@ ipcMain.handle('library:list-events', async () =>
 
 ipcMain.handle('agenda:list-talks', async (_event, conferenceId: string) =>
   buildAgendaTalkSummaries(getPersistenceStore(), conferenceId),
+);
+
+ipcMain.handle(
+  'agenda:resolve-linked-agenda',
+  async (_event, sessionUrl: string): Promise<string | null> => {
+    const identity = parseIndicoEventSessionUrl(sessionUrl);
+    if (!identity) {
+      return null;
+    }
+
+    const apiKey = await getCredentialStore().getApiKey(identity.origin);
+    return resolveLinkedAgendaUrl(identity.canonicalEventUrl, sessionUrl, {
+      fetchImpl: session.defaultSession.fetch.bind(session.defaultSession),
+      ...(apiKey ? { apiKey } : {}),
+    });
+  },
 );
 
 ipcMain.handle(

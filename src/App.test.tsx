@@ -120,6 +120,7 @@ describe('App', () => {
           savedAt: Date.now(),
         },
       }),
+      resolveLinkedAgendaUrl: vi.fn().mockResolvedValue(null),
       saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
       listIndicoApiKeys: vi.fn().mockResolvedValue([]),
       deleteIndicoApiKey: vi.fn().mockResolvedValue(undefined),
@@ -1723,6 +1724,7 @@ describe('App', () => {
       title: 'Linked meeting',
       speaker: '',
       sessionTitle: 'Linked meeting',
+      contributionUrl: 'https://indico.example.org/event/indico-1/sessions/42/',
       timeRangeLabel: '09:00 - 10:00',
       room: 'Room A',
       bookmarked: false,
@@ -1730,8 +1732,7 @@ describe('App', () => {
       materials: [],
       annotatedSlideCount: 0,
       entryKind: 'linked-agenda' as const,
-      linkedAgendaUrl:
-        'https://indico.example.org/event/linked-2026/timetable/',
+      linkedAgendaUrl: 'https://indico.example.org/event/indico-1/sessions/42/',
     };
 
     window.indicoInk.listLibraryEvents = vi
@@ -1752,6 +1753,11 @@ describe('App', () => {
         savedAt: Date.now(),
       },
     });
+    window.indicoInk.resolveLinkedAgendaUrl = vi
+      .fn()
+      .mockResolvedValue(
+        'https://indico.example.org/event/linked-2026/timetable/',
+      );
 
     render(<App />);
     await user.click(
@@ -1768,6 +1774,9 @@ describe('App', () => {
 
     expect(window.indicoInk.openLibraryEvent).toHaveBeenCalledWith(
       'https://indico.example.org/event/linked-2026',
+    );
+    expect(window.indicoInk.resolveLinkedAgendaUrl).toHaveBeenCalledWith(
+      'https://indico.example.org/event/indico-1/sessions/42/',
     );
     expect(
       await screen.findByRole('heading', {

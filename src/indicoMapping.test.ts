@@ -172,7 +172,21 @@ describe('mapIndicoExportEnvelope', () => {
                 startDate: { date: '2026-07-08', time: '13:00:00' },
                 endDate: { date: '2026-07-08', time: '17:00:00' },
                 room: 'Remote',
-                url: 'https://indico.example.org/event/other-meeting/timetable/',
+                url: 'https://indico.example.org/event/current-meeting/sessions/42/',
+                session: {
+                  folders: [
+                    {
+                      attachments: [
+                        {
+                          title: 'Agenda',
+                          type: 'link',
+                          link_url:
+                            'https://indico.example.org/event/other-meeting/timetable/',
+                        },
+                      ],
+                    },
+                  ],
+                },
                 contributions: [],
               },
               {
@@ -196,6 +210,10 @@ describe('mapIndicoExportEnvelope', () => {
       mapped.talks.find((talk) => talk.contributionId === 'linked-session')
         ?.linkedAgendaUrl,
     ).toContain('/event/other-meeting/');
+    expect(
+      mapped.talks.find((talk) => talk.contributionId === 'linked-session')
+        ?.contributionUrl,
+    ).toContain('/event/current-meeting/sessions/42/');
     expect(
       mapped.talks.find((talk) => talk.contributionId === 'blank-session')
         ?.linkedAgendaUrl,

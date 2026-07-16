@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createIndicoEventExportUrl,
   parseIndicoEventLinkUrl,
+  parseIndicoEventSessionUrl,
   parseIndicoEventUrl,
 } from './indicoEvent';
 import { createConferenceId } from './persistenceModels';
@@ -66,5 +67,10 @@ describe('createIndicoEventExportUrl', () => {
         'https://indico.example.org/event/123/sessions/456/',
       ),
     ).toBeNull();
+    expect(
+      parseIndicoEventSessionUrl(
+        'https://indico.example.org/event/123/sessions/456/',
+      )?.canonicalEventUrl,
+    ).toBe('https://indico.example.org/event/123');
   });
 });

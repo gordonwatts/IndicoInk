@@ -23,6 +23,7 @@ type IndicoMaterialValue = {
   name?: string;
   url?: string;
   download_url?: string;
+  link_url?: string;
   mimetype?: string;
   content_type?: string;
   type?: string;
@@ -69,6 +70,10 @@ type IndicoSessionValue = {
   contributions?: IndicoContributionValue[];
   material?: IndicoMaterialValue[];
   folders?: IndicoFolderValue[];
+  session?: {
+    folders?: IndicoFolderValue[];
+    material?: IndicoMaterialValue[];
+  };
 };
 
 type IndicoEventValue = {
@@ -260,6 +265,20 @@ const getMaterialTitle = (
 
 const getMaterialUrl = (material: IndicoMaterialValue) =>
   getString(material.url) || getString(material.download_url);
+
+const getLinkedAgendaUrl = (session: IndicoSessionValue) => {
+  const folders = [
+    ...asArray<IndicoFolderValue>(session.folders),
+    ...asArray<IndicoFolderValue>(session.session?.folders),
+  ];
+
+  return (
+    folders
+      .flatMap((folder) => asArray<IndicoMaterialValue>(folder.attachments))
+      .map((attachment) => getString(attachment.link_url))
+      .find(Boolean) ?? ''
+  );
+};
 
 const getMaterialMimeType = (material: IndicoMaterialValue) =>
   getString(material.mimetype) ||
@@ -475,7 +494,11 @@ const mapContribution = (
   };
 };
 
-const mapLinkedAgenda = (session: IndicoSessionValue, index: number) => {
+const mapLinkedAgenda = (
+  session: IndicoSessionValue,
+  index: number,
+  linkedAgendaUrl: string,
+) => {
   const contributionId =
     getNumberLike(session.id) || `linked-agenda-${index + 1}`;
   return {
@@ -495,7 +518,7 @@ const mapLinkedAgenda = (session: IndicoSessionValue, index: number) => {
     materials: [],
     bookmarked: false,
     entryKind: 'linked-agenda' as const,
-    linkedAgendaUrl: getString(session.url),
+    linkedAgendaUrl,
   };
 };
 
@@ -509,7 +532,11 @@ export const mapIndicoExportEnvelope = (
   const contributionSources = collectContributionSources(event ?? {});
   const talks = contributionSources.map((source, index) =>
     source.linkedAgenda
-      ? mapLinkedAgenda(source.linkedAgenda, index)
+      ? mapLinkedAgenda(
+          source.linkedAgenda,
+          index,
+          getLinkedAgendaUrl(source.linkedAgenda),
+        )
       : mapContribution(identity, source.contribution!, index),
   );
 

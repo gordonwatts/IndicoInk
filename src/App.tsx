@@ -26,7 +26,10 @@ import type {
 } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import { copyTextToClipboard } from './clipboard';
-import { parseIndicoEventLinkUrl } from './indicoEvent';
+import {
+  parseIndicoEventLinkUrl,
+  parseIndicoEventSessionUrl,
+} from './indicoEvent';
 import {
   CommandBar,
   DetailsSurface,
@@ -886,31 +889,40 @@ function AgendaTimelineCanvas({
                           {talk.entryKind === 'linked-agenda' &&
                           talk.linkedAgendaUrl ? (
                             <div className="agenda-talk-card-actions">
-                              <button
-                                className="agenda-talk-card-action-button"
-                                type="button"
-                                aria-label={`Open URL for ${talk.title}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onOpenLinkedAgenda(talk);
-                                }}
-                              >
-                                <Icon name="open" />
-                                <span>Open</span>
-                              </button>
-                              <button
-                                className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
-                                type="button"
-                                aria-label={`Copy URL for ${talk.title}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onCopyLinkedAgenda(talk, event);
-                                }}
-                              >
-                                <Icon name="copy" />
-                                <span>Copy URL</span>
-                              </button>
-                              {parseIndicoEventLinkUrl(talk.linkedAgendaUrl) ? (
+                              {!parseIndicoEventSessionUrl(
+                                talk.linkedAgendaUrl,
+                              ) ? (
+                                <>
+                                  <button
+                                    className="agenda-talk-card-action-button"
+                                    type="button"
+                                    aria-label={`Open URL for ${talk.title}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onOpenLinkedAgenda(talk);
+                                    }}
+                                  >
+                                    <Icon name="open" />
+                                    <span>Open</span>
+                                  </button>
+                                  <button
+                                    className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
+                                    type="button"
+                                    aria-label={`Copy URL for ${talk.title}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onCopyLinkedAgenda(talk, event);
+                                    }}
+                                  >
+                                    <Icon name="copy" />
+                                    <span>Copy URL</span>
+                                  </button>
+                                </>
+                              ) : null}
+                              {parseIndicoEventLinkUrl(talk.linkedAgendaUrl) ||
+                              parseIndicoEventSessionUrl(
+                                talk.contributionUrl,
+                              ) ? (
                                 <button
                                   className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
                                   type="button"
@@ -1890,32 +1902,60 @@ export function App() {
 
     void window.indicoInk.openExternalUrl(talk.linkedAgendaUrl);
   };
-  const handleOpenLinkedAgendaInApp = (talk: AgendaTalkSummary) => {
-    const identity = talk.linkedAgendaUrl
-      ? parseIndicoEventLinkUrl(talk.linkedAgendaUrl)
-      : null;
-    if (!identity) {
-      return;
-    }
-
+  const handleOpenLinkedAgendaInApp = async (talk: AgendaTalkSummary) => {
     setIsOpeningEvent(true);
-    setOpenEventFeedback({
-      tone: 'neutral',
-      message: 'Opening linked event in IndicoInk…',
-    });
-    void openIndicoEventInApp(identity.canonicalEventUrl)
-      .catch((error) => {
+
+    try {
+      let linkedAgendaUrl = talk.linkedAgendaUrl ?? '';
+      let identity = linkedAgendaUrl
+        ? parseIndicoEventLinkUrl(linkedAgendaUrl)
+        : null;
+
+      if (!identity && parseIndicoEventSessionUrl(talk.contributionUrl)) {
+        setOpenEventFeedback({
+          tone: 'neutral',
+          message: 'Finding the linked agenda in Indico…',
+        });
+        const resolvedLinkedAgendaUrl =
+          await window.indicoInk.resolveLinkedAgendaUrl(talk.contributionUrl);
+        linkedAgendaUrl = resolvedLinkedAgendaUrl ?? '';
+        identity = linkedAgendaUrl
+          ? parseIndicoEventLinkUrl(linkedAgendaUrl)
+          : null;
+
+        if (linkedAgendaUrl) {
+          setAgendaTalks((currentTalks) =>
+            currentTalks.map((currentTalk) =>
+              currentTalk.id === talk.id
+                ? { ...currentTalk, linkedAgendaUrl }
+                : currentTalk,
+            ),
+          );
+        }
+      }
+
+      if (!identity) {
         setOpenEventFeedback({
           tone: 'error',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Failed to open the event.',
+          message: 'No linked Indico agenda URL is available for this entry.',
         });
-      })
-      .finally(() => {
-        setIsOpeningEvent(false);
+        return;
+      }
+
+      setOpenEventFeedback({
+        tone: 'neutral',
+        message: 'Opening linked agenda in IndicoInk…',
       });
+      await openIndicoEventInApp(identity.canonicalEventUrl);
+    } catch (error) {
+      setOpenEventFeedback({
+        tone: 'error',
+        message:
+          error instanceof Error ? error.message : 'Failed to open the event.',
+      });
+    } finally {
+      setIsOpeningEvent(false);
+    }
   };
   const handleOpenSelectedPdfLink = async () => {
     const sourceUrl = activeSlideSelectedMaterial?.sourceUrl ?? null;
