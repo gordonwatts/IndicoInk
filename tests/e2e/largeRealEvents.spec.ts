@@ -21,7 +21,12 @@ async function openLiveEvent(eventUrl: string) {
   return harness;
 }
 
-test('renders the FNAL Energy Frontier workshop talks', async () => {
+test('renders the FNAL Energy Frontier workshop talks', async ({ browserName }, testInfo) => {
+  void browserName;
+  testInfo.skip(
+    Boolean(process.env.CI),
+    'FNAL live-event checks run locally but are skipped in GitHub Actions.',
+  );
   const harness = await openLiveEvent('https://indico.fnal.gov/event/52465');
 
   try {
@@ -51,7 +56,12 @@ test('renders the FNAL Energy Frontier workshop talks', async () => {
   }
 });
 
-test('separates Wednesday Energy Frontier session blocks vertically', async () => {
+test('separates Wednesday Energy Frontier session blocks vertically', async ({ browserName }, testInfo) => {
+  void browserName;
+  testInfo.skip(
+    Boolean(process.env.CI),
+    'FNAL live-event checks run locally but are skipped in GitHub Actions.',
+  );
   const harness = await openLiveEvent('https://indico.fnal.gov/event/52465');
 
   try {
