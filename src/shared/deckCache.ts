@@ -69,3 +69,8 @@ export type DeckCacheDownloadStatus = {
   message: string | null;
   updatedAt: number;
 };
+
+export type DeckCacheEnsureResult =
+  | { kind: 'ready'; restored: boolean; filePath: string }
+  | { kind: 'api-key-required'; message: string; filePath: string }
+  | { kind: 'error'; message: string; filePath: string };
