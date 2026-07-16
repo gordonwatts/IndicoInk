@@ -921,7 +921,7 @@ function AgendaTimelineCanvas({
                                   }}
                                 >
                                   <Icon name="event" />
-                                  <span>Open in Indico</span>
+                                  <span>Open in IndicoInk</span>
                                 </button>
                               ) : null}
                             </div>
@@ -1891,21 +1891,31 @@ export function App() {
     void window.indicoInk.openExternalUrl(talk.linkedAgendaUrl);
   };
   const handleOpenLinkedAgendaInApp = (talk: AgendaTalkSummary) => {
-    if (!talk.linkedAgendaUrl || !parseIndicoEventUrl(talk.linkedAgendaUrl)) {
+    const identity = talk.linkedAgendaUrl
+      ? parseIndicoEventUrl(talk.linkedAgendaUrl)
+      : null;
+    if (!identity) {
       return;
     }
 
+    setIsOpeningEvent(true);
     setOpenEventFeedback({
       tone: 'neutral',
       message: 'Opening linked event in IndicoInk…',
     });
-    void openIndicoEventInApp(talk.linkedAgendaUrl).catch((error) => {
-      setOpenEventFeedback({
-        tone: 'error',
-        message:
-          error instanceof Error ? error.message : 'Failed to open the event.',
+    void openIndicoEventInApp(identity.canonicalEventUrl)
+      .catch((error) => {
+        setOpenEventFeedback({
+          tone: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Failed to open the event.',
+        });
+      })
+      .finally(() => {
+        setIsOpeningEvent(false);
       });
-    });
   };
   const handleOpenSelectedPdfLink = async () => {
     const sourceUrl = activeSlideSelectedMaterial?.sourceUrl ?? null;
