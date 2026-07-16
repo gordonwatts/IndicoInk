@@ -534,6 +534,7 @@ function AgendaTimelineCanvas({
   onOpenTalkSlides,
   onOpenTalkMaterials,
   onOpenLinkedAgenda,
+  onOpenLinkedAgendaInApp,
   onCopyLinkedAgenda,
   onToggleBookmark,
 }: {
@@ -544,6 +545,7 @@ function AgendaTimelineCanvas({
   onOpenTalkSlides: (talk: AgendaTalkSummary) => void;
   onOpenTalkMaterials: (talk: AgendaTalkSummary) => void;
   onOpenLinkedAgenda: (talk: AgendaTalkSummary) => void;
+  onOpenLinkedAgendaInApp: (talk: AgendaTalkSummary) => void;
   onCopyLinkedAgenda: (
     talk: AgendaTalkSummary,
     event: React.MouseEvent<HTMLButtonElement>,
@@ -908,6 +910,20 @@ function AgendaTimelineCanvas({
                                 <Icon name="copy" />
                                 <span>Copy URL</span>
                               </button>
+                              {parseIndicoEventUrl(talk.linkedAgendaUrl) ? (
+                                <button
+                                  className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
+                                  type="button"
+                                  aria-label={`Open ${talk.title} in IndicoInk`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onOpenLinkedAgendaInApp(talk);
+                                  }}
+                                >
+                                  <Icon name="event" />
+                                  <span>Open in Indico</span>
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                           {showMaterialsAction &&
@@ -1872,12 +1888,20 @@ export function App() {
       return;
     }
 
-    if (parseIndicoEventUrl(talk.linkedAgendaUrl)) {
-      void openIndicoEventInApp(talk.linkedAgendaUrl);
+    void window.indicoInk.openExternalUrl(talk.linkedAgendaUrl);
+  };
+  const handleOpenLinkedAgendaInApp = (talk: AgendaTalkSummary) => {
+    if (!talk.linkedAgendaUrl || !parseIndicoEventUrl(talk.linkedAgendaUrl)) {
       return;
     }
 
-    void window.indicoInk.openExternalUrl(talk.linkedAgendaUrl);
+    void openIndicoEventInApp(talk.linkedAgendaUrl).catch((error) => {
+      setOpenEventFeedback({
+        tone: 'error',
+        message:
+          error instanceof Error ? error.message : 'Failed to open the event.',
+      });
+    });
   };
   const handleOpenSelectedPdfLink = async () => {
     const sourceUrl = activeSlideSelectedMaterial?.sourceUrl ?? null;
@@ -2819,6 +2843,9 @@ export function App() {
                               }}
                               onOpenTalkMaterials={handleOpenTalkMaterials}
                               onOpenLinkedAgenda={handleOpenLinkedAgenda}
+                              onOpenLinkedAgendaInApp={
+                                handleOpenLinkedAgendaInApp
+                              }
                               onCopyLinkedAgenda={(talk, event) => {
                                 void handleCopyLink(
                                   talk.linkedAgendaUrl ?? null,
