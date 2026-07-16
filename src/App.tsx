@@ -1895,6 +1895,10 @@ export function App() {
       return;
     }
 
+    setOpenEventFeedback({
+      tone: 'neutral',
+      message: 'Opening linked event in IndicoInk…',
+    });
     void openIndicoEventInApp(talk.linkedAgendaUrl).catch((error) => {
       setOpenEventFeedback({
         tone: 'error',
@@ -2758,6 +2762,25 @@ export function App() {
                       />
                     ) : null}
                   </div>
+                  {openEventFeedback ? (
+                    <div
+                      className="field-help"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      <StatusLabel
+                        label={openEventFeedback.message}
+                        tone={openEventFeedback.tone}
+                        icon={
+                          openEventFeedback.tone === 'error'
+                            ? 'info'
+                            : openEventFeedback.tone === 'success'
+                              ? 'check'
+                              : 'event'
+                        }
+                      />
+                    </div>
+                  ) : null}
                   {agendaTalksLoading ? (
                     <div className="empty-state agenda-empty-state">
                       <Icon name="agenda" />
