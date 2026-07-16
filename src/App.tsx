@@ -26,6 +26,7 @@ import type {
 } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import { copyTextToClipboard } from './clipboard';
+import { parseIndicoEventUrl } from './indicoEvent';
 import {
   CommandBar,
   DetailsSurface,
@@ -433,6 +434,15 @@ function formatAgendaTalkDeckChipLabel(talk: AgendaTalkSummary) {
 }
 
 function getAgendaTalkPrimaryAction(talk: AgendaTalkSummary) {
+  if (talk.entryKind === 'linked-agenda') {
+    return {
+      label: talk.linkedAgendaUrl ? 'Open linked agenda' : 'Linked agenda',
+      ariaLabel: talk.linkedAgendaUrl
+        ? `Open linked agenda for ${talk.title}`
+        : `Linked agenda ${talk.title}`,
+      kind: 'linked-agenda' as const,
+    };
+  }
   const selectedDeck = getSelectedTalkDeck(talk);
   if (selectedDeck) {
     return {
@@ -523,6 +533,8 @@ function AgendaTimelineCanvas({
   onOpenTalk,
   onOpenTalkSlides,
   onOpenTalkMaterials,
+  onOpenLinkedAgenda,
+  onCopyLinkedAgenda,
   onToggleBookmark,
 }: {
   visibleAgendaTalks: AgendaTalkSummary[];
@@ -531,6 +543,11 @@ function AgendaTimelineCanvas({
   onOpenTalk: (talk: AgendaTalkSummary) => void;
   onOpenTalkSlides: (talk: AgendaTalkSummary) => void;
   onOpenTalkMaterials: (talk: AgendaTalkSummary) => void;
+  onOpenLinkedAgenda: (talk: AgendaTalkSummary) => void;
+  onCopyLinkedAgenda: (
+    talk: AgendaTalkSummary,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => void;
   onToggleBookmark: (talk: AgendaTalkSummary) => void;
 }) {
   const [viewportWidthPx, setViewportWidthPx] = React.useState(
@@ -761,6 +778,10 @@ function AgendaTimelineCanvas({
                               : undefined
                           }
                           onClick={() => {
+                            if (primaryAction.kind === 'linked-agenda') {
+                              onOpenLinkedAgenda(talk);
+                              return;
+                            }
                             if (primaryAction.kind === 'slides') {
                               onOpenTalkSlides(talk);
                               return;
@@ -776,6 +797,10 @@ function AgendaTimelineCanvas({
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault();
+                              if (primaryAction.kind === 'linked-agenda') {
+                                onOpenLinkedAgenda(talk);
+                                return;
+                              }
                               if (primaryAction.kind === 'slides') {
                                 onOpenTalkSlides(talk);
                                 return;
@@ -823,7 +848,9 @@ function AgendaTimelineCanvas({
                             {talk.title}
                           </div>
                           <div className="agenda-talk-card-speaker">
-                            {talk.speaker}
+                            {talk.entryKind === 'linked-agenda'
+                              ? 'Linked Indico agenda'
+                              : talk.speaker}
                             {talk.room !== 'Room unavailable' &&
                             talk.room !== block.room
                               ? ` - ${talk.room}`
@@ -831,7 +858,13 @@ function AgendaTimelineCanvas({
                           </div>
                           <div className="agenda-talk-card-meta">
                             <StatusLabel
-                              label={talk.materialSummary}
+                              label={
+                                talk.entryKind === 'linked-agenda'
+                                  ? talk.linkedAgendaUrl
+                                    ? 'Linked agenda'
+                                    : 'No URL provided'
+                                  : talk.materialSummary
+                              }
                               tone="neutral"
                               icon="open"
                             />
@@ -848,7 +881,37 @@ function AgendaTimelineCanvas({
                               />
                             ) : null}
                           </div>
-                          {showMaterialsAction ? (
+                          {talk.entryKind === 'linked-agenda' &&
+                          talk.linkedAgendaUrl ? (
+                            <div className="agenda-talk-card-actions">
+                              <button
+                                className="agenda-talk-card-action-button"
+                                type="button"
+                                aria-label={`Open URL for ${talk.title}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onOpenLinkedAgenda(talk);
+                                }}
+                              >
+                                <Icon name="open" />
+                                <span>Open</span>
+                              </button>
+                              <button
+                                className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
+                                type="button"
+                                aria-label={`Copy URL for ${talk.title}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onCopyLinkedAgenda(talk, event);
+                                }}
+                              >
+                                <Icon name="copy" />
+                                <span>Copy URL</span>
+                              </button>
+                            </div>
+                          ) : null}
+                          {showMaterialsAction &&
+                          talk.entryKind !== 'linked-agenda' ? (
                             <div className="agenda-talk-card-actions">
                               <button
                                 className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
@@ -1804,6 +1867,18 @@ export function App() {
 
     await window.indicoInk.openExternalUrl(url);
   };
+  const handleOpenLinkedAgenda = (talk: AgendaTalkSummary) => {
+    if (!talk.linkedAgendaUrl) {
+      return;
+    }
+
+    if (parseIndicoEventUrl(talk.linkedAgendaUrl)) {
+      void openIndicoEventInApp(talk.linkedAgendaUrl);
+      return;
+    }
+
+    void window.indicoInk.openExternalUrl(talk.linkedAgendaUrl);
+  };
   const handleOpenSelectedPdfLink = async () => {
     const sourceUrl = activeSlideSelectedMaterial?.sourceUrl ?? null;
     if (!sourceUrl) {
@@ -2743,6 +2818,14 @@ export function App() {
                                 void openAgendaTalkSlides(talk);
                               }}
                               onOpenTalkMaterials={handleOpenTalkMaterials}
+                              onOpenLinkedAgenda={handleOpenLinkedAgenda}
+                              onCopyLinkedAgenda={(talk, event) => {
+                                void handleCopyLink(
+                                  talk.linkedAgendaUrl ?? null,
+                                  event,
+                                  'Copied linked agenda URL',
+                                );
+                              }}
                               onToggleBookmark={(talk) => {
                                 void handleAgendaTalkBookmarkToggle(talk);
                               }}

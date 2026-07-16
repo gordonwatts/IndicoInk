@@ -111,7 +111,7 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
       }),
     ).toBeVisible();
     await expect(harness.page.locator('.agenda-talk-card-title')).toHaveCount(
-      89,
+      90,
     );
 
     await harness.page

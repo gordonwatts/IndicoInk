@@ -151,6 +151,8 @@ export const refreshIndicoEvent = async (
       conferenceId,
       contributionId: currentTalk.contributionId,
       contributionUrl: incomingTalk.contributionUrl,
+      entryKind: incomingTalk.entryKind ?? 'talk',
+      linkedAgendaUrl: incomingTalk.linkedAgendaUrl ?? '',
       title: incomingTalk.title,
       speaker: incomingTalk.speaker,
       sessionTitle: incomingTalk.sessionTitle,
@@ -233,6 +235,8 @@ export const refreshIndicoEvent = async (
             conferenceId,
             contributionId: currentTalk.contributionId,
             contributionUrl: incomingTalk.contributionUrl,
+            entryKind: incomingTalk.entryKind ?? 'talk',
+            linkedAgendaUrl: incomingTalk.linkedAgendaUrl ?? '',
             title: incomingTalk.title,
             speaker: incomingTalk.speaker,
             sessionTitle: incomingTalk.sessionTitle,
@@ -262,6 +266,8 @@ export const refreshIndicoEvent = async (
         createdAt: currentTalk?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
         upstreamStatus,
+        entryKind: incomingTalk.entryKind ?? 'talk',
+        linkedAgendaUrl: incomingTalk.linkedAgendaUrl ?? '',
       });
 
       const currentDecks = await getConferenceDecksByTalk(
