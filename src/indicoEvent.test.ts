@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createIndicoEventExportUrl, parseIndicoEventUrl } from './indicoEvent';
+import {
+  createIndicoEventExportUrl,
+  parseIndicoEventLinkUrl,
+  parseIndicoEventUrl,
+} from './indicoEvent';
 import { createConferenceId } from './persistenceModels';
 
 describe('parseIndicoEventUrl', () => {
@@ -50,5 +54,17 @@ describe('createIndicoEventExportUrl', () => {
     ).toBe(
       'https://indico.in2p3.fr/export/event/35043.json?detail=sessions&pretty=yes',
     );
+  });
+
+  it('only treats event pages and timetables as in-app event links', () => {
+    expect(
+      parseIndicoEventLinkUrl('https://indico.example.org/event/123/timetable/')
+        ?.canonicalEventUrl,
+    ).toBe('https://indico.example.org/event/123');
+    expect(
+      parseIndicoEventLinkUrl(
+        'https://indico.example.org/event/123/sessions/456/',
+      ),
+    ).toBeNull();
   });
 });

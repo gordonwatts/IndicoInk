@@ -26,7 +26,7 @@ import type {
 } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import { copyTextToClipboard } from './clipboard';
-import { parseIndicoEventUrl } from './indicoEvent';
+import { parseIndicoEventLinkUrl } from './indicoEvent';
 import {
   CommandBar,
   DetailsSurface,
@@ -910,7 +910,7 @@ function AgendaTimelineCanvas({
                                 <Icon name="copy" />
                                 <span>Copy URL</span>
                               </button>
-                              {parseIndicoEventUrl(talk.linkedAgendaUrl) ? (
+                              {parseIndicoEventLinkUrl(talk.linkedAgendaUrl) ? (
                                 <button
                                   className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
                                   type="button"
@@ -1892,7 +1892,7 @@ export function App() {
   };
   const handleOpenLinkedAgendaInApp = (talk: AgendaTalkSummary) => {
     const identity = talk.linkedAgendaUrl
-      ? parseIndicoEventUrl(talk.linkedAgendaUrl)
+      ? parseIndicoEventLinkUrl(talk.linkedAgendaUrl)
       : null;
     if (!identity) {
       return;
