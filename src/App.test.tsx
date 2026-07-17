@@ -1766,6 +1766,33 @@ describe('App', () => {
       }),
     );
 
+    expect(screen.queryByText('Linked agenda', { exact: true })).toBeNull();
+    for (const label of [
+      'Open URL for Linked meeting',
+      'Copy URL for Linked meeting',
+      'Open Linked meeting in IndicoInk',
+    ]) {
+      const action = screen.getByRole('button', { name: label });
+      expect(action.className).toContain('icon-button');
+      expect(action.className).not.toContain('agenda-talk-card-action-button');
+    }
+
+    await user.click(
+      screen.getByRole('button', { name: 'Open URL for Linked meeting' }),
+    );
+    expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
+      'https://indico.example.org/event/linked-2026/timetable/',
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Copy URL for Linked meeting' }),
+    );
+    await waitFor(() => {
+      expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+        'https://indico.example.org/event/linked-2026/timetable/',
+      );
+    });
+
     await user.click(
       await screen.findByRole('button', {
         name: 'Open Linked meeting in IndicoInk',

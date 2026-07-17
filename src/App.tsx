@@ -861,81 +861,57 @@ function AgendaTimelineCanvas({
                               ? ` - ${talk.room}`
                               : ''}
                           </div>
-                          <div className="agenda-talk-card-meta">
-                            <StatusLabel
-                              label={
-                                talk.entryKind === 'linked-agenda'
-                                  ? talk.linkedAgendaUrl
-                                    ? 'Linked agenda'
-                                    : 'No URL provided'
-                                  : talk.materialSummary
-                              }
-                              tone="neutral"
-                              icon="open"
-                            />
-                            {talkDeckChipLabel ? (
-                              <div className="agenda-talk-card-default-deck">
-                                {talkDeckChipLabel}
-                              </div>
-                            ) : null}
-                            {talk.annotatedSlideCount > 0 ? (
+                          {talk.entryKind !== 'linked-agenda' ? (
+                            <div className="agenda-talk-card-meta">
                               <StatusLabel
-                                label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                                tone="warning"
-                                icon="annotated"
+                                label={talk.materialSummary}
+                                tone="neutral"
+                                icon="open"
                               />
-                            ) : null}
-                          </div>
+                              {talkDeckChipLabel ? (
+                                <div className="agenda-talk-card-default-deck">
+                                  {talkDeckChipLabel}
+                                </div>
+                              ) : null}
+                              {talk.annotatedSlideCount > 0 ? (
+                                <StatusLabel
+                                  label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                  tone="warning"
+                                  icon="annotated"
+                                />
+                              ) : null}
+                            </div>
+                          ) : null}
                           {talk.entryKind === 'linked-agenda' &&
                           talk.linkedAgendaUrl ? (
                             <div className="agenda-talk-card-actions">
-                              {!parseIndicoEventSessionUrl(
-                                talk.linkedAgendaUrl,
-                              ) ? (
-                                <>
-                                  <button
-                                    className="agenda-talk-card-action-button"
-                                    type="button"
-                                    aria-label={`Open URL for ${talk.title}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      onOpenLinkedAgenda(talk);
-                                    }}
-                                  >
-                                    <Icon name="open" />
-                                    <span>Open</span>
-                                  </button>
-                                  <button
-                                    className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
-                                    type="button"
-                                    aria-label={`Copy URL for ${talk.title}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      onCopyLinkedAgenda(talk, event);
-                                    }}
-                                  >
-                                    <Icon name="copy" />
-                                    <span>Copy URL</span>
-                                  </button>
-                                </>
-                              ) : null}
-                              {parseIndicoEventLinkUrl(talk.linkedAgendaUrl) ||
-                              parseIndicoEventSessionUrl(
-                                talk.contributionUrl,
-                              ) ? (
-                                <button
-                                  className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
-                                  type="button"
-                                  aria-label={`Open ${talk.title} in IndicoInk`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onOpenLinkedAgendaInApp(talk);
-                                  }}
-                                >
-                                  <Icon name="event" />
-                                  <span>Open in IndicoInk</span>
-                                </button>
-                              ) : null}
+                              <IconButton
+                                label={`Open URL for ${talk.title}`}
+                                title="Open URL"
+                                icon="open"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void onOpenLinkedAgenda(talk);
+                                }}
+                              />
+                              <IconButton
+                                label={`Copy URL for ${talk.title}`}
+                                title="Copy URL"
+                                icon="copy"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onCopyLinkedAgenda(talk, event);
+                                }}
+                              />
+                              <IconButton
+                                label={`Open ${talk.title} in IndicoInk`}
+                                title="Open in IndicoInk"
+                                icon="event"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void onOpenLinkedAgendaInApp(talk);
+                                }}
+                              />
                             </div>
                           ) : null}
                           {showMaterialsAction &&
@@ -1895,18 +1871,57 @@ export function App() {
 
     await window.indicoInk.openExternalUrl(url);
   };
-  const handleOpenLinkedAgenda = (talk: AgendaTalkSummary) => {
-    if (!talk.linkedAgendaUrl) {
+  const resolveLinkedAgendaTarget = async (talk: AgendaTalkSummary) => {
+    const linkedAgendaUrl = talk.linkedAgendaUrl ?? '';
+    const isCachedSessionUrl =
+      Boolean(linkedAgendaUrl) &&
+      parseIndicoEventSessionUrl(talk.contributionUrl) !== null &&
+      linkedAgendaUrl.replace(/\/+$/, '') ===
+        talk.contributionUrl.replace(/\/+$/, '');
+
+    if (!isCachedSessionUrl) {
+      return linkedAgendaUrl;
+    }
+
+    const resolvedLinkedAgendaUrl =
+      await window.indicoInk.resolveLinkedAgendaUrl(talk.contributionUrl);
+    if (!resolvedLinkedAgendaUrl) {
+      return '';
+    }
+
+    setAgendaTalks((currentTalks) =>
+      currentTalks.map((currentTalk) =>
+        currentTalk.id === talk.id
+          ? { ...currentTalk, linkedAgendaUrl: resolvedLinkedAgendaUrl }
+          : currentTalk,
+      ),
+    );
+    return resolvedLinkedAgendaUrl;
+  };
+  const handleOpenLinkedAgenda = async (talk: AgendaTalkSummary) => {
+    const linkedAgendaUrl = await resolveLinkedAgendaTarget(talk);
+    if (!linkedAgendaUrl) {
       return;
     }
 
-    void window.indicoInk.openExternalUrl(talk.linkedAgendaUrl);
+    await window.indicoInk.openExternalUrl(linkedAgendaUrl);
+  };
+  const handleCopyLinkedAgenda = async (
+    talk: AgendaTalkSummary,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    const linkedAgendaUrl = await resolveLinkedAgendaTarget(talk);
+    await handleCopyLink(
+      linkedAgendaUrl || null,
+      event,
+      'Copied linked agenda URL',
+    );
   };
   const handleOpenLinkedAgendaInApp = async (talk: AgendaTalkSummary) => {
     setIsOpeningEvent(true);
 
     try {
-      let linkedAgendaUrl = talk.linkedAgendaUrl ?? '';
+      let linkedAgendaUrl = await resolveLinkedAgendaTarget(talk);
       let identity = linkedAgendaUrl
         ? parseIndicoEventLinkUrl(linkedAgendaUrl)
         : null;
@@ -2920,11 +2935,7 @@ export function App() {
                                 handleOpenLinkedAgendaInApp
                               }
                               onCopyLinkedAgenda={(talk, event) => {
-                                void handleCopyLink(
-                                  talk.linkedAgendaUrl ?? null,
-                                  event,
-                                  'Copied linked agenda URL',
-                                );
+                                void handleCopyLinkedAgenda(talk, event);
                               }}
                               onToggleBookmark={(talk) => {
                                 void handleAgendaTalkBookmarkToggle(talk);
