@@ -23,6 +23,7 @@ type IndicoMaterialValue = {
   name?: string;
   url?: string;
   download_url?: string;
+  link_url?: string;
   mimetype?: string;
   content_type?: string;
   type?: string;
@@ -69,6 +70,10 @@ type IndicoSessionValue = {
   contributions?: IndicoContributionValue[];
   material?: IndicoMaterialValue[];
   folders?: IndicoFolderValue[];
+  session?: {
+    folders?: IndicoFolderValue[];
+    material?: IndicoMaterialValue[];
+  };
 };
 
 type IndicoEventValue = {
@@ -91,7 +96,8 @@ type IndicoEventValue = {
 };
 
 type IndicoContributionSource = {
-  contribution: IndicoContributionValue;
+  contribution?: IndicoContributionValue;
+  linkedAgenda?: IndicoSessionValue;
 };
 
 export type IndicoHierarchySession = {
@@ -260,6 +266,20 @@ const getMaterialTitle = (
 const getMaterialUrl = (material: IndicoMaterialValue) =>
   getString(material.url) || getString(material.download_url);
 
+const getLinkedAgendaUrl = (session: IndicoSessionValue) => {
+  const folders = [
+    ...asArray<IndicoFolderValue>(session.folders),
+    ...asArray<IndicoFolderValue>(session.session?.folders),
+  ];
+
+  return (
+    folders
+      .flatMap((folder) => asArray<IndicoMaterialValue>(folder.attachments))
+      .map((attachment) => getString(attachment.link_url))
+      .find(Boolean) ?? ''
+  );
+};
+
 const getMaterialMimeType = (material: IndicoMaterialValue) =>
   getString(material.mimetype) ||
   getString(material.content_type) ||
@@ -374,16 +394,17 @@ const collectContributionSources = (
       })),
   );
 
-  if (sessionSources.length > 0) {
-    return sessionSources;
-  }
-
   const contributions = collectNestedContributions(event.contributions);
-  if (contributions.length > 0) {
-    return contributions.map((contribution) => ({ contribution }));
-  }
-
-  return [];
+  const contributionSources = contributions.map((contribution) => ({
+    contribution,
+  }));
+  const linkedAgendaSources = asArray<IndicoSessionValue>(event.sessions)
+    .filter(
+      (session) =>
+        collectNestedContributions(session.contributions).length === 0,
+    )
+    .map((linkedAgenda) => ({ linkedAgenda }));
+  return [...sessionSources, ...contributionSources, ...linkedAgendaSources];
 };
 
 const createHierarchyBucket = (
@@ -468,27 +489,24 @@ const mapContribution = (
     contributionUrl: getContributionUrl(identity, contribution, contributionId),
     materials,
     bookmarked: false,
+    entryKind: 'talk' as const,
+    linkedAgendaUrl: '',
   };
 };
 
-const mapSessionTalk = (
-  identity: IndicoEventIdentity,
+const mapLinkedAgenda = (
   session: IndicoSessionValue,
   index: number,
+  linkedAgendaUrl: string,
 ) => {
-  const contributionId = getNumberLike(session.id) || `session-${index + 1}`;
-  const materials = collectMaterials(session.material, session.folders)
-    .map((material, materialIndex) =>
-      mapMaterial(contributionId, material, materialIndex),
-    )
-    .filter((material): material is IndicoMaterialEntity => Boolean(material));
-
+  const contributionId =
+    getNumberLike(session.id) || `linked-agenda-${index + 1}`;
   return {
     contributionId,
-    title: getString(session.title, `Session ${index + 1}`),
+    title: getString(session.title, 'Linked agenda'),
     speaker: '',
     speakers: [],
-    sessionTitle: getString(session.title, 'Unscheduled'),
+    sessionTitle: getString(session.title, 'Linked agenda'),
     startsAt: parseDateTime(session.startDate),
     endsAt: parseDateTime(session.endDate),
     room:
@@ -496,11 +514,11 @@ const mapSessionTalk = (
       getString(session.room) ||
       getString(session.location) ||
       'Room unavailable',
-    contributionUrl:
-      getString(session.url) ||
-      `${identity.canonicalEventUrl}/sessions/${encodeURIComponent(contributionId)}/`,
-    materials,
+    contributionUrl: getString(session.url),
+    materials: [],
     bookmarked: false,
+    entryKind: 'linked-agenda' as const,
+    linkedAgendaUrl,
   };
 };
 
@@ -512,16 +530,15 @@ export const mapIndicoExportEnvelope = (
   const eventTitle = getString(event?.title, 'Untitled Indico event');
   const sessions = asArray<IndicoSessionValue>(event?.sessions);
   const contributionSources = collectContributionSources(event ?? {});
-  const contributionTalks = contributionSources.map((source, index) =>
-    mapContribution(identity, source.contribution, index),
+  const talks = contributionSources.map((source, index) =>
+    source.linkedAgenda
+      ? mapLinkedAgenda(
+          source.linkedAgenda,
+          index,
+          getLinkedAgendaUrl(source.linkedAgenda),
+        )
+      : mapContribution(identity, source.contribution!, index),
   );
-
-  const talks =
-    contributionTalks.length > 0
-      ? contributionTalks
-      : sessions.map((session, index) =>
-          mapSessionTalk(identity, session, index),
-        );
 
   const talkByContributionId = new Map(
     talks.map((talk) => [talk.contributionId, talk] as const),
@@ -529,9 +546,33 @@ export const mapIndicoExportEnvelope = (
 
   const hierarchyByDay = new Map<string, IndicoHierarchyDay>();
 
-  for (const contribution of contributionSources.map(
-    (source) => source.contribution,
-  )) {
+  for (const source of contributionSources) {
+    if (!source.contribution) {
+      const linkedAgenda = source.linkedAgenda!;
+      const contributionId =
+        getNumberLike(linkedAgenda.id) ||
+        `linked-agenda-${contributionSources.indexOf(source) + 1}`;
+      const dateKey =
+        linkedAgenda.startDate?.date ?? event?.startDate?.date ?? 'unknown';
+      const dayLabel =
+        formatDate(linkedAgenda.startDate) ??
+        formatDate(event?.startDate) ??
+        'Date unavailable';
+      const day = createHierarchyBucket(hierarchyByDay, dateKey, dayLabel);
+      day.sessions.push({
+        title: getString(linkedAgenda.title, 'Linked agenda'),
+        room:
+          getString(linkedAgenda.roomFullname) ||
+          getString(linkedAgenda.room) ||
+          getString(linkedAgenda.location) ||
+          'Room unavailable',
+        startAt: parseDateTime(linkedAgenda.startDate),
+        endAt: parseDateTime(linkedAgenda.endDate),
+        contributionIds: [contributionId],
+      });
+      continue;
+    }
+    const contribution = source.contribution;
     const contributionId =
       getNumberLike(contribution.friendly_id) || getNumberLike(contribution.id);
     const startsAt = parseDateTime(contribution.startDate);

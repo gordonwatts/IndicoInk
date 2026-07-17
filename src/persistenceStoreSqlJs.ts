@@ -61,7 +61,7 @@ type InitSqlJs = (config?: {
   wasmBinary?: Uint8Array;
 }) => Promise<SqlJsModule>;
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 let initSqlJsLoader: InitSqlJs | null = null;
 
@@ -538,7 +538,25 @@ const migration4 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
-const migrations = [migration1, migration2, migration3, migration4];
+const migration5 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(talks)') as Array<{ values: Array<Array<unknown>> }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+  if (!columns.has('entry_kind')) {
+    db.exec(
+      "ALTER TABLE talks ADD COLUMN entry_kind TEXT NOT NULL DEFAULT 'talk';",
+    );
+  }
+  if (!columns.has('linked_agenda_url')) {
+    db.exec(
+      'ALTER TABLE talks ADD COLUMN linked_agenda_url TEXT NOT NULL DEFAULT "";',
+    );
+  }
+};
+
+const migrations = [migration1, migration2, migration3, migration4, migration5];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -578,6 +596,8 @@ const rowToTalk = (row: Record<string, unknown>): Talk => ({
     | 'present'
     | 'changed'
     | 'missing',
+  entryKind: String(row.entry_kind ?? 'talk') as 'talk' | 'linked-agenda',
+  linkedAgendaUrl: String(row.linked_agenda_url ?? ''),
 });
 
 const rowToDeck = (row: Record<string, unknown>): Deck => ({
@@ -954,11 +974,12 @@ export class PersistenceStore {
         INSERT INTO talks (
           id, conference_id, contribution_id, contribution_url, title, speaker,
           session_title, starts_at, ends_at, room, bookmarked, upstream_status,
+          entry_kind, linked_agenda_url,
           created_at, updated_at
         ) VALUES (
           @id, @conferenceId, @contributionId, @contributionUrl, @title,
           @speaker, @sessionTitle, @startsAt, @endsAt, @room, @bookmarked,
-          @upstreamStatus, @createdAt, @updatedAt
+          @upstreamStatus, @entryKind, @linkedAgendaUrl, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           conference_id = excluded.conference_id,
@@ -972,6 +993,8 @@ export class PersistenceStore {
           room = excluded.room,
           bookmarked = excluded.bookmarked,
           upstream_status = excluded.upstream_status,
+          entry_kind = excluded.entry_kind,
+          linked_agenda_url = excluded.linked_agenda_url,
           updated_at = excluded.updated_at
       `,
     ).run({
@@ -984,6 +1007,8 @@ export class PersistenceStore {
       startsAt: talk.startsAt,
       endsAt: talk.endsAt,
       upstreamStatus: talk.upstreamStatus ?? 'present',
+      entryKind: talk.entryKind ?? 'talk',
+      linkedAgendaUrl: talk.linkedAgendaUrl ?? '',
     });
 
     this.markDirty();

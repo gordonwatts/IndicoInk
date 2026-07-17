@@ -146,6 +146,80 @@ describe('mapIndicoExportEnvelope', () => {
     );
   });
 
+  it('keeps linked-agenda sessions alongside ordinary talks', () => {
+    const mapped = mapIndicoExportEnvelope(
+      {
+        results: [
+          {
+            title: 'Mixed meeting',
+            startDate: { date: '2026-07-07', time: '09:00:00' },
+            sessions: [
+              {
+                id: 'ordinary-session',
+                title: 'Ordinary talks',
+                startDate: { date: '2026-07-07', time: '09:00:00' },
+                contributions: [
+                  {
+                    id: 'talk-1',
+                    title: 'A real talk',
+                    startDate: { date: '2026-07-07', time: '09:00:00' },
+                  },
+                ],
+              },
+              {
+                id: 'linked-session',
+                title: 'Tuesday meeting',
+                startDate: { date: '2026-07-08', time: '13:00:00' },
+                endDate: { date: '2026-07-08', time: '17:00:00' },
+                room: 'Remote',
+                url: 'https://indico.example.org/event/current-meeting/sessions/42/',
+                session: {
+                  folders: [
+                    {
+                      attachments: [
+                        {
+                          title: 'Agenda',
+                          type: 'link',
+                          link_url:
+                            'https://indico.example.org/event/other-meeting/timetable/',
+                        },
+                      ],
+                    },
+                  ],
+                },
+                contributions: [],
+              },
+              {
+                id: 'blank-session',
+                title: 'Unlinked meeting',
+                startDate: { date: '2026-07-09', time: '10:00:00' },
+                contributions: [],
+              },
+            ],
+          },
+        ],
+      },
+      identity,
+    );
+
+    expect(mapped.talks).toHaveLength(3);
+    expect(
+      mapped.talks.filter((talk) => talk.entryKind === 'linked-agenda'),
+    ).toHaveLength(2);
+    expect(
+      mapped.talks.find((talk) => talk.contributionId === 'linked-session')
+        ?.linkedAgendaUrl,
+    ).toContain('/event/other-meeting/');
+    expect(
+      mapped.talks.find((talk) => talk.contributionId === 'linked-session')
+        ?.contributionUrl,
+    ).toContain('/event/current-meeting/sessions/42/');
+    expect(
+      mapped.talks.find((talk) => talk.contributionId === 'blank-session')
+        ?.linkedAgendaUrl,
+    ).toBe('');
+  });
+
   it('reads PDF attachments from contribution folders', () => {
     const mapped = mapIndicoExportEnvelope(
       {

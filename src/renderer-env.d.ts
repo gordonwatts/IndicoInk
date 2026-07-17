@@ -49,6 +49,7 @@ declare global {
         eventUrl: string,
         apiKey?: string,
       ) => Promise<OpenLibraryEventResult>;
+      resolveLinkedAgendaUrl: (sessionUrl: string) => Promise<string | null>;
       saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
       listIndicoApiKeys: () => Promise<IndicoApiKeySummary[]>;
       deleteIndicoApiKey: (origin: string) => Promise<void>;

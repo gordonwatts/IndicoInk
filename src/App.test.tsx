@@ -120,6 +120,7 @@ describe('App', () => {
           savedAt: Date.now(),
         },
       }),
+      resolveLinkedAgendaUrl: vi.fn().mockResolvedValue(null),
       saveIndicoApiKey: vi.fn().mockResolvedValue(undefined),
       listIndicoApiKeys: vi.fn().mockResolvedValue([]),
       deleteIndicoApiKey: vi.fn().mockResolvedValue(undefined),
@@ -589,7 +590,9 @@ describe('App', () => {
         name: 'API key required to refresh',
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/needs an API key before it can be refreshed/)).toBeTruthy();
+    expect(
+      screen.getByText(/needs an API key before it can be refreshed/),
+    ).toBeTruthy();
 
     await user.type(screen.getByLabelText('API key'), 'replacement-key');
     await user.click(screen.getByRole('button', { name: 'Save key' }));
@@ -1688,5 +1691,125 @@ describe('App', () => {
     expect(window.indicoInk.deleteLibraryEvent).toHaveBeenCalledWith(
       libraryEvent.id,
     );
+  });
+
+  it('opens a linked agenda in IndicoInk using its canonical event URL', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-1',
+      sourceUrl: 'https://indico.example.org/event/indico-1',
+      title: 'IndicoInk Small Event 2026',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    const linkedEvent = {
+      id: 'conference-linked',
+      sourceUrl: 'https://indico.example.org/event/linked-2026',
+      title: 'Linked Event',
+      dates: 'June 13, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const linkedTalk = {
+      id: 'talk-linked',
+      conferenceId: libraryEvent.id,
+      contributionId: 'linked-session',
+      sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+      dayLabel: 'Friday, June 12, 2026',
+      title: 'Linked meeting',
+      speaker: '',
+      sessionTitle: 'Linked meeting',
+      contributionUrl: 'https://indico.example.org/event/indico-1/sessions/42/',
+      timeRangeLabel: '09:00 - 10:00',
+      room: 'Room A',
+      bookmarked: false,
+      materialSummary: 'No slides',
+      materials: [],
+      annotatedSlideCount: 0,
+      entryKind: 'linked-agenda' as const,
+      linkedAgendaUrl: 'https://indico.example.org/event/indico-1/sessions/42/',
+    };
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([libraryEvent])
+      .mockResolvedValue([libraryEvent, linkedEvent]);
+    window.indicoInk.listAgendaTalks = vi
+      .fn()
+      .mockResolvedValueOnce([linkedTalk])
+      .mockResolvedValue([]);
+    window.indicoInk.openLibraryEvent = vi.fn().mockResolvedValue({
+      kind: 'opened',
+      result: {
+        conferenceId: linkedEvent.id,
+        title: linkedEvent.title,
+        talkCount: 0,
+        deckCount: 0,
+        savedAt: Date.now(),
+      },
+    });
+    window.indicoInk.resolveLinkedAgendaUrl = vi
+      .fn()
+      .mockResolvedValue(
+        'https://indico.example.org/event/linked-2026/timetable/',
+      );
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+
+    expect(screen.queryByText('Linked agenda', { exact: true })).toBeNull();
+    for (const label of [
+      'Open URL for Linked meeting',
+      'Copy URL for Linked meeting',
+      'Open Linked meeting in IndicoInk',
+    ]) {
+      const action = screen.getByRole('button', { name: label });
+      expect(action.className).toContain('icon-button');
+      expect(action.className).not.toContain('agenda-talk-card-action-button');
+    }
+
+    await user.click(
+      screen.getByRole('button', { name: 'Open URL for Linked meeting' }),
+    );
+    expect(window.indicoInk.openExternalUrl).toHaveBeenCalledWith(
+      'https://indico.example.org/event/linked-2026/timetable/',
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Copy URL for Linked meeting' }),
+    );
+    await waitFor(() => {
+      expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+        'https://indico.example.org/event/linked-2026/timetable/',
+      );
+    });
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Open Linked meeting in IndicoInk',
+      }),
+    );
+
+    expect(window.indicoInk.openLibraryEvent).toHaveBeenCalledWith(
+      'https://indico.example.org/event/linked-2026',
+    );
+    expect(window.indicoInk.resolveLinkedAgendaUrl).toHaveBeenCalledWith(
+      'https://indico.example.org/event/indico-1/sessions/42/',
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: linkedEvent.title,
+        level: 1,
+      }),
+    ).toBeTruthy();
   });
 });

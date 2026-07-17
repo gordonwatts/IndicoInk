@@ -74,6 +74,8 @@ export const importIndicoEvent = async (
         endsAt: talk.endsAt,
         room: talk.room,
         bookmarked: existingTalk?.bookmarked ?? talk.bookmarked,
+        entryKind: talk.entryKind ?? 'talk',
+        linkedAgendaUrl: talk.linkedAgendaUrl ?? '',
         createdAt: now,
         updatedAt: now,
       });

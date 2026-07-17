@@ -16,6 +16,8 @@ export type AgendaTalkSummary = {
   annotatedSlideCount: number;
   upstreamStatus?: 'present' | 'changed' | 'missing';
   upstreamSummary?: string;
+  entryKind?: 'talk' | 'linked-agenda';
+  linkedAgendaUrl?: string;
 };
 
 export type AgendaTalkMaterialSummary = {

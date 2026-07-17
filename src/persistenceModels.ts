@@ -48,6 +48,8 @@ export type Talk = {
   createdAt: number;
   updatedAt: number;
   upstreamStatus?: 'present' | 'changed' | 'missing';
+  entryKind?: 'talk' | 'linked-agenda';
+  linkedAgendaUrl?: string;
 };
 
 export type Deck = {

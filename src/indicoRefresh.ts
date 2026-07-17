@@ -55,7 +55,18 @@ const getDeckAnnotationCount = async (
       async (slide) => (await store.listAnnotationsBySlide(slide.id)).length,
     ),
   );
+
   return annotationCounts.reduce((total, count) => total + count, 0);
+};
+
+const normalizeUrlForComparison = (value: string) => {
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return value.trim().replace(/\/+$/, '');
+  }
 };
 
 const buildConflict = (
@@ -100,6 +111,23 @@ export const fetchMappedIndicoEvent = async (
   );
 
   return { identity, mapped };
+};
+
+export const resolveLinkedAgendaUrl = async (
+  eventUrl: string,
+  sessionUrl: string,
+  options: FetchIndicoJsonOptions = {},
+) => {
+  const { mapped } = await fetchMappedIndicoEvent(eventUrl, options);
+  const normalizedSessionUrl = normalizeUrlForComparison(sessionUrl);
+  return (
+    mapped.talks.find(
+      (talk) =>
+        talk.entryKind === 'linked-agenda' &&
+        normalizeUrlForComparison(talk.contributionUrl) ===
+          normalizedSessionUrl,
+    )?.linkedAgendaUrl ?? null
+  );
 };
 
 export const refreshIndicoEvent = async (
@@ -151,6 +179,8 @@ export const refreshIndicoEvent = async (
       conferenceId,
       contributionId: currentTalk.contributionId,
       contributionUrl: incomingTalk.contributionUrl,
+      entryKind: incomingTalk.entryKind ?? 'talk',
+      linkedAgendaUrl: incomingTalk.linkedAgendaUrl ?? '',
       title: incomingTalk.title,
       speaker: incomingTalk.speaker,
       sessionTitle: incomingTalk.sessionTitle,
@@ -233,6 +263,8 @@ export const refreshIndicoEvent = async (
             conferenceId,
             contributionId: currentTalk.contributionId,
             contributionUrl: incomingTalk.contributionUrl,
+            entryKind: incomingTalk.entryKind ?? 'talk',
+            linkedAgendaUrl: incomingTalk.linkedAgendaUrl ?? '',
             title: incomingTalk.title,
             speaker: incomingTalk.speaker,
             sessionTitle: incomingTalk.sessionTitle,
@@ -262,6 +294,8 @@ export const refreshIndicoEvent = async (
         createdAt: currentTalk?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
         upstreamStatus,
+        entryKind: incomingTalk.entryKind ?? 'talk',
+        linkedAgendaUrl: incomingTalk.linkedAgendaUrl ?? '',
       });
 
       const currentDecks = await getConferenceDecksByTalk(

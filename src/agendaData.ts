@@ -102,6 +102,8 @@ export const buildAgendaTalkSummaries = async (
         room: talk.room,
         bookmarked: talk.bookmarked,
         ...(talk.upstreamStatus ? { upstreamStatus: talk.upstreamStatus } : {}),
+        entryKind: talk.entryKind ?? 'talk',
+        linkedAgendaUrl: talk.linkedAgendaUrl ?? '',
         ...(talk.upstreamStatus
           ? {
               upstreamSummary:
