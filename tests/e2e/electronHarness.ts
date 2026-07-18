@@ -358,8 +358,10 @@ const launchBinaryHarness = async ({
     userDataDir,
     child,
     close: async () => {
+      await page.evaluate(() => window.close()).catch(() => {});
+      await Promise.race([exitPromise, wait(5_000)]);
       await browser.close().catch(() => {});
-      if (!child.killed) {
+      if (!child.killed && exitCode === null) {
         child.kill();
       }
       await exitPromise.catch(() => {});

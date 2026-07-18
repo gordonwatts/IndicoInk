@@ -639,32 +639,32 @@ export function PdfPreview({
   }, [scrollContainerRef]);
 
   React.useEffect(() => {
-    const viewportElement =
-      scrollContainerRef?.current ?? stageViewportRef.current;
-    if (!viewportElement) {
+    const stageElement = stageViewportRef.current;
+    if (!stageElement) {
       return;
     }
 
     const updateWidth = () => {
-      const style = window.getComputedStyle(viewportElement);
+      const style = window.getComputedStyle(stageElement);
       const horizontalPadding =
         Number.parseFloat(style.paddingLeft) +
         Number.parseFloat(style.paddingRight);
       const nextWidth = Math.max(
         0,
-        Math.floor(viewportElement.clientWidth - horizontalPadding),
+        Math.floor(stageElement.clientWidth - horizontalPadding),
       );
       setPreviewViewportWidth((currentWidth) => {
         if (currentWidth !== nextWidth && currentWidth > 0) {
           const anchor = captureViewportAnchor();
+          const scrollContainer = scrollContainerRef?.current ?? stageElement;
           pendingViewportRestoreRef.current =
             nextWidth > currentWidth && nextWidth >= renderedPageWidth
               ? {
                   mode: 'preserve-scroll',
                   pageIndex: Math.max(0, currentSlideNumberRef.current - 1),
                   pageOffsetRatio: 0,
-                  scrollLeft: viewportElement.scrollLeft,
-                  scrollTop: viewportElement.scrollTop,
+                  scrollLeft: scrollContainer.scrollLeft,
+                  scrollTop: scrollContainer.scrollTop,
                 }
               : anchor
                 ? {
@@ -682,7 +682,7 @@ export function PdfPreview({
     const observer = new ResizeObserver(() => {
       updateWidth();
     });
-    observer.observe(viewportElement);
+    observer.observe(stageElement);
 
     return () => {
       observer.disconnect();

@@ -484,6 +484,19 @@ input:focus-visible {
 
 .page-stack--slides {
   gap: 6px;
+  min-width: 0;
+}
+
+.page-stack--slides .pdf-preview,
+.page-stack--slides .pdf-preview-stage,
+.page-stack--slides .pdf-preview-pages {
+  min-width: 0;
+}
+
+.page-stack--slides .pdf-preview-stage {
+  width: calc(100% + (2 * var(--page-surface-inline-padding)));
+  max-width: none;
+  margin-inline: calc(-1 * var(--page-surface-inline-padding));
 }
 
 .slides-view-controls {
