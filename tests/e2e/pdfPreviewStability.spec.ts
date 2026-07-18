@@ -300,6 +300,37 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       return state.__pdfPreviewVisibleIncompleteFrames ?? 0;
     });
 
+    await harness.page.waitForFunction(() => {
+      const stage = document.querySelector<HTMLElement>('.pdf-preview-stage');
+      const firstCanvas = document.querySelector<HTMLCanvasElement>(
+        '.pdf-preview-canvas',
+      );
+      if (!stage || !firstCanvas) {
+        return false;
+      }
+
+      const sample = JSON.stringify({
+        stageClientWidth: stage.clientWidth,
+        stageClientHeight: stage.clientHeight,
+        stageScrollHeight: stage.scrollHeight,
+        firstCanvasWidth: firstCanvas.style.width,
+        firstCanvasHeight: firstCanvas.style.height,
+      });
+      const state = window as typeof window & {
+        __pdfPreviewStableSample?: string;
+        __pdfPreviewStableSampleCount?: number;
+      };
+      if (state.__pdfPreviewStableSample === sample) {
+        state.__pdfPreviewStableSampleCount =
+          (state.__pdfPreviewStableSampleCount ?? 0) + 1;
+      } else {
+        state.__pdfPreviewStableSample = sample;
+        state.__pdfPreviewStableSampleCount = 1;
+      }
+
+      return (state.__pdfPreviewStableSampleCount ?? 0) >= 3;
+    });
+
     const samples: Array<{
       stageClientWidth: number;
       stageClientHeight: number;
