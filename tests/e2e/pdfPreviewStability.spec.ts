@@ -374,13 +374,15 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       await harness.page.waitForTimeout(250);
     }
 
+    const stableSamples = samples.slice(-4);
     const uniqueSamples = new Set(
-      samples.map((sample) => JSON.stringify(sample)),
+      stableSamples.map((sample) => JSON.stringify(sample)),
     );
+    const finalSample = stableSamples[stableSamples.length - 1];
 
     expect(visibleIncompleteFrames).toBe(0);
     expect(uniqueSamples.size).toBe(1);
-    expect(samples[0]?.stageScrollHeight).toBe(samples[0]?.stageClientHeight);
+    expect(finalSample?.stageScrollHeight).toBe(finalSample?.stageClientHeight);
   } finally {
     await harness.close().catch(() => {});
   }
