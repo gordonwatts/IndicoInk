@@ -312,7 +312,7 @@ input:focus-visible {
 }
 
 .app-frame.is-compact-nav {
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: 66px minmax(0, 1fr);
 }
 
 .app-frame.is-compact-nav .nav-rail {
@@ -328,6 +328,7 @@ input:focus-visible {
 }
 
 .app-frame.is-compact-nav .shell-button {
+  width: 44px;
   justify-content: center;
   padding: 0;
 }
@@ -979,7 +980,7 @@ input:focus-visible {
 }
 
 .pdf-preview-thickness-control input {
-  width: 54px;
+  width: 76px;
   accent-color: var(--accent);
 }
 

@@ -130,20 +130,18 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     expect(initialLayout.sheetLeftInset).toBeLessThanOrEqual(8);
     expect(initialLayout.sheetRightInset).toBeLessThanOrEqual(8);
 
-    const thicknessControlMetrics = await harness.page.evaluate(() => {
-      const icon = document.querySelector<HTMLElement>(
-        '.pdf-preview-toolbar .icon-button',
-      );
-      const input = document.querySelector<HTMLInputElement>(
-        '.pdf-preview-thickness-control input',
+    const compactNavigationMetrics = await harness.page.evaluate(() => {
+      const rail = document.querySelector<HTMLElement>('.nav-rail');
+      const button = document.querySelector<HTMLElement>(
+        '.nav-rail .shell-button',
       );
       return {
-        iconWidth: icon?.getBoundingClientRect().width ?? 0,
-        inputWidth: input?.getBoundingClientRect().width ?? 0,
+        railWidth: rail?.getBoundingClientRect().width ?? 0,
+        buttonWidth: button?.getBoundingClientRect().width ?? 0,
       };
     });
-    expect(thicknessControlMetrics.inputWidth).toBeCloseTo(
-      thicknessControlMetrics.iconWidth * 1.5,
+    expect(compactNavigationMetrics.railWidth).toBeCloseTo(
+      compactNavigationMetrics.buttonWidth * 1.5,
       0,
     );
 
