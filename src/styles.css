@@ -320,7 +320,9 @@ input:focus-visible {
 }
 
 .app-frame.is-compact-nav .nav-rail-brand {
+  width: 100%;
   justify-content: center;
+  padding-inline: 0;
 }
 
 .app-frame.is-compact-nav .brand-copy {

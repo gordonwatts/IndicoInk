@@ -135,15 +135,24 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       const button = document.querySelector<HTMLElement>(
         '.nav-rail .shell-button',
       );
+      const brand = document.querySelector<HTMLElement>('.brand-mark');
+      const railBox = rail?.getBoundingClientRect();
+      const brandBox = brand?.getBoundingClientRect();
       return {
-        railWidth: rail?.getBoundingClientRect().width ?? 0,
+        railWidth: railBox?.width ?? 0,
         buttonWidth: button?.getBoundingClientRect().width ?? 0,
+        brandCenterOffset: Math.abs(
+          (railBox?.left ?? 0) +
+            (railBox?.width ?? 0) / 2 -
+            ((brandBox?.left ?? 0) + (brandBox?.width ?? 0) / 2),
+        ),
       };
     });
     expect(compactNavigationMetrics.railWidth).toBeCloseTo(
       compactNavigationMetrics.buttonWidth * 1.5,
       0,
     );
+    expect(compactNavigationMetrics.brandCenterOffset).toBeLessThanOrEqual(1);
 
     await harness.page.waitForFunction(() => {
       const surface = document.querySelector<HTMLElement>('.page-surface');
