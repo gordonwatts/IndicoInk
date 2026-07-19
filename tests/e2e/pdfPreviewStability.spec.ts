@@ -43,6 +43,7 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
   const harness = await launchElectronHarness({ userDataDir });
 
   try {
+    await harness.page.setViewportSize({ width: 1600, height: 900 });
     await harness.page
       .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
       .click();
