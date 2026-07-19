@@ -312,7 +312,7 @@ input:focus-visible {
 }
 
 .app-frame.is-compact-nav {
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: 66px minmax(0, 1fr);
 }
 
 .app-frame.is-compact-nav .nav-rail {
@@ -320,7 +320,9 @@ input:focus-visible {
 }
 
 .app-frame.is-compact-nav .nav-rail-brand {
+  width: 100%;
   justify-content: center;
+  padding-inline: 0;
 }
 
 .app-frame.is-compact-nav .brand-copy {
@@ -328,6 +330,7 @@ input:focus-visible {
 }
 
 .app-frame.is-compact-nav .shell-button {
+  width: 44px;
   justify-content: center;
   padding: 0;
 }
@@ -484,6 +487,19 @@ input:focus-visible {
 
 .page-stack--slides {
   gap: 6px;
+  min-width: 0;
+}
+
+.page-stack--slides .pdf-preview,
+.page-stack--slides .pdf-preview-stage,
+.page-stack--slides .pdf-preview-pages {
+  min-width: 0;
+}
+
+.page-stack--slides .pdf-preview-stage {
+  width: calc(100% + (2 * var(--page-surface-inline-padding)));
+  max-width: none;
+  margin-inline: calc(-1 * var(--page-surface-inline-padding));
 }
 
 .slides-view-controls {

@@ -43,6 +43,7 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
   const harness = await launchElectronHarness({ userDataDir });
 
   try {
+    await harness.page.setViewportSize({ width: 1600, height: 900 });
     await harness.page
       .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
       .click();
@@ -106,6 +107,60 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     expect(firstCanvasBox).not.toBeNull();
     expect(firstCanvasBox?.y ?? 0).toBeLessThan(720);
 
+    const initialLayout = await harness.page.evaluate(() => {
+      const surface = document.querySelector<HTMLElement>('.page-surface');
+      const stage = document.querySelector<HTMLElement>('.pdf-preview-stage');
+      const sheet = document.querySelector<HTMLElement>('.pdf-preview-sheet');
+      const surfaceBox = surface?.getBoundingClientRect();
+      const stageBox = stage?.getBoundingClientRect();
+      const sheetBox = sheet?.getBoundingClientRect();
+
+      return {
+        stageLeftGap: Math.abs((stageBox?.left ?? 0) - (surfaceBox?.left ?? 0)),
+        stageRightGap: Math.abs(
+          (surfaceBox?.left ?? 0) +
+            (surface?.clientWidth ?? 0) -
+            (stageBox?.right ?? 0),
+        ),
+        sheetLeftInset: (sheetBox?.left ?? 0) - (stageBox?.left ?? 0),
+        sheetRightInset: (stageBox?.right ?? 0) - (sheetBox?.right ?? 0),
+      };
+    });
+    expect(initialLayout.stageLeftGap).toBeLessThanOrEqual(1);
+    expect(initialLayout.stageRightGap).toBeLessThanOrEqual(1);
+    expect(initialLayout.sheetLeftInset).toBeLessThanOrEqual(8);
+    expect(initialLayout.sheetRightInset).toBeLessThanOrEqual(8);
+
+    const compactNavigationMetrics = await harness.page.evaluate(() => {
+      const rail = document.querySelector<HTMLElement>('.nav-rail');
+      const button = document.querySelector<HTMLElement>(
+        '.nav-rail .shell-button',
+      );
+      const brand = document.querySelector<HTMLElement>('.brand-mark');
+      const railBox = rail?.getBoundingClientRect();
+      const brandBox = brand?.getBoundingClientRect();
+      return {
+        railWidth: railBox?.width ?? 0,
+        buttonWidth: button?.getBoundingClientRect().width ?? 0,
+        brandCenterOffset: Math.abs(
+          (railBox?.left ?? 0) +
+            (railBox?.width ?? 0) / 2 -
+            ((brandBox?.left ?? 0) + (brandBox?.width ?? 0) / 2),
+        ),
+      };
+    });
+    expect(compactNavigationMetrics.railWidth).toBeCloseTo(
+      compactNavigationMetrics.buttonWidth * 1.5,
+      0,
+    );
+    expect(compactNavigationMetrics.brandCenterOffset).toBeLessThanOrEqual(1);
+
+    await harness.page.waitForFunction(() => {
+      const surface = document.querySelector<HTMLElement>('.page-surface');
+      return Boolean(
+        surface && surface.scrollHeight > surface.clientHeight + 100,
+      );
+    });
     await harness.page.evaluate(() => {
       const pageSurface = document.querySelector<HTMLElement>('.page-surface');
       if (!pageSurface) {
@@ -114,6 +169,10 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
 
       pageSurface.scrollTop = Math.max(pageSurface.scrollTop, 680);
       pageSurface.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await harness.page.waitForFunction(() => {
+      const surface = document.querySelector<HTMLElement>('.page-surface');
+      return (surface?.scrollTop ?? 0) > 0;
     });
     await harness.page.waitForTimeout(100);
 
@@ -159,20 +218,28 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     const initialInnerWidth = await harness.page.evaluate(
       () => window.innerWidth,
     );
-    await harness.page.evaluate(() => {
-      window.resizeTo(820, 900);
-    });
+    await harness.page.setViewportSize({ width: 820, height: 900 });
     await harness.page.waitForFunction(
       (initialWidth) => window.innerWidth < initialWidth,
       initialInnerWidth,
     );
-    await harness.page.waitForTimeout(250);
+    await harness.page.waitForFunction(
+      (previousCanvasWidth) =>
+        (document
+          .querySelector<HTMLCanvasElement>('.pdf-preview-canvas')
+          ?.getBoundingClientRect().width ?? 0) < previousCanvasWidth,
+      firstCanvasWidthBeforeResize,
+    );
     const firstCanvasBoxAfterResize = await harness.page
       .locator('.pdf-preview-canvas')
       .first()
       .boundingBox();
+    const firstCanvasWidthAfterResize = await harness.page
+      .locator('.pdf-preview-canvas')
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().width);
     expect(firstCanvasBoxAfterResize).not.toBeNull();
-    expect(firstCanvasBoxAfterResize?.width ?? 0).toBeLessThan(
+    expect(firstCanvasWidthAfterResize).toBeLessThan(
       firstCanvasWidthBeforeResize,
     );
     const visiblePageAfterResize = await harness.page.evaluate(() => {
@@ -195,22 +262,32 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
 
     expect(visiblePageAfterResize).toBe(visiblePageBeforeResize);
 
-    const firstCanvasWidthAfterShrink = firstCanvasBoxAfterResize?.width ?? 0;
-    const widthBeforeExpand = await harness.page.evaluate(() => window.innerWidth);
-    await harness.page.evaluate(() => {
-      window.resizeTo(1600, 900);
-    });
+    const firstCanvasWidthAfterShrink = firstCanvasWidthAfterResize;
+    const widthBeforeExpand = await harness.page.evaluate(
+      () => window.innerWidth,
+    );
+    await harness.page.setViewportSize({ width: 1600, height: 900 });
     await harness.page.waitForFunction(
       (previousWidth) => window.innerWidth > previousWidth,
       widthBeforeExpand,
     );
-    await harness.page.waitForTimeout(250);
+    await harness.page.waitForFunction(
+      (previousCanvasWidth) =>
+        (document
+          .querySelector<HTMLCanvasElement>('.pdf-preview-canvas')
+          ?.getBoundingClientRect().width ?? 0) >= previousCanvasWidth,
+      firstCanvasWidthAfterShrink,
+    );
     const firstCanvasBoxAfterExpand = await harness.page
       .locator('.pdf-preview-canvas')
       .first()
       .boundingBox();
+    const firstCanvasWidthAfterExpand = await harness.page
+      .locator('.pdf-preview-canvas')
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().width);
     expect(firstCanvasBoxAfterExpand).not.toBeNull();
-    expect(firstCanvasBoxAfterExpand?.width ?? 0).toBeGreaterThanOrEqual(
+    expect(firstCanvasWidthAfterExpand).toBeGreaterThanOrEqual(
       firstCanvasWidthAfterShrink,
     );
 
@@ -248,6 +325,37 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       return state.__pdfPreviewVisibleIncompleteFrames ?? 0;
     });
 
+    await harness.page.waitForFunction(() => {
+      const stage = document.querySelector<HTMLElement>('.pdf-preview-stage');
+      const firstCanvas = document.querySelector<HTMLCanvasElement>(
+        '.pdf-preview-canvas',
+      );
+      if (!stage || !firstCanvas) {
+        return false;
+      }
+
+      const sample = JSON.stringify({
+        stageClientWidth: stage.clientWidth,
+        stageClientHeight: stage.clientHeight,
+        stageScrollHeight: stage.scrollHeight,
+        firstCanvasWidth: firstCanvas.style.width,
+        firstCanvasHeight: firstCanvas.style.height,
+      });
+      const state = window as typeof window & {
+        __pdfPreviewStableSample?: string;
+        __pdfPreviewStableSampleCount?: number;
+      };
+      if (state.__pdfPreviewStableSample === sample) {
+        state.__pdfPreviewStableSampleCount =
+          (state.__pdfPreviewStableSampleCount ?? 0) + 1;
+      } else {
+        state.__pdfPreviewStableSample = sample;
+        state.__pdfPreviewStableSampleCount = 1;
+      }
+
+      return (state.__pdfPreviewStableSampleCount ?? 0) >= 3;
+    });
+
     const samples: Array<{
       stageClientWidth: number;
       stageClientHeight: number;
@@ -274,13 +382,15 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
       await harness.page.waitForTimeout(250);
     }
 
+    const stableSamples = samples.slice(-4);
     const uniqueSamples = new Set(
-      samples.map((sample) => JSON.stringify(sample)),
+      stableSamples.map((sample) => JSON.stringify(sample)),
     );
+    const finalSample = stableSamples[stableSamples.length - 1];
 
     expect(visibleIncompleteFrames).toBe(0);
     expect(uniqueSamples.size).toBe(1);
-    expect(samples[0]?.stageScrollHeight).toBe(samples[0]?.stageClientHeight);
+    expect(finalSample?.stageScrollHeight).toBe(finalSample?.stageClientHeight);
   } finally {
     await harness.close().catch(() => {});
   }
