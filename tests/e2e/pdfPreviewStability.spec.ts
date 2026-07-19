@@ -130,6 +130,23 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     expect(initialLayout.sheetLeftInset).toBeLessThanOrEqual(8);
     expect(initialLayout.sheetRightInset).toBeLessThanOrEqual(8);
 
+    const thicknessControlMetrics = await harness.page.evaluate(() => {
+      const icon = document.querySelector<HTMLElement>(
+        '.pdf-preview-toolbar .icon-button',
+      );
+      const input = document.querySelector<HTMLInputElement>(
+        '.pdf-preview-thickness-control input',
+      );
+      return {
+        iconWidth: icon?.getBoundingClientRect().width ?? 0,
+        inputWidth: input?.getBoundingClientRect().width ?? 0,
+      };
+    });
+    expect(thicknessControlMetrics.inputWidth).toBeCloseTo(
+      thicknessControlMetrics.iconWidth * 1.5,
+      0,
+    );
+
     await harness.page.waitForFunction(() => {
       const surface = document.querySelector<HTMLElement>('.page-surface');
       return Boolean(

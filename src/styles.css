@@ -979,7 +979,7 @@ input:focus-visible {
 }
 
 .pdf-preview-thickness-control input {
-  width: 76px;
+  width: 54px;
   accent-color: var(--accent);
 }
 
