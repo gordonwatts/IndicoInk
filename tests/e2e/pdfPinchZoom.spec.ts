@@ -22,28 +22,34 @@ const dispatchTouchPointer = async (
   clientX: number,
   clientY: number,
   isPrimary: boolean,
+  timeStamp?: number,
 ) => {
   await page
     .locator('.pdf-preview-sheet')
     .first()
     .evaluate(
       (element, event) => {
-        element.dispatchEvent(
-          new PointerEvent(event.type, {
-            bubbles: true,
-            cancelable: true,
-            pointerId: event.pointerId,
-            pointerType: 'touch',
-            isPrimary: event.isPrimary,
-            button: event.type === 'pointerup' ? 0 : 0,
-            buttons: event.type === 'pointerup' ? 0 : 1,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            pressure: event.type === 'pointerup' ? 0 : 0.5,
-          }),
-        );
+        const pointerEvent = new PointerEvent(event.type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: event.pointerId,
+          pointerType: 'touch',
+          isPrimary: event.isPrimary,
+          button: event.type === 'pointerup' ? 0 : 0,
+          buttons: event.type === 'pointerup' ? 0 : 1,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          pressure: event.type === 'pointerup' ? 0 : 0.5,
+        });
+        if (event.timeStamp !== undefined) {
+          Object.defineProperty(pointerEvent, 'timeStamp', {
+            configurable: true,
+            value: event.timeStamp,
+          });
+        }
+        element.dispatchEvent(pointerEvent);
       },
-      { type, pointerId, clientX, clientY, isPrimary },
+      { type, pointerId, clientX, clientY, isPrimary, timeStamp },
     );
 };
 
@@ -379,6 +385,104 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
           .evaluate((element) => getComputedStyle(element).transform),
       )
       .toBe('none');
+  } finally {
+    await harness.close().catch(() => {});
+  }
+});
+
+test('a quick touch pan continues moving after release', async () => {
+  const { userDataDir } = await prepareSmallFixtureTalk();
+  const harness = await launchElectronHarness({ userDataDir });
+
+  try {
+    await harness.page
+      .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
+      .click();
+    await harness.page
+      .getByRole('button', {
+        name: 'Open talk for Designing a calm note-taking workflow',
+      })
+      .click();
+    await expect(
+      harness.page.locator('.pdf-preview-sheet').first(),
+    ).toBeVisible();
+    await expect(
+      harness.page.locator('.pdf-preview-pages.is-rendering'),
+    ).toHaveCount(0);
+
+    await harness.page.evaluate(() => {
+      const prototype = HTMLElement.prototype as HTMLElement & {
+        setPointerCapture?: (pointerId: number) => void;
+        hasPointerCapture?: (pointerId: number) => boolean;
+        releasePointerCapture?: (pointerId: number) => void;
+      };
+      prototype.setPointerCapture = () => {};
+      prototype.hasPointerCapture = () => false;
+      prototype.releasePointerCapture = () => {};
+    });
+
+    const sheet = harness.page.locator('.pdf-preview-sheet').first();
+    const box = await sheet.boundingBox();
+    if (!box) {
+      throw new Error('The PDF sheet was not visible for touch testing.');
+    }
+    const x = box.x + box.width / 2;
+    const startY = box.y + Math.min(240, box.height * 0.7);
+    const initialScrollTop = await harness.page
+      .locator('.page-surface')
+      .evaluate((element) => element.scrollTop);
+
+    await dispatchTouchPointer(
+      harness.page,
+      'pointerdown',
+      301,
+      x,
+      startY,
+      true,
+      1,
+    );
+    await dispatchTouchPointer(
+      harness.page,
+      'pointermove',
+      301,
+      x,
+      startY - 80,
+      true,
+      40,
+    );
+    await dispatchTouchPointer(
+      harness.page,
+      'pointermove',
+      301,
+      x,
+      startY - 180,
+      true,
+      80,
+    );
+    await dispatchTouchPointer(
+      harness.page,
+      'pointerup',
+      301,
+      x,
+      startY - 180,
+      true,
+      90,
+    );
+
+    const immediateScrollTop = await harness.page
+      .locator('.page-surface')
+      .evaluate((element) => element.scrollTop);
+    expect(immediateScrollTop).toBeGreaterThan(initialScrollTop);
+    await expect
+      .poll(
+        () =>
+          harness.page
+            .locator('.page-surface')
+            .evaluate((element) => element.scrollTop),
+        { timeout: 2_000 },
+      )
+      .toBeGreaterThan(immediateScrollTop + 5);
+    await harness.page.waitForTimeout(1_200);
   } finally {
     await harness.close().catch(() => {});
   }

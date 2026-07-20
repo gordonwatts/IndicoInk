@@ -21,6 +21,12 @@ import {
   type PdfZoomPoint,
 } from './pdfZoom';
 import {
+  advanceTouchMomentum,
+  getTouchPanVelocity,
+  type TouchMomentumVelocity,
+  type TouchPanSample,
+} from './touchMomentum';
+import {
   toNormalizedPagePoint,
   type NormalizedPagePoint,
   type PageSize,
@@ -504,6 +510,8 @@ export function PdfPreview({
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
   const touchPointersRef = React.useRef<Map<number, PdfZoomPoint>>(new Map());
+  const touchPanSamplesRef = React.useRef<TouchPanSample[]>([]);
+  const touchMomentumFrameRef = React.useRef<number | null>(null);
   const pinchGestureRef = React.useRef<PinchGesture | null>(null);
   const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>(
     [],
@@ -1347,8 +1355,76 @@ export function PdfPreview({
     [getDefaultZoomMidpoint, setZoomAtPoint],
   );
 
+  const cancelTouchMomentum = React.useCallback(() => {
+    if (touchMomentumFrameRef.current !== null) {
+      window.cancelAnimationFrame(touchMomentumFrameRef.current);
+      touchMomentumFrameRef.current = null;
+    }
+  }, []);
+
+  const startTouchMomentum = React.useCallback(
+    (initialVelocity: TouchMomentumVelocity) => {
+      cancelTouchMomentum();
+      if (
+        Math.abs(initialVelocity.x) < 0.01 &&
+        Math.abs(initialVelocity.y) < 0.01
+      ) {
+        return;
+      }
+
+      let position = { x: 0, y: 0 };
+      const scrollContainer = getScrollViewportElement(scrollContainerRef);
+      if (!scrollContainer) {
+        return;
+      }
+      position = {
+        x: scrollContainer.scrollLeft,
+        y: scrollContainer.scrollTop,
+      };
+      let velocity = initialVelocity;
+      let lastTimestamp: number | null = null;
+
+      const animate = (timestamp: number) => {
+        const currentScrollContainer =
+          getScrollViewportElement(scrollContainerRef);
+        if (!currentScrollContainer) {
+          touchMomentumFrameRef.current = null;
+          return;
+        }
+
+        const elapsedMs =
+          lastTimestamp === null
+            ? 16
+            : Math.min(50, Math.max(1, timestamp - lastTimestamp));
+        lastTimestamp = timestamp;
+        const step = advanceTouchMomentum(position, velocity, elapsedMs, {
+          maxX:
+            currentScrollContainer.scrollWidth -
+            currentScrollContainer.clientWidth,
+          maxY:
+            currentScrollContainer.scrollHeight -
+            currentScrollContainer.clientHeight,
+        });
+        position = step.position;
+        velocity = step.velocity;
+        currentScrollContainer.scrollLeft = position.x;
+        currentScrollContainer.scrollTop = position.y;
+
+        if (step.isActive) {
+          touchMomentumFrameRef.current = window.requestAnimationFrame(animate);
+        } else {
+          touchMomentumFrameRef.current = null;
+        }
+      };
+
+      touchMomentumFrameRef.current = window.requestAnimationFrame(animate);
+    },
+    [cancelTouchMomentum, scrollContainerRef],
+  );
+
   const beginPinchGesture = React.useCallback(
     (first: PdfZoomPoint, second: PdfZoomPoint) => {
+      cancelTouchMomentum();
       const initialDistance = getPinchDistance(first, second);
       if (initialDistance <= 0) {
         return;
@@ -1400,7 +1476,7 @@ export function PdfPreview({
       }
       activeInkActionRef.current = null;
     },
-    [captureFocalViewportAnchor],
+    [cancelTouchMomentum, captureFocalViewportAnchor],
   );
 
   const updatePinchGesture = React.useCallback(() => {
@@ -1498,22 +1574,34 @@ export function PdfPreview({
       startScrollLeft: scrollContainer.scrollLeft,
       startScrollTop: scrollContainer.scrollTop,
     };
+    touchPanSamplesRef.current = [
+      {
+        x: point.x,
+        y: point.y,
+        time: performance.now(),
+      },
+    ];
   }, [scrollContainerRef]);
 
-  const handleJumpToSlideNumber = React.useCallback((pageNumber: number) => {
-    if (!Number.isInteger(pageNumber) || pageNumber < 1) {
-      return;
-    }
+  const handleJumpToSlideNumber = React.useCallback(
+    (pageNumber: number) => {
+      if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+        return;
+      }
 
-    const pageIndex = pageNumber - 1;
-    const target = pageFigureRefs.current[pageIndex];
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+      cancelTouchMomentum();
 
-    currentSlideNumberRef.current = pageNumber;
-    setCurrentSlideNumber(pageNumber);
-  }, []);
+      const pageIndex = pageNumber - 1;
+      const target = pageFigureRefs.current[pageIndex];
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      currentSlideNumberRef.current = pageNumber;
+      setCurrentSlideNumber(pageNumber);
+    },
+    [cancelTouchMomentum],
+  );
 
   const handlePreviousSlide = React.useCallback(() => {
     const previousSlide = Math.max(1, currentSlideNumberRef.current - 1);
@@ -1541,6 +1629,7 @@ export function PdfPreview({
   }, [currentPageCount, handleJumpToSlideNumber]);
 
   const handleGoHome = React.useCallback(() => {
+    cancelTouchMomentum();
     pendingViewportRestoreRef.current = null;
     pendingLayoutRestoreRef.current = null;
     const scrollContainer = getScrollViewportElement(scrollContainerRef);
@@ -1554,7 +1643,7 @@ export function PdfPreview({
 
     currentSlideNumberRef.current = 1;
     setCurrentSlideNumber(1);
-  }, [scrollContainerRef]);
+  }, [cancelTouchMomentum, scrollContainerRef]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1745,8 +1834,9 @@ export function PdfPreview({
         window.clearTimeout(persistenceSaveTimerRef.current);
         persistenceSaveTimerRef.current = null;
       }
+      cancelTouchMomentum();
     },
-    [],
+    [cancelTouchMomentum],
   );
 
   const handlePagePointerEvent = React.useCallback(
@@ -1793,6 +1883,16 @@ export function PdfPreview({
             : undefined;
 
         const isTouchPointer = event.pointerType === 'touch';
+        if (isTouchPointer && eventKind === 'pointerdown') {
+          cancelTouchMomentum();
+          touchPanSamplesRef.current = [
+            {
+              x: event.clientX,
+              y: event.clientY,
+              time: event.timeStamp > 0 ? event.timeStamp : performance.now(),
+            },
+          ];
+        }
         if (
           isTouchPointer &&
           (eventKind === 'pointerdown' || eventKind === 'pointermove')
@@ -2020,6 +2120,14 @@ export function PdfPreview({
               activeInkActionRef.current.startScrollLeft - deltaX;
             scrollContainer.scrollTop =
               activeInkActionRef.current.startScrollTop - deltaY;
+            touchPanSamplesRef.current.push({
+              x: event.clientX,
+              y: event.clientY,
+              time: event.timeStamp > 0 ? event.timeStamp : performance.now(),
+            });
+            if (touchPanSamplesRef.current.length > 8) {
+              touchPanSamplesRef.current.shift();
+            }
             event.preventDefault();
           }
         }
@@ -2074,6 +2182,11 @@ export function PdfPreview({
               activeInkAction.kind === 'text' ||
               activeInkAction.pageIndex === pageIndex)
           ) {
+            if (eventKind === 'pointerup' && activeInkAction.kind === 'pan') {
+              startTouchMomentum(
+                getTouchPanVelocity(touchPanSamplesRef.current),
+              );
+            }
             activeInkActionRef.current = null;
           }
 
@@ -2098,12 +2211,14 @@ export function PdfPreview({
         }
       },
     [
+      cancelTouchMomentum,
       beginPinchGesture,
       commitPinchGesture,
       handlePointerEvent,
       pointerMarker,
       resolvePointerInteraction,
       resumeTouchPan,
+      startTouchMomentum,
       state,
       recordWorkspaceSnapshot,
       selectedPenThickness,
