@@ -11,6 +11,16 @@ import {
   type PointerTool,
 } from './pointerTools';
 import {
+  clampPdfZoom,
+  getFocalScrollPosition,
+  getPinchDistance,
+  getPinchMidpoint,
+  getPinchZoom,
+  PDF_ZOOM_STEP,
+  type PdfZoomFocalAnchor,
+  type PdfZoomPoint,
+} from './pdfZoom';
+import {
   toNormalizedPagePoint,
   type NormalizedPagePoint,
   type PageSize,
@@ -170,6 +180,12 @@ type ActiveInkAction =
       startScrollTop: number;
     }
   | null;
+
+type PinchGesture = {
+  initialDistance: number;
+  initialZoom: number;
+  anchor: PdfZoomFocalAnchor | null;
+};
 
 type MouseMode = 'draw' | 'pan';
 type ManualTool = 'pen' | 'text' | 'eraser';
@@ -484,6 +500,8 @@ export function PdfPreview({
   const stageViewportRef = React.useRef<HTMLDivElement | null>(null);
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
+  const touchPointersRef = React.useRef<Map<number, PdfZoomPoint>>(new Map());
+  const pinchGestureRef = React.useRef<PinchGesture | null>(null);
   const [strokesByPage, setStrokesByPage] = React.useState<Array<InkStroke[]>>(
     [],
   );
@@ -524,6 +542,7 @@ export function PdfPreview({
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
   const textNoteEditorRef = React.useRef<HTMLTextAreaElement | null>(null);
   const persistenceHydratedRef = React.useRef(false);
+  const workspaceSourceKeyRef = React.useRef<string | null>(null);
   const linkPopoverHideTimerRef = React.useRef<number | null>(null);
   const copyTooltipHideTimerRef = React.useRef<number | null>(null);
   const pendingWorkspaceRestoreRef = React.useRef<PdfWorkspaceSnapshot | null>(
@@ -534,16 +553,21 @@ export function PdfPreview({
     scrollTop: number;
     currentSlideNumber: number;
   } | null>(null);
-  const pendingViewportRestoreRef = React.useRef<{
-    mode: 'anchor' | 'preserve-scroll';
-    pageIndex: number;
-    pageOffsetRatio: number;
-    scrollLeft: number;
-    scrollTop: number;
-  } | null>(null);
+  const pendingViewportRestoreRef = React.useRef<
+    | {
+        mode: 'anchor' | 'preserve-scroll';
+        pageIndex: number;
+        pageOffsetRatio: number;
+        scrollLeft: number;
+        scrollTop: number;
+      }
+    | (PdfZoomFocalAnchor & { mode: 'focal' })
+    | null
+  >(null);
   const currentSlideNumberRef = React.useRef(1);
   const pageFigureRefs = React.useRef<Array<HTMLElement | null>>([]);
   const [zoomLevel, setZoomLevel] = React.useState(1);
+  const zoomLevelRef = React.useRef(zoomLevel);
   const [previewViewportWidth, setPreviewViewportWidth] = React.useState(0);
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
@@ -638,6 +662,58 @@ export function PdfPreview({
     };
   }, [scrollContainerRef]);
 
+  const captureFocalViewportAnchor = React.useCallback(
+    (midpoint: PdfZoomPoint): PdfZoomFocalAnchor | null => {
+      const scrollContainer = getScrollViewportElement(scrollContainerRef);
+      if (!scrollContainer) {
+        return null;
+      }
+
+      let closestDistance = Number.POSITIVE_INFINITY;
+      let pageIndex = -1;
+
+      pageFigureRefs.current.forEach((pageFigure, index) => {
+        if (!pageFigure) {
+          return;
+        }
+
+        const pageBox = pageFigure.getBoundingClientRect();
+        const distance =
+          midpoint.y < pageBox.top
+            ? pageBox.top - midpoint.y
+            : midpoint.y > pageBox.bottom
+              ? midpoint.y - pageBox.bottom
+              : 0;
+
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          pageIndex = index;
+        }
+      });
+
+      const anchoredPage =
+        pageIndex >= 0 ? pageFigureRefs.current[pageIndex] : null;
+      if (!anchoredPage) {
+        return null;
+      }
+
+      const pageBox = anchoredPage.getBoundingClientRect();
+      return {
+        pageIndex,
+        pageOffsetXRatio: clamp01(
+          (midpoint.x - pageBox.left) / Math.max(1, pageBox.width),
+        ),
+        pageOffsetYRatio: clamp01(
+          (midpoint.y - pageBox.top) / Math.max(1, pageBox.height),
+        ),
+        midpoint,
+        scrollLeft: scrollContainer.scrollLeft,
+        scrollTop: scrollContainer.scrollTop,
+      };
+    },
+    [scrollContainerRef],
+  );
+
   React.useEffect(() => {
     const stageElement = stageViewportRef.current;
     if (!stageElement) {
@@ -654,7 +730,11 @@ export function PdfPreview({
         Math.floor(stageElement.clientWidth - horizontalPadding),
       );
       setPreviewViewportWidth((currentWidth) => {
-        if (currentWidth !== nextWidth && currentWidth > 0) {
+        if (
+          currentWidth !== nextWidth &&
+          currentWidth > 0 &&
+          pendingViewportRestoreRef.current?.mode !== 'focal'
+        ) {
           const anchor = captureViewportAnchor();
           const scrollContainer = scrollContainerRef?.current ?? stageElement;
           pendingViewportRestoreRef.current =
@@ -952,9 +1032,9 @@ export function PdfPreview({
       0,
     ) || 1;
   const pageDisplayScale =
-    state.kind === 'idle'
+    state.kind === 'idle' || previewViewportWidth <= 0
       ? 1
-      : Math.min(1, previewViewportWidth / renderedPageWidth);
+      : (previewViewportWidth * zoomLevel) / renderedPageWidth;
 
   const closeTextNoteDraft = React.useCallback(() => {
     setTextNoteDraft(null);
@@ -1175,17 +1255,125 @@ export function PdfPreview({
     [textNoteDraft],
   );
 
-  const handleZoomIn = React.useCallback(() => {
-    setZoomLevel((currentZoom) =>
-      Math.min(2.5, Number((currentZoom + 0.15).toFixed(2))),
+  const getDefaultZoomMidpoint = React.useCallback((): PdfZoomPoint => {
+    const scrollContainer = getScrollViewportElement(scrollContainerRef);
+    const viewport = scrollContainer.getBoundingClientRect();
+    return {
+      x: viewport.left + viewport.width / 2,
+      y: viewport.top + viewport.height / 2,
+    };
+  }, [scrollContainerRef]);
+
+  const setZoomAtPoint = React.useCallback(
+    (nextZoom: number, midpoint: PdfZoomPoint) => {
+      const clampedZoom = clampPdfZoom(nextZoom);
+      const currentZoom = zoomLevelRef.current;
+      if (clampedZoom === currentZoom) {
+        return;
+      }
+
+      pendingWorkspaceRestoreRef.current = null;
+      pendingLayoutRestoreRef.current = null;
+      persistenceHydratedRef.current = true;
+      const anchor = captureFocalViewportAnchor(midpoint);
+      if (anchor) {
+        pendingViewportRestoreRef.current = { mode: 'focal', ...anchor };
+      }
+
+      zoomLevelRef.current = clampedZoom;
+      setZoomLevel(clampedZoom);
+    },
+    [captureFocalViewportAnchor],
+  );
+
+  const handleZoomIn = React.useCallback(
+    (midpoint?: PdfZoomPoint) => {
+      setZoomAtPoint(
+        zoomLevelRef.current + PDF_ZOOM_STEP,
+        midpoint ?? getDefaultZoomMidpoint(),
+      );
+    },
+    [getDefaultZoomMidpoint, setZoomAtPoint],
+  );
+
+  const handleZoomOut = React.useCallback(
+    (midpoint?: PdfZoomPoint) => {
+      setZoomAtPoint(
+        zoomLevelRef.current - PDF_ZOOM_STEP,
+        midpoint ?? getDefaultZoomMidpoint(),
+      );
+    },
+    [getDefaultZoomMidpoint, setZoomAtPoint],
+  );
+
+  const beginPinchGesture = React.useCallback(
+    (first: PdfZoomPoint, second: PdfZoomPoint) => {
+      const initialDistance = getPinchDistance(first, second);
+      if (initialDistance <= 0) {
+        return;
+      }
+
+      const midpoint = getPinchMidpoint(first, second);
+      pendingWorkspaceRestoreRef.current = null;
+      pendingLayoutRestoreRef.current = null;
+      persistenceHydratedRef.current = true;
+      pinchGestureRef.current = {
+        initialDistance,
+        initialZoom: zoomLevelRef.current,
+        anchor: captureFocalViewportAnchor(midpoint),
+      };
+      activeInkActionRef.current = null;
+    },
+    [captureFocalViewportAnchor],
+  );
+
+  const updatePinchGesture = React.useCallback(() => {
+    const pinchGesture = pinchGestureRef.current;
+    const pointers = Array.from(touchPointersRef.current.values());
+    const [first, second] = pointers;
+    if (!pinchGesture || !first || !second) {
+      return;
+    }
+
+    const nextZoom = Number(
+      getPinchZoom(
+        pinchGesture.initialZoom,
+        pinchGesture.initialDistance,
+        getPinchDistance(first, second),
+      ).toFixed(2),
     );
+    if (nextZoom === zoomLevelRef.current) {
+      return;
+    }
+
+    if (pinchGesture.anchor) {
+      pendingViewportRestoreRef.current = {
+        mode: 'focal',
+        ...pinchGesture.anchor,
+      };
+    }
+    zoomLevelRef.current = nextZoom;
+    setZoomLevel(nextZoom);
   }, []);
 
-  const handleZoomOut = React.useCallback(() => {
-    setZoomLevel((currentZoom) =>
-      Math.max(0.5, Number((currentZoom - 0.15).toFixed(2))),
-    );
-  }, []);
+  const resumeTouchPan = React.useCallback(() => {
+    const [remainingPointer] = Array.from(touchPointersRef.current.entries());
+    const scrollContainer = getScrollViewportElement(scrollContainerRef);
+    if (!remainingPointer || !scrollContainer) {
+      activeInkActionRef.current = null;
+      return;
+    }
+
+    const [pointerId, point] = remainingPointer;
+    activeInkActionRef.current = {
+      kind: 'pan',
+      pointerId,
+      startClientX: point.x,
+      startClientY: point.y,
+      startScrollLeft: scrollContainer.scrollLeft,
+      startScrollTop: scrollContainer.scrollTop,
+    };
+  }, [scrollContainerRef]);
 
   const handleJumpToSlideNumber = React.useCallback((pageNumber: number) => {
     if (!Number.isInteger(pageNumber) || pageNumber < 1) {
@@ -1228,6 +1416,8 @@ export function PdfPreview({
   }, [currentPageCount, handleJumpToSlideNumber]);
 
   const handleGoHome = React.useCallback(() => {
+    pendingViewportRestoreRef.current = null;
+    pendingLayoutRestoreRef.current = null;
     const scrollContainer = getScrollViewportElement(scrollContainerRef);
     if (scrollContainer) {
       scrollContainer.scrollTo({
@@ -1477,7 +1667,61 @@ export function PdfPreview({
             ? state.pageSizes[pageIndex]
             : undefined;
 
+        const isTouchPointer = event.pointerType === 'touch';
+        if (
+          isTouchPointer &&
+          (eventKind === 'pointerdown' || eventKind === 'pointermove')
+        ) {
+          touchPointersRef.current.set(event.pointerId, {
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }
+
         const resolution = handlePointerEvent(eventKind)(event);
+
+        if (
+          isTouchPointer &&
+          eventKind === 'pointerdown' &&
+          !pinchGestureRef.current &&
+          touchPointersRef.current.size >= 2
+        ) {
+          const [first, second] = Array.from(touchPointersRef.current.values());
+          if (first && second) {
+            beginPinchGesture(first, second);
+            event.preventDefault();
+            return;
+          }
+        }
+
+        if (isTouchPointer && pinchGestureRef.current) {
+          if (eventKind === 'pointermove') {
+            updatePinchGesture();
+            event.preventDefault();
+          }
+
+          if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+            touchPointersRef.current.delete(event.pointerId);
+            pinchGestureRef.current = null;
+            resumeTouchPan();
+            event.preventDefault();
+          }
+
+          if (
+            eventKind === 'pointermove' ||
+            eventKind === 'pointerup' ||
+            eventKind === 'pointercancel'
+          ) {
+            return;
+          }
+        }
+
+        if (
+          isTouchPointer &&
+          (eventKind === 'pointerup' || eventKind === 'pointercancel')
+        ) {
+          touchPointersRef.current.delete(event.pointerId);
+        }
 
         const pagePoint =
           pageSize && pageSize.width > 0 && pageSize.height > 0
@@ -1729,15 +1973,18 @@ export function PdfPreview({
         }
       },
     [
+      beginPinchGesture,
       handlePointerEvent,
       pointerMarker,
       resolvePointerInteraction,
+      resumeTouchPan,
       state,
       recordWorkspaceSnapshot,
       selectedPenThickness,
       textNoteDragState,
       textNoteDraft,
       textNoteResizeState,
+      updatePinchGesture,
       updateStrokePage,
       updateTextNotePage,
       scrollContainerRef,
@@ -1790,6 +2037,7 @@ export function PdfPreview({
       pendingWorkspaceRestoreRef.current = null;
       pendingLayoutRestoreRef.current = null;
       persistenceHydratedRef.current = false;
+      workspaceSourceKeyRef.current = null;
       setPersistenceError(null);
       if (persistenceSaveTimerRef.current !== null) {
         window.clearTimeout(persistenceSaveTimerRef.current);
@@ -1881,6 +2129,13 @@ export function PdfPreview({
 
       const currentScrollContainer =
         getScrollViewportElement(scrollContainerRef);
+      const workspaceSourceKey = workspaceDeckId
+        ? `deck:${workspaceDeckId}`
+        : `pdf:${filePath}`;
+      const shouldHydrateWorkspace =
+        workspaceSourceKeyRef.current !== workspaceSourceKey ||
+        !persistenceHydratedRef.current;
+      workspaceSourceKeyRef.current = workspaceSourceKey;
       if (state.kind === 'ready' || state.kind === 'loading') {
         pendingLayoutRestoreRef.current = {
           scrollLeft: currentScrollContainer.scrollLeft,
@@ -1900,7 +2155,9 @@ export function PdfPreview({
           : createLoadingPreviewState('Loading PDF...'),
       );
       pendingWorkspaceRestoreRef.current = null;
-      persistenceHydratedRef.current = false;
+      if (shouldHydrateWorkspace) {
+        persistenceHydratedRef.current = false;
+      }
       setPersistenceError(null);
       if (persistenceSaveTimerRef.current !== null) {
         window.clearTimeout(persistenceSaveTimerRef.current);
@@ -1928,11 +2185,15 @@ export function PdfPreview({
         const pageCount = document.numPages;
         pageCanvasRefs.current = Array.from({ length: pageCount }, () => null);
         pageFigureRefs.current = Array.from({ length: pageCount }, () => null);
-        setStrokesByPage(createEmptyStrokePages(pageCount));
-        setTextNotesByPage(createEmptyTextNotePages(pageCount));
+        if (shouldHydrateWorkspace) {
+          setStrokesByPage(createEmptyStrokePages(pageCount));
+          setTextNotesByPage(createEmptyTextNotePages(pageCount));
+        }
         const nextLinkHotspotsByPage = createEmptyLinkHotspotPages(pageCount);
-        setUndoStack([]);
-        setRedoStack([]);
+        if (shouldHydrateWorkspace) {
+          setUndoStack([]);
+          setRedoStack([]);
+        }
         setPointerMarker(null);
         setTextNoteDraft(null);
         setTextNoteDragState(null);
@@ -1963,42 +2224,39 @@ export function PdfPreview({
         );
         await waitForNextFrame();
 
-        persistenceHydratedRef.current = false;
-        const savedWorkspace = workspaceDeckId
-          ? await window.indicoInk.loadDeckWorkspaceState(workspaceDeckId)
-          : await window.indicoInk.loadPdfWorkspaceState(filePath);
-        if (cancelled) {
-          return;
-        }
+        if (shouldHydrateWorkspace) {
+          const savedWorkspace = workspaceDeckId
+            ? await window.indicoInk.loadDeckWorkspaceState(workspaceDeckId)
+            : await window.indicoInk.loadPdfWorkspaceState(filePath);
+          if (cancelled) {
+            return;
+          }
 
-        if (savedWorkspace) {
-          setStrokesByPage(
-            savedWorkspace.strokesByPage.length
-              ? savedWorkspace.strokesByPage
-              : createEmptyStrokePages(pageCount),
-          );
-          setTextNotesByPage(
-            savedWorkspace.textNotesByPage?.length
-              ? savedWorkspace.textNotesByPage
-              : createEmptyTextNotePages(pageCount),
-          );
-          setUndoStack(
-            savedWorkspace.undoStack
-              ? cloneWorkspaceHistory(savedWorkspace.undoStack)
-              : [],
-          );
-          setRedoStack(
-            savedWorkspace.redoStack
-              ? cloneWorkspaceHistory(savedWorkspace.redoStack)
-              : [],
-          );
-          pendingWorkspaceRestoreRef.current = savedWorkspace;
-        } else {
-          setStrokesByPage(createEmptyStrokePages(pageCount));
-          setTextNotesByPage(createEmptyTextNotePages(pageCount));
-          setUndoStack([]);
-          setRedoStack([]);
-          pendingWorkspaceRestoreRef.current = null;
+          if (savedWorkspace) {
+            setStrokesByPage(
+              savedWorkspace.strokesByPage.length
+                ? savedWorkspace.strokesByPage
+                : createEmptyStrokePages(pageCount),
+            );
+            setTextNotesByPage(
+              savedWorkspace.textNotesByPage?.length
+                ? savedWorkspace.textNotesByPage
+                : createEmptyTextNotePages(pageCount),
+            );
+            setUndoStack(
+              savedWorkspace.undoStack
+                ? cloneWorkspaceHistory(savedWorkspace.undoStack)
+                : [],
+            );
+            setRedoStack(
+              savedWorkspace.redoStack
+                ? cloneWorkspaceHistory(savedWorkspace.redoStack)
+                : [],
+            );
+            pendingWorkspaceRestoreRef.current = savedWorkspace;
+          } else {
+            pendingWorkspaceRestoreRef.current = null;
+          }
         }
 
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
@@ -2168,6 +2426,10 @@ export function PdfPreview({
       }
 
       const frame = window.requestAnimationFrame(() => {
+        if (pendingLayoutRestoreRef.current !== layoutRestore) {
+          return;
+        }
+
         const scrollContainer = getScrollViewportElement(scrollContainerRef);
         if (scrollContainer) {
           scrollContainer.scrollLeft = layoutRestore.scrollLeft;
@@ -2186,6 +2448,10 @@ export function PdfPreview({
     }
 
     const frame = window.requestAnimationFrame(() => {
+      if (pendingWorkspaceRestoreRef.current !== restore) {
+        return;
+      }
+
       const scrollContainer = getScrollViewportElement(scrollContainerRef);
       if (scrollContainer) {
         scrollContainer.scrollLeft = restore.scrollLeft;
@@ -2194,7 +2460,9 @@ export function PdfPreview({
 
       currentSlideNumberRef.current = restore.currentSlideNumber;
       setCurrentSlideNumber(restore.currentSlideNumber);
-      setZoomLevel(restore.zoom || 1);
+      const restoredZoom = clampPdfZoom(restore.zoom || 1);
+      zoomLevelRef.current = restoredZoom;
+      setZoomLevel(restoredZoom);
       pendingWorkspaceRestoreRef.current = null;
       pendingLayoutRestoreRef.current = null;
       persistenceHydratedRef.current = true;
@@ -2207,7 +2475,12 @@ export function PdfPreview({
 
   React.useEffect(() => {
     const viewportRestore = pendingViewportRestoreRef.current;
-    if (!viewportRestore || previewViewportWidth <= 0) {
+    if (
+      !viewportRestore ||
+      previewViewportWidth <= 0 ||
+      state.kind !== 'ready' ||
+      readyPageStatuses?.some((pageStatus) => pageStatus !== 'ready')
+    ) {
       return;
     }
 
@@ -2219,10 +2492,29 @@ export function PdfPreview({
         return;
       }
 
-      scrollContainer.scrollLeft = viewportRestore.scrollLeft;
-      if (viewportRestore.mode === 'preserve-scroll') {
+      if (viewportRestore.mode === 'focal' && pageFigure) {
+        const scrollContainerBox = scrollContainer.getBoundingClientRect();
+        const pageFigureBox = pageFigure.getBoundingClientRect();
+        const nextScrollPosition = getFocalScrollPosition({
+          pageLeft: pageFigureBox.left,
+          pageTop: pageFigureBox.top,
+          pageWidth: pageFigureBox.width,
+          pageHeight: pageFigureBox.height,
+          pageOffsetXRatio: viewportRestore.pageOffsetXRatio,
+          pageOffsetYRatio: viewportRestore.pageOffsetYRatio,
+          midpoint: viewportRestore.midpoint,
+          viewportLeft: scrollContainerBox.left,
+          viewportTop: scrollContainerBox.top,
+          scrollLeft: scrollContainer.scrollLeft,
+          scrollTop: scrollContainer.scrollTop,
+        });
+        scrollContainer.scrollLeft = nextScrollPosition.left;
+        scrollContainer.scrollTop = nextScrollPosition.top;
+      } else if (viewportRestore.mode === 'preserve-scroll') {
+        scrollContainer.scrollLeft = viewportRestore.scrollLeft;
         scrollContainer.scrollTop = viewportRestore.scrollTop;
-      } else if (pageFigure) {
+      } else if (viewportRestore.mode === 'anchor' && pageFigure) {
+        scrollContainer.scrollLeft = viewportRestore.scrollLeft;
         const scrollContainerBox = scrollContainer.getBoundingClientRect();
         const pageFigureBox = pageFigure.getBoundingClientRect();
         const pageTop =
@@ -2235,6 +2527,7 @@ export function PdfPreview({
 
         scrollContainer.scrollTop = nextScrollTop;
       } else {
+        scrollContainer.scrollLeft = viewportRestore.scrollLeft;
         scrollContainer.scrollTop = viewportRestore.scrollTop;
       }
       pendingViewportRestoreRef.current = null;
@@ -2243,7 +2536,7 @@ export function PdfPreview({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [previewViewportWidth, scrollContainerRef, state.kind]);
+  }, [previewViewportWidth, readyPageStatuses, scrollContainerRef, state.kind]);
 
   React.useEffect(() => {
     onSlideMetricsChange?.({
@@ -2330,11 +2623,19 @@ export function PdfPreview({
             />
           </div>
           <div className="pdf-preview-toolbar-actions">
-            <IconButton label="Zoom out" icon="minus" onClick={handleZoomOut} />
+            <IconButton
+              label="Zoom out"
+              icon="minus"
+              onClick={() => handleZoomOut()}
+            />
             <span className="pdf-preview-toolbar-zoom">
               {Math.round(zoomLevel * 100)}%
             </span>
-            <IconButton label="Zoom in" icon="plus" onClick={handleZoomIn} />
+            <IconButton
+              label="Zoom in"
+              icon="plus"
+              onClick={() => handleZoomIn()}
+            />
           </div>
         </div>
         {persistenceError ? (
@@ -2422,10 +2723,11 @@ export function PdfPreview({
           }
 
           event.preventDefault();
+          const midpoint = { x: event.clientX, y: event.clientY };
           if (event.deltaY < 0) {
-            handleZoomIn();
+            handleZoomIn(midpoint);
           } else {
-            handleZoomOut();
+            handleZoomOut(midpoint);
           }
         }}
       >
