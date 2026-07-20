@@ -1058,6 +1058,10 @@ export function PdfPreview({
       : 0;
   const readyPageStatuses =
     state.kind === 'ready' ? state.pageStatuses : undefined;
+  const isRefreshingRenderedPages =
+    state.kind === 'loading' &&
+    state.pageCount > 0 &&
+    state.pageStatuses.every((pageStatus) => pageStatus === 'ready');
   const renderablePageSizes =
     state.kind === 'loading' || state.kind === 'ready' || state.kind === 'error'
       ? state.pageSizes
@@ -2309,8 +2313,18 @@ export function PdfPreview({
         }
 
         const pageCount = document.numPages;
-        pageCanvasRefs.current = Array.from({ length: pageCount }, () => null);
-        pageFigureRefs.current = Array.from({ length: pageCount }, () => null);
+        if (pageCanvasRefs.current.length !== pageCount) {
+          pageCanvasRefs.current = Array.from(
+            { length: pageCount },
+            () => null,
+          );
+        }
+        if (pageFigureRefs.current.length !== pageCount) {
+          pageFigureRefs.current = Array.from(
+            { length: pageCount },
+            () => null,
+          );
+        }
         if (shouldHydrateWorkspace) {
           setStrokesByPage(createEmptyStrokePages(pageCount));
           setTextNotesByPage(createEmptyTextNotePages(pageCount));
@@ -2396,8 +2410,7 @@ export function PdfPreview({
           }
 
           const canvas = pageCanvasRefs.current[pageNumber - 1];
-          const context = canvas?.getContext('2d');
-          if (!canvas || !context) {
+          if (!canvas) {
             throw new Error(
               `Canvas rendering is unavailable for page ${pageNumber}.`,
             );
@@ -2415,17 +2428,36 @@ export function PdfPreview({
           const width = Math.floor(viewport.width);
           const height = Math.floor(viewport.height);
 
-          canvas.width = Math.floor(width * scale);
-          canvas.height = Math.floor(height * scale);
-          canvas.style.width = `${width}px`;
-          canvas.style.height = `${height}px`;
-          context.setTransform(scale, 0, 0, scale, 0, 0);
+          const nextCanvas = window.document.createElement('canvas');
+          const nextContext = nextCanvas.getContext('2d');
+          if (!nextContext) {
+            throw new Error(
+              `Canvas rendering is unavailable for page ${pageNumber}.`,
+            );
+          }
+          nextCanvas.width = Math.floor(width * scale);
+          nextCanvas.height = Math.floor(height * scale);
+          nextContext.setTransform(scale, 0, 0, scale, 0, 0);
 
           await page.render({
-            canvas,
-            canvasContext: context,
+            canvas: nextCanvas,
+            canvasContext: nextContext,
             viewport,
           }).promise;
+
+          if (cancelled) {
+            break;
+          }
+
+          const context = canvas.getContext('2d');
+          if (!context) {
+            throw new Error(
+              `Canvas rendering is unavailable for page ${pageNumber}.`,
+            );
+          }
+          canvas.width = nextCanvas.width;
+          canvas.height = nextCanvas.height;
+          context.drawImage(nextCanvas, 0, 0);
 
           nextLinkHotspotsByPage[pageNumber - 1] = await getLinkHotspotsForPage(
             page,
@@ -2434,57 +2466,43 @@ export function PdfPreview({
 
           pageSizes[pageNumber - 1] = { width, height };
           pageStatuses[pageNumber - 1] = 'ready';
-          setState((currentState) => {
-            if (currentState.kind !== 'loading') {
-              return currentState;
-            }
+          if (shouldHydrateWorkspace) {
+            setState((currentState) => {
+              if (currentState.kind !== 'loading') {
+                return currentState;
+              }
 
-            const nextPageSizes =
-              currentState.pageCount === pageCount
-                ? [...currentState.pageSizes]
-                : createPageSizes(pageCount);
-            const nextPageStatuses =
-              currentState.pageCount === pageCount
-                ? [...currentState.pageStatuses]
-                : createPageStatuses(pageCount);
-            nextPageSizes[pageNumber - 1] = { width, height };
-            nextPageStatuses[pageNumber - 1] = 'ready';
+              const nextPageSizes =
+                currentState.pageCount === pageCount
+                  ? [...currentState.pageSizes]
+                  : createPageSizes(pageCount);
+              const nextPageStatuses =
+                currentState.pageCount === pageCount
+                  ? [...currentState.pageStatuses]
+                  : createPageStatuses(pageCount);
+              nextPageSizes[pageNumber - 1] = { width, height };
+              nextPageStatuses[pageNumber - 1] = 'ready';
 
-            return {
-              ...currentState,
-              label: 'Preparing slides...',
-              pageCount,
-              pageSizes: nextPageSizes,
-              pageStatuses: nextPageStatuses,
-            };
-          });
+              return {
+                ...currentState,
+                label: 'Preparing slides...',
+                pageCount,
+                pageSizes: nextPageSizes,
+                pageStatuses: nextPageStatuses,
+              };
+            });
+          }
         }
 
         if (!cancelled) {
           setLinkHotspotsByPage(nextLinkHotspotsByPage);
-          setState((currentState) =>
-            currentState.kind === 'loading' || currentState.kind === 'ready'
-              ? {
-                  kind: 'ready',
-                  label: 'Slides ready.',
-                  pageCount,
-                  pageSizes:
-                    currentState.pageCount === pageCount
-                      ? currentState.pageSizes
-                      : pageSizes,
-                  pageStatuses:
-                    currentState.pageCount === pageCount
-                      ? currentState.pageStatuses
-                      : pageStatuses,
-                }
-              : {
-                  kind: 'ready',
-                  label: 'Slides ready.',
-                  pageCount,
-                  pageSizes,
-                  pageStatuses,
-                },
-          );
+          setState({
+            kind: 'ready',
+            label: 'Slides ready.',
+            pageCount,
+            pageSizes,
+            pageStatuses,
+          });
           setPersistenceError(null);
           lastRenderedZoomRef.current = zoomLevel;
         }
@@ -2860,7 +2878,7 @@ export function PdfPreview({
           }
         }}
       >
-        {state.kind === 'loading' ? (
+        {state.kind === 'loading' && !isRefreshingRenderedPages ? (
           <div className="pdf-preview-stage-status pdf-preview-stage-status--loading">
             <span className="pdf-preview-stage-spinner" aria-hidden="true" />
             <div className="pdf-preview-stage-status-copy">
@@ -2888,7 +2906,8 @@ export function PdfPreview({
           <div
             ref={pdfPagesRef}
             className={`pdf-preview-pages${
-              state.kind === 'loading' || state.kind === 'error'
+              (state.kind === 'loading' && !isRefreshingRenderedPages) ||
+              state.kind === 'error'
                 ? ' is-rendering'
                 : ''
             }`}

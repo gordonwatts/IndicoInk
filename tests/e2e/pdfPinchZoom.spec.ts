@@ -98,6 +98,11 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
       harness.page.locator('.pdf-preview-pages.is-rendering'),
     ).toHaveCount(0);
 
+    const initialCanvasWidth = await harness.page
+      .locator('.pdf-preview-canvas')
+      .first()
+      .evaluate((canvas) => (canvas as HTMLCanvasElement).width);
+
     await harness.page.evaluate(() => {
       const prototype = HTMLElement.prototype as HTMLElement & {
         setPointerCapture?: (pointerId: number) => void;
@@ -188,6 +193,65 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
       0,
     );
 
+    await harness.page.evaluate(() => {
+      const canvases = Array.from(
+        document.querySelectorAll<HTMLCanvasElement>('.pdf-preview-canvas'),
+      );
+      const samples = canvases.map((canvas) => {
+        const context = canvas.getContext('2d');
+        if (!context) {
+          return null;
+        }
+        for (let row = 1; row < 10; row += 1) {
+          for (let column = 1; column < 10; column += 1) {
+            const x = Math.floor((canvas.width * column) / 10);
+            const y = Math.floor((canvas.height * row) / 10);
+            if (context.getImageData(x, y, 1, 1).data[3] !== 0) {
+              return { x, y };
+            }
+          }
+        }
+        return null;
+      });
+      const monitor = {
+        active: true,
+        disruptionFrameCount: 0,
+      };
+      (
+        window as typeof window & {
+          __pdfPinchRenderMonitor?: typeof monitor;
+        }
+      ).__pdfPinchRenderMonitor = monitor;
+
+      const watchForBlankFrames = () => {
+        const currentCanvases = Array.from(
+          document.querySelectorAll<HTMLCanvasElement>('.pdf-preview-canvas'),
+        );
+        const pages = document.querySelector<HTMLElement>('.pdf-preview-pages');
+        const hasBlankCanvas = currentCanvases.some((canvas, index) => {
+          const sample = samples[index];
+          const context = canvas.getContext('2d');
+          return (
+            sample !== null &&
+            (!context ||
+              context.getImageData(sample.x, sample.y, 1, 1).data[3] === 0)
+          );
+        });
+        if (
+          hasBlankCanvas ||
+          currentCanvases.length !== canvases.length ||
+          !pages ||
+          Number.parseFloat(getComputedStyle(pages).opacity) < 0.99
+        ) {
+          monitor.disruptionFrameCount += 1;
+        }
+        if (monitor.active) {
+          window.requestAnimationFrame(watchForBlankFrames);
+        }
+      };
+      window.requestAnimationFrame(watchForBlankFrames);
+    });
+
     await dispatchTouchPointer(
       harness.page,
       'pointerup',
@@ -204,6 +268,32 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
       movedSecond.y,
       false,
     );
+    await expect
+      .poll(
+        () =>
+          harness.page
+            .locator('.pdf-preview-canvas')
+            .first()
+            .evaluate((canvas) => (canvas as HTMLCanvasElement).width),
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(initialCanvasWidth * 1.5);
+    const disruptionFrameCount = await harness.page.evaluate(() => {
+      const monitor = (
+        window as typeof window & {
+          __pdfPinchRenderMonitor?: {
+            active: boolean;
+            disruptionFrameCount: number;
+          };
+        }
+      ).__pdfPinchRenderMonitor;
+      if (!monitor) {
+        throw new Error('The pinch render monitor was not installed.');
+      }
+      monitor.active = false;
+      return monitor.disruptionFrameCount;
+    });
+    expect(disruptionFrameCount).toBe(0);
 
     const secondPinchMidpoint = {
       x: midpoint.x,
