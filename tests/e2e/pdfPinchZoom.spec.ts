@@ -193,7 +193,7 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
       0,
     );
 
-    await harness.page.evaluate(() => {
+    await harness.page.evaluate((expectedFocalPoint) => {
       const canvases = Array.from(
         document.querySelectorAll<HTMLCanvasElement>('.pdf-preview-canvas'),
       );
@@ -228,6 +228,21 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
           document.querySelectorAll<HTMLCanvasElement>('.pdf-preview-canvas'),
         );
         const pages = document.querySelector<HTMLElement>('.pdf-preview-pages');
+        const anchoredPage =
+          document.querySelector<HTMLElement>('.pdf-preview-sheet');
+        const anchoredPageBox = anchoredPage?.getBoundingClientRect();
+        const focalPointDrifted =
+          !anchoredPageBox ||
+          Math.abs(
+            anchoredPageBox.left +
+              anchoredPageBox.width * 0.45 -
+              expectedFocalPoint.x,
+          ) > 4 ||
+          Math.abs(
+            anchoredPageBox.top +
+              anchoredPageBox.height * 0.35 -
+              expectedFocalPoint.y,
+          ) > 4;
         const hasBlankCanvas = currentCanvases.some((canvas, index) => {
           const sample = samples[index];
           const context = canvas.getContext('2d');
@@ -241,7 +256,8 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
           hasBlankCanvas ||
           currentCanvases.length !== canvases.length ||
           !pages ||
-          Number.parseFloat(getComputedStyle(pages).opacity) < 0.99
+          Number.parseFloat(getComputedStyle(pages).opacity) < 0.99 ||
+          focalPointDrifted
         ) {
           monitor.disruptionFrameCount += 1;
         }
@@ -250,7 +266,7 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
         }
       };
       window.requestAnimationFrame(watchForBlankFrames);
-    });
+    }, movedMidpoint);
 
     await dispatchTouchPointer(
       harness.page,
