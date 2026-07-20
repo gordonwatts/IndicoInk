@@ -235,6 +235,44 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
     );
 
     await expect(harness.page.getByText('100%')).toBeVisible();
+    await expect(
+      harness.page.locator('.pdf-preview-pages.is-rendering'),
+    ).toHaveCount(0);
+    await expect
+      .poll(
+        async () =>
+          (
+            await harness.page
+              .locator('.pdf-preview-sheet')
+              .first()
+              .boundingBox()
+          )?.width ?? 0,
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThanOrEqual(initialBox.width - 4);
+    await dispatchTouchPointer(
+      harness.page,
+      'pointerup',
+      201,
+      secondPinchMidpoint.x - 100,
+      secondPinchMidpoint.y,
+      true,
+    );
+    await dispatchTouchPointer(
+      harness.page,
+      'pointerup',
+      202,
+      secondPinchMidpoint.x - 75,
+      secondPinchMidpoint.y,
+      false,
+    );
+    await expect
+      .poll(() =>
+        harness.page
+          .locator('.pdf-preview-pages')
+          .evaluate((element) => getComputedStyle(element).transform),
+      )
+      .toBe('none');
   } finally {
     await harness.close().catch(() => {});
   }

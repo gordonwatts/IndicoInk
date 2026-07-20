@@ -184,6 +184,8 @@ type ActiveInkAction =
 type PinchGesture = {
   initialDistance: number;
   initialZoom: number;
+  initialMidpoint: PdfZoomPoint;
+  origin: PdfZoomPoint;
   anchor: PdfZoomFocalAnchor | null;
 };
 
@@ -497,6 +499,7 @@ export function PdfPreview({
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
+  const pdfPagesRef = React.useRef<HTMLDivElement | null>(null);
   const stageViewportRef = React.useRef<HTMLDivElement | null>(null);
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
@@ -568,6 +571,9 @@ export function PdfPreview({
   const pageFigureRefs = React.useRef<Array<HTMLElement | null>>([]);
   const [zoomLevel, setZoomLevel] = React.useState(1);
   const zoomLevelRef = React.useRef(zoomLevel);
+  const [pinchPreviewZoom, setPinchPreviewZoom] = React.useState<number | null>(
+    null,
+  );
   const [previewViewportWidth, setPreviewViewportWidth] = React.useState(0);
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
@@ -1065,6 +1071,7 @@ export function PdfPreview({
     state.kind === 'idle' || previewViewportWidth <= 0
       ? 1
       : (previewViewportWidth * zoomLevel) / renderedPageWidth;
+  const displayZoomLevel = pinchPreviewZoom ?? zoomLevel;
 
   const closeTextNoteDraft = React.useCallback(() => {
     setTextNoteDraft(null);
@@ -1344,6 +1351,32 @@ export function PdfPreview({
       }
 
       const midpoint = getPinchMidpoint(first, second);
+      const anchor = captureFocalViewportAnchor(midpoint);
+      const pagesElement = pdfPagesRef.current;
+      const pagesBox = pagesElement?.getBoundingClientRect();
+      const anchoredPage = anchor
+        ? pageFigureRefs.current[anchor.pageIndex]
+        : null;
+      const anchoredPageBox = anchoredPage?.getBoundingClientRect();
+      const origin =
+        pagesBox && anchoredPageBox && anchor
+          ? {
+              x:
+                anchoredPageBox.left +
+                anchor.pageOffsetXRatio * anchoredPageBox.width -
+                pagesBox.left,
+              y:
+                anchoredPageBox.top +
+                anchor.pageOffsetYRatio * anchoredPageBox.height -
+                pagesBox.top,
+            }
+          : pagesBox
+            ? {
+                x: midpoint.x - pagesBox.left,
+                y: midpoint.y - pagesBox.top,
+              }
+            : { x: 0, y: 0 };
+
       pendingWorkspaceRestoreRef.current = null;
       pendingLayoutRestoreRef.current = null;
       pendingViewportRestoreRef.current = null;
@@ -1351,8 +1384,16 @@ export function PdfPreview({
       pinchGestureRef.current = {
         initialDistance,
         initialZoom: zoomLevelRef.current,
-        anchor: captureFocalViewportAnchor(midpoint),
+        initialMidpoint: midpoint,
+        origin,
+        anchor,
       };
+      setPinchPreviewZoom(zoomLevelRef.current);
+      if (pagesElement) {
+        pagesElement.style.transformOrigin = `${origin.x}px ${origin.y}px`;
+        pagesElement.style.transform = 'none';
+        pagesElement.style.willChange = 'transform';
+      }
       activeInkActionRef.current = null;
     },
     [captureFocalViewportAnchor],
@@ -1375,28 +1416,65 @@ export function PdfPreview({
       ).toFixed(2),
     );
 
-    if (pinchGesture.anchor) {
-      const hasPendingRenderRestore =
-        pendingViewportRestoreRef.current?.mode === 'focal';
-      const viewportRestore = {
-        mode: 'focal',
-        ...pinchGesture.anchor,
-        midpoint,
-      } as const;
-      pendingViewportRestoreRef.current = viewportRestore;
-      if (nextZoom === zoomLevelRef.current) {
-        if (!hasPendingRenderRestore) {
-          restoreFocalViewport(viewportRestore);
-          pendingViewportRestoreRef.current = null;
-        }
-        return;
-      }
-    } else if (nextZoom === zoomLevelRef.current) {
+    const pagesElement = pdfPagesRef.current;
+    if (pagesElement) {
+      const scale = nextZoom / pinchGesture.initialZoom;
+      const translateX = midpoint.x - pinchGesture.initialMidpoint.x;
+      const translateY = midpoint.y - pinchGesture.initialMidpoint.y;
+      pagesElement.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    }
+    setPinchPreviewZoom(nextZoom);
+  }, []);
+
+  const commitPinchGesture = React.useCallback(() => {
+    const pinchGesture = pinchGestureRef.current;
+    const pointers = Array.from(touchPointersRef.current.values());
+    const [first, second] = pointers;
+    const pagesElement = pdfPagesRef.current;
+    if (pagesElement) {
+      pagesElement.style.transform = '';
+      pagesElement.style.transformOrigin = '';
+      pagesElement.style.willChange = '';
+    }
+
+    setPinchPreviewZoom(null);
+    if (!pinchGesture || !first || !second) {
+      pinchGestureRef.current = null;
       return;
     }
 
-    zoomLevelRef.current = nextZoom;
-    setZoomLevel(nextZoom);
+    const nextZoom = Number(
+      getPinchZoom(
+        pinchGesture.initialZoom,
+        pinchGesture.initialDistance,
+        getPinchDistance(first, second),
+      ).toFixed(2),
+    );
+    const midpoint = getPinchMidpoint(first, second);
+    const viewportRestore = pinchGesture.anchor
+      ? {
+          mode: 'focal' as const,
+          ...pinchGesture.anchor,
+          midpoint,
+        }
+      : null;
+    const currentZoom = zoomLevelRef.current;
+
+    pendingWorkspaceRestoreRef.current = null;
+    pendingLayoutRestoreRef.current = null;
+    pendingViewportRestoreRef.current = viewportRestore;
+    persistenceHydratedRef.current = true;
+    if (nextZoom === currentZoom) {
+      if (viewportRestore) {
+        restoreFocalViewport(viewportRestore);
+      }
+      pendingViewportRestoreRef.current = null;
+    } else {
+      zoomLevelRef.current = nextZoom;
+      setZoomLevel(nextZoom);
+    }
+
+    pinchGestureRef.current = null;
   }, [restoreFocalViewport]);
 
   const resumeTouchPan = React.useCallback(() => {
@@ -1744,8 +1822,8 @@ export function PdfPreview({
           }
 
           if (eventKind === 'pointerup' || eventKind === 'pointercancel') {
+            commitPinchGesture();
             touchPointersRef.current.delete(event.pointerId);
-            pinchGestureRef.current = null;
             resumeTouchPan();
             event.preventDefault();
           }
@@ -2017,6 +2095,7 @@ export function PdfPreview({
       },
     [
       beginPinchGesture,
+      commitPinchGesture,
       handlePointerEvent,
       pointerMarker,
       resolvePointerInteraction,
@@ -2180,11 +2259,15 @@ export function PdfPreview({
         !persistenceHydratedRef.current;
       workspaceSourceKeyRef.current = workspaceSourceKey;
       if (state.kind === 'ready' || state.kind === 'loading') {
-        pendingLayoutRestoreRef.current = {
-          scrollLeft: currentScrollContainer.scrollLeft,
-          scrollTop: currentScrollContainer.scrollTop,
-          currentSlideNumber: currentSlideNumberRef.current,
-        };
+        if (pendingViewportRestoreRef.current?.mode === 'focal') {
+          pendingLayoutRestoreRef.current = null;
+        } else {
+          pendingLayoutRestoreRef.current = {
+            scrollLeft: currentScrollContainer.scrollLeft,
+            scrollTop: currentScrollContainer.scrollTop,
+            currentSlideNumber: currentSlideNumberRef.current,
+          };
+        }
       }
 
       setState((currentState) =>
@@ -2574,6 +2657,9 @@ export function PdfPreview({
         scrollContainer.scrollTop = viewportRestore.scrollTop;
       }
       pendingViewportRestoreRef.current = null;
+      if (viewportRestore.mode === 'focal') {
+        pendingLayoutRestoreRef.current = null;
+      }
     });
 
     return () => {
@@ -2672,7 +2758,7 @@ export function PdfPreview({
               onClick={() => handleZoomOut()}
             />
             <span className="pdf-preview-toolbar-zoom">
-              {Math.round(zoomLevel * 100)}%
+              {Math.round(displayZoomLevel * 100)}%
             </span>
             <IconButton
               label="Zoom in"
@@ -2800,6 +2886,7 @@ export function PdfPreview({
         ) : null}
         {currentPageCount > 0 ? (
           <div
+            ref={pdfPagesRef}
             className={`pdf-preview-pages${
               state.kind === 'loading' || state.kind === 'error'
                 ? ' is-rendering'
