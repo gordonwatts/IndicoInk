@@ -714,6 +714,36 @@ export function PdfPreview({
     [scrollContainerRef],
   );
 
+  const restoreFocalViewport = React.useCallback(
+    (anchor: PdfZoomFocalAnchor): boolean => {
+      const scrollContainer = getScrollViewportElement(scrollContainerRef);
+      const pageFigure = pageFigureRefs.current[anchor.pageIndex];
+      if (!scrollContainer || !pageFigure) {
+        return false;
+      }
+
+      const scrollContainerBox = scrollContainer.getBoundingClientRect();
+      const pageFigureBox = pageFigure.getBoundingClientRect();
+      const nextScrollPosition = getFocalScrollPosition({
+        pageLeft: pageFigureBox.left,
+        pageTop: pageFigureBox.top,
+        pageWidth: pageFigureBox.width,
+        pageHeight: pageFigureBox.height,
+        pageOffsetXRatio: anchor.pageOffsetXRatio,
+        pageOffsetYRatio: anchor.pageOffsetYRatio,
+        midpoint: anchor.midpoint,
+        viewportLeft: scrollContainerBox.left,
+        viewportTop: scrollContainerBox.top,
+        scrollLeft: scrollContainer.scrollLeft,
+        scrollTop: scrollContainer.scrollTop,
+      });
+      scrollContainer.scrollLeft = nextScrollPosition.left;
+      scrollContainer.scrollTop = nextScrollPosition.top;
+      return true;
+    },
+    [scrollContainerRef],
+  );
+
   React.useEffect(() => {
     const stageElement = stageViewportRef.current;
     if (!stageElement) {
@@ -1316,6 +1346,7 @@ export function PdfPreview({
       const midpoint = getPinchMidpoint(first, second);
       pendingWorkspaceRestoreRef.current = null;
       pendingLayoutRestoreRef.current = null;
+      pendingViewportRestoreRef.current = null;
       persistenceHydratedRef.current = true;
       pinchGestureRef.current = {
         initialDistance,
@@ -1335,6 +1366,7 @@ export function PdfPreview({
       return;
     }
 
+    const midpoint = getPinchMidpoint(first, second);
     const nextZoom = Number(
       getPinchZoom(
         pinchGesture.initialZoom,
@@ -1342,19 +1374,30 @@ export function PdfPreview({
         getPinchDistance(first, second),
       ).toFixed(2),
     );
-    if (nextZoom === zoomLevelRef.current) {
+
+    if (pinchGesture.anchor) {
+      const hasPendingRenderRestore =
+        pendingViewportRestoreRef.current?.mode === 'focal';
+      const viewportRestore = {
+        mode: 'focal',
+        ...pinchGesture.anchor,
+        midpoint,
+      } as const;
+      pendingViewportRestoreRef.current = viewportRestore;
+      if (nextZoom === zoomLevelRef.current) {
+        if (!hasPendingRenderRestore) {
+          restoreFocalViewport(viewportRestore);
+          pendingViewportRestoreRef.current = null;
+        }
+        return;
+      }
+    } else if (nextZoom === zoomLevelRef.current) {
       return;
     }
 
-    if (pinchGesture.anchor) {
-      pendingViewportRestoreRef.current = {
-        mode: 'focal',
-        ...pinchGesture.anchor,
-      };
-    }
     zoomLevelRef.current = nextZoom;
     setZoomLevel(nextZoom);
-  }, []);
+  }, [restoreFocalViewport]);
 
   const resumeTouchPan = React.useCallback(() => {
     const [remainingPointer] = Array.from(touchPointersRef.current.entries());

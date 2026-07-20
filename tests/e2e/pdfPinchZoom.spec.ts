@@ -123,6 +123,7 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
     };
     const first = { x: midpoint.x - 60, y: midpoint.y };
     const second = { x: midpoint.x + 60, y: midpoint.y };
+    const movedSecond = { x: midpoint.x + 180, y: midpoint.y };
 
     await dispatchTouchPointer(
       harness.page,
@@ -144,8 +145,8 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
       harness.page,
       'pointermove',
       102,
-      midpoint.x + 180,
-      midpoint.y,
+      movedSecond.x,
+      movedSecond.y,
       false,
     );
 
@@ -174,8 +175,18 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
     if (!zoomedBox) {
       throw new Error('The zoomed PDF sheet was not visible.');
     }
-    expect(zoomedBox.x + zoomedBox.width * 0.45).toBeCloseTo(midpoint.x, 0);
-    expect(zoomedBox.y + zoomedBox.height * 0.35).toBeCloseTo(midpoint.y, 0);
+    const movedMidpoint = {
+      x: (first.x + movedSecond.x) / 2,
+      y: (first.y + movedSecond.y) / 2,
+    };
+    expect(zoomedBox.x + zoomedBox.width * 0.45).toBeCloseTo(
+      movedMidpoint.x,
+      0,
+    );
+    expect(zoomedBox.y + zoomedBox.height * 0.35).toBeCloseTo(
+      movedMidpoint.y,
+      0,
+    );
 
     await dispatchTouchPointer(
       harness.page,
@@ -189,8 +200,8 @@ test('pinch zooms around the midpoint and clamps to fit-to-width', async () => {
       harness.page,
       'pointerup',
       102,
-      midpoint.x + 180,
-      midpoint.y,
+      movedSecond.x,
+      movedSecond.y,
       false,
     );
 
