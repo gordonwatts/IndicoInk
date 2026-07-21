@@ -517,6 +517,12 @@ test('toolbar zoom scales the PDF without resizing its viewport', async () => {
         'The PDF preview was not visible for toolbar zoom testing.',
       );
     }
+    const initialSurfaceMetrics = await harness.page
+      .locator('.page-surface')
+      .evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        overflowX: getComputedStyle(element).overflowX,
+      }));
 
     await harness.page.getByRole('button', { name: 'Zoom in' }).click();
     await expect(harness.page.getByText('115%')).toBeVisible();
@@ -525,6 +531,13 @@ test('toolbar zoom scales the PDF without resizing its viewport', async () => {
       .toBeGreaterThan(initialPageBox.width * 1.1);
 
     const finalStageBox = await stage.boundingBox();
+    const finalSurfaceMetrics = await harness.page
+      .locator('.page-surface')
+      .evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        overflowX: getComputedStyle(element).overflowX,
+      }));
+    expect(finalSurfaceMetrics).toEqual(initialSurfaceMetrics);
     expect(finalStageBox?.width ?? 0).toBeCloseTo(initialStageBox.width, 0);
   } finally {
     await harness.close().catch(() => {});
