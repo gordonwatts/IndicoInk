@@ -572,7 +572,10 @@ export function PdfPreview({
         scrollLeft: number;
         scrollTop: number;
       }
-    | (PdfZoomFocalAnchor & { mode: 'focal' })
+    | (PdfZoomFocalAnchor & {
+        mode: 'focal';
+        preserveHorizontalScroll?: boolean;
+      })
     | null
   >(null);
   const currentSlideNumberRef = React.useRef(1);
@@ -1304,7 +1307,11 @@ export function PdfPreview({
   }, [scrollContainerRef]);
 
   const setZoomAtPoint = React.useCallback(
-    (nextZoom: number, midpoint: PdfZoomPoint) => {
+    (
+      nextZoom: number,
+      midpoint: PdfZoomPoint,
+      preserveHorizontalScroll = false,
+    ) => {
       const clampedZoom = clampPdfZoom(nextZoom);
       const currentZoom = zoomLevelRef.current;
       if (clampedZoom === currentZoom) {
@@ -1316,7 +1323,11 @@ export function PdfPreview({
       persistenceHydratedRef.current = true;
       const anchor = captureFocalViewportAnchor(midpoint);
       if (anchor) {
-        pendingViewportRestoreRef.current = { mode: 'focal', ...anchor };
+        pendingViewportRestoreRef.current = {
+          mode: 'focal',
+          ...anchor,
+          preserveHorizontalScroll,
+        };
       }
 
       zoomLevelRef.current = clampedZoom;
@@ -1330,6 +1341,7 @@ export function PdfPreview({
       setZoomAtPoint(
         zoomLevelRef.current + PDF_ZOOM_STEP,
         midpoint ?? getDefaultZoomMidpoint(),
+        midpoint === undefined,
       );
     },
     [getDefaultZoomMidpoint, setZoomAtPoint],
@@ -1340,6 +1352,7 @@ export function PdfPreview({
       setZoomAtPoint(
         zoomLevelRef.current - PDF_ZOOM_STEP,
         midpoint ?? getDefaultZoomMidpoint(),
+        midpoint === undefined,
       );
     },
     [getDefaultZoomMidpoint, setZoomAtPoint],
@@ -2746,7 +2759,9 @@ export function PdfPreview({
         scrollLeft: scrollContainer.scrollLeft,
         scrollTop: scrollContainer.scrollTop,
       });
-      scrollContainer.scrollLeft = nextScrollPosition.left;
+      scrollContainer.scrollLeft = viewportRestore.preserveHorizontalScroll
+        ? viewportRestore.scrollLeft
+        : nextScrollPosition.left;
       scrollContainer.scrollTop = nextScrollPosition.top;
     } else if (viewportRestore.mode === 'preserve-scroll') {
       scrollContainer.scrollLeft = viewportRestore.scrollLeft;
