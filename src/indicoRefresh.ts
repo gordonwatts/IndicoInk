@@ -45,6 +45,13 @@ const compareDeck = (current: Deck, next: Deck) =>
   current.selected !== next.selected ||
   current.sourceUrl !== next.sourceUrl;
 
+// A material's title and selected state are agenda metadata. They can change
+// shape between equivalent Indico exports without changing the cached PDF.
+// Only fields that identify the downloaded bytes may trigger an annotation
+// conflict during refresh.
+const compareDeckContent = (current: Deck, next: Deck) =>
+  current.sourceUrl !== next.sourceUrl || current.mimeType !== next.mimeType;
+
 const getDeckAnnotationCount = async (
   store: PersistenceStore,
   deckId: string,
@@ -219,7 +226,7 @@ export const refreshIndicoEvent = async (
         (await getDeckAnnotationCount(store, currentDeck.id)) > 0;
       if (
         deckHasAnnotations &&
-        compareDeck(currentDeck, nextDeck) &&
+        compareDeckContent(currentDeck, nextDeck) &&
         options.decision !== 'replace'
       ) {
         conflicts.push(
@@ -348,7 +355,7 @@ export const refreshIndicoEvent = async (
         const deckNeedsKeep =
           currentDeck !== undefined &&
           deckHasAnnotations &&
-          compareDeck(currentDeck, nextDeck) &&
+          compareDeckContent(currentDeck, nextDeck) &&
           options.decision === 'keep';
 
         if (deckNeedsKeep && currentDeck) {
