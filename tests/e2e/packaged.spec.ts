@@ -105,6 +105,9 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     .toBe('Acceptance note'.length);
 
   const editorBox = await editor.boundingBox();
+  const noteWidthBeforeResize = await editor.evaluate((element) =>
+    Number.parseFloat((element.parentElement as HTMLElement).style.width),
+  );
   const resizeHandle = page.getByRole('button', {
     name: 'Resize note on page 1',
   });
@@ -127,8 +130,12 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   );
   await page.mouse.up();
   await expect
-    .poll(async () => (await editor.boundingBox())?.width ?? 0)
-    .toBeGreaterThan(editorBox.width + 20);
+    .poll(() =>
+      editor.evaluate((element) =>
+        Number.parseFloat((element.parentElement as HTMLElement).style.width),
+      ),
+    )
+    .toBeGreaterThan(noteWidthBeforeResize + 20);
 
   const editorPositionBeforeDrag = await editor.boundingBox();
   const dragHandleBox = await dragHandle.boundingBox();
