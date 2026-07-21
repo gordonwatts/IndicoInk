@@ -531,6 +531,8 @@ export function PdfPreview({
     React.useState<TextNoteDragState | null>(null);
   const [textNoteResizeState, setTextNoteResizeState] =
     React.useState<TextNoteResizeState | null>(null);
+  const textNoteResizeStateRef =
+    React.useRef<TextNoteResizeState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
   const [linkHotspotsByPage, setLinkHotspotsByPage] = React.useState<
@@ -1287,14 +1289,59 @@ export function PdfPreview({
       event.preventDefault();
       event.stopPropagation();
       event.currentTarget.setPointerCapture(event.pointerId);
-      setTextNoteResizeState({
+      const nextResizeState = {
         pointerId: event.pointerId,
         pageIndex,
         startClientX: event.clientX,
         startWidth: textNoteDraft.width,
-      });
+      };
+      textNoteResizeStateRef.current = nextResizeState;
+      setTextNoteResizeState(nextResizeState);
     },
     [textNoteDraft],
+  );
+
+  const handleTextNoteResizePointerEvent = React.useCallback(
+    (
+      pageIndex: number,
+      eventKind: 'pointermove' | 'pointerup' | 'pointercancel',
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      const resizeState = textNoteResizeStateRef.current;
+      if (
+        !resizeState ||
+        resizeState.pointerId !== event.pointerId ||
+        resizeState.pageIndex !== pageIndex
+      ) {
+        return;
+      }
+
+      if (eventKind === 'pointermove') {
+        const pageWidth = event.currentTarget
+          .closest<HTMLElement>('.pdf-preview-sheet')
+          ?.getBoundingClientRect().width;
+        if (pageWidth && pageWidth > 0) {
+          setTextNoteDraft((currentDraft) =>
+            currentDraft
+              ? {
+                  ...currentDraft,
+                  width: clampTextNoteWidth(
+                    resizeState.startWidth +
+                      (event.clientX - resizeState.startClientX) / pageWidth,
+                  ),
+                }
+              : currentDraft,
+          );
+        }
+      } else {
+        textNoteResizeStateRef.current = null;
+        setTextNoteResizeState(null);
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [],
   );
 
   const getDefaultZoomMidpoint = React.useCallback((): PdfZoomPoint => {
@@ -3305,6 +3352,27 @@ export function PdfPreview({
                                 onPointerDown={(event) =>
                                   handleTextNoteResizeStart(index, event)
                                 }
+                                onPointerMove={(event) =>
+                                  handleTextNoteResizePointerEvent(
+                                    index,
+                                    'pointermove',
+                                    event,
+                                  )
+                                }
+                                onPointerUp={(event) =>
+                                  handleTextNoteResizePointerEvent(
+                                    index,
+                                    'pointerup',
+                                    event,
+                                  )
+                                }
+                                onPointerCancel={(event) =>
+                                  handleTextNoteResizePointerEvent(
+                                    index,
+                                    'pointercancel',
+                                    event,
+                                  )
+                                }
                               />
                             ) : null}
                           </article>
@@ -3347,6 +3415,27 @@ export function PdfPreview({
                             aria-label={`Resize note on page ${index + 1}`}
                             onPointerDown={(event) =>
                               handleTextNoteResizeStart(index, event)
+                            }
+                            onPointerMove={(event) =>
+                              handleTextNoteResizePointerEvent(
+                                index,
+                                'pointermove',
+                                event,
+                              )
+                            }
+                            onPointerUp={(event) =>
+                              handleTextNoteResizePointerEvent(
+                                index,
+                                'pointerup',
+                                event,
+                              )
+                            }
+                            onPointerCancel={(event) =>
+                              handleTextNoteResizePointerEvent(
+                                index,
+                                'pointercancel',
+                                event,
+                              )
                             }
                           />
                         </article>

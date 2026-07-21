@@ -511,6 +511,9 @@ test('toolbar zoom scales the PDF without resizing its viewport', async () => {
     const page = harness.page.locator('.pdf-preview-sheet').first();
     const stage = harness.page.locator('.pdf-preview-stage');
     const talkStatusStrip = harness.page.locator('.slides-view-controls');
+    await expect
+      .poll(async () => (await page.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(100);
     const initialPageBox = await page.boundingBox();
     const initialStageBox = await stage.boundingBox();
     const initialStatusStripBox = await talkStatusStrip.boundingBox();
