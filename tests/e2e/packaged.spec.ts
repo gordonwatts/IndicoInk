@@ -75,8 +75,11 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     throw new Error('Acceptance PDF sheet was not visible.');
   }
 
-  const noteX = Math.round(box.width * 0.55);
+  // Leave enough room on the right for the resize and drag acceptance steps
+  // when the PDF fills the viewport at its real zoom level.
+  const noteX = Math.round(box.width * 0.2);
   const noteY = Math.round(box.height * 0.26);
+  const resizeDelta = Math.max(48, Math.round(box.width * 0.25));
 
   await page.getByRole('button', { name: 'Text' }).click();
   await sheet.click({ position: { x: noteX, y: noteY } });
@@ -102,9 +105,13 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     .toBe('Acceptance note'.length);
 
   const editorBox = await editor.boundingBox();
+  const noteWidthBeforeResize = await editor.evaluate((element) =>
+    Number.parseFloat((element.parentElement as HTMLElement).style.width),
+  );
   const resizeHandle = page.getByRole('button', {
     name: 'Resize note on page 1',
   });
+  await resizeHandle.hover();
   const resizeHandleBox = await resizeHandle.boundingBox();
   if (!editorBox || !resizeHandleBox) {
     throw new Error('Acceptance text-note resize handle was not visible.');
@@ -114,16 +121,25 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     resizeHandleBox.y + resizeHandleBox.height / 2,
   );
   await page.mouse.down();
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   await page.mouse.move(
-    resizeHandleBox.x + resizeHandleBox.width / 2 + 48,
+    resizeHandleBox.x + resizeHandleBox.width / 2 + resizeDelta,
     resizeHandleBox.y + resizeHandleBox.height / 2,
+    { steps: 8 },
   );
   await page.mouse.up();
   await expect
-    .poll(async () => (await editor.boundingBox())?.width ?? 0)
-    .toBeGreaterThan(editorBox.width + 20);
+    .poll(() =>
+      editor.evaluate((element) =>
+        Number.parseFloat((element.parentElement as HTMLElement).style.width),
+      ),
+    )
+    .toBeGreaterThan(noteWidthBeforeResize + 20);
 
   const editorPositionBeforeDrag = await editor.boundingBox();
+  await dragHandle.hover();
   const dragHandleBox = await dragHandle.boundingBox();
   if (!editorPositionBeforeDrag || !dragHandleBox) {
     throw new Error('Acceptance text-note drag handle was not visible.');
@@ -133,9 +149,13 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     dragHandleBox.y + dragHandleBox.height / 2,
   );
   await page.mouse.down();
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   await page.mouse.move(
     dragHandleBox.x + dragHandleBox.width / 2 + 36,
     dragHandleBox.y + dragHandleBox.height / 2 + 24,
+    { steps: 8 },
   );
   await page.mouse.up();
   await expect

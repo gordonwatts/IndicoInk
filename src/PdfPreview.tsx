@@ -531,6 +531,8 @@ export function PdfPreview({
     React.useState<TextNoteDragState | null>(null);
   const [textNoteResizeState, setTextNoteResizeState] =
     React.useState<TextNoteResizeState | null>(null);
+  const textNoteResizeStateRef =
+    React.useRef<TextNoteResizeState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
   const [linkHotspotsByPage, setLinkHotspotsByPage] = React.useState<
@@ -572,7 +574,10 @@ export function PdfPreview({
         scrollLeft: number;
         scrollTop: number;
       }
-    | (PdfZoomFocalAnchor & { mode: 'focal' })
+    | (PdfZoomFocalAnchor & {
+        mode: 'focal';
+        preserveHorizontalScroll?: boolean;
+      })
     | null
   >(null);
   const currentSlideNumberRef = React.useRef(1);
@@ -585,7 +590,6 @@ export function PdfPreview({
   const [previewViewportWidth, setPreviewViewportWidth] = React.useState(0);
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
-  const lastRenderedZoomRef = React.useRef(zoomLevel);
 
   const clearLinkPopoverHideTimer = React.useCallback(() => {
     if (linkPopoverHideTimerRef.current !== null) {
@@ -782,7 +786,7 @@ export function PdfPreview({
           const anchor = captureViewportAnchor();
           const scrollContainer = scrollContainerRef?.current ?? stageElement;
           pendingViewportRestoreRef.current =
-            nextWidth > currentWidth && nextWidth >= renderedPageWidth
+              nextWidth > currentWidth
               ? {
                   mode: 'preserve-scroll',
                   pageIndex: Math.max(0, currentSlideNumberRef.current - 1),
@@ -1074,15 +1078,6 @@ export function PdfPreview({
     state.kind === 'loading' || state.kind === 'ready' || state.kind === 'error'
       ? state.pageSizes
       : [];
-  const renderedPageWidth =
-    renderablePageSizes.reduce(
-      (maximumWidth, pageSize) => Math.max(maximumWidth, pageSize.width),
-      0,
-    ) || 1;
-  const pageDisplayScale =
-    state.kind === 'idle' || previewViewportWidth <= 0
-      ? 1
-      : (previewViewportWidth * zoomLevel) / renderedPageWidth;
   const displayZoomLevel = pinchPreviewZoom ?? zoomLevel;
 
   const closeTextNoteDraft = React.useCallback(() => {
@@ -1294,14 +1289,59 @@ export function PdfPreview({
       event.preventDefault();
       event.stopPropagation();
       event.currentTarget.setPointerCapture(event.pointerId);
-      setTextNoteResizeState({
+      const nextResizeState = {
         pointerId: event.pointerId,
         pageIndex,
         startClientX: event.clientX,
         startWidth: textNoteDraft.width,
-      });
+      };
+      textNoteResizeStateRef.current = nextResizeState;
+      setTextNoteResizeState(nextResizeState);
     },
     [textNoteDraft],
+  );
+
+  const handleTextNoteResizePointerEvent = React.useCallback(
+    (
+      pageIndex: number,
+      eventKind: 'pointermove' | 'pointerup' | 'pointercancel',
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      const resizeState = textNoteResizeStateRef.current;
+      if (
+        !resizeState ||
+        resizeState.pointerId !== event.pointerId ||
+        resizeState.pageIndex !== pageIndex
+      ) {
+        return;
+      }
+
+      if (eventKind === 'pointermove') {
+        const pageWidth = event.currentTarget
+          .closest<HTMLElement>('.pdf-preview-sheet')
+          ?.getBoundingClientRect().width;
+        if (pageWidth && pageWidth > 0) {
+          setTextNoteDraft((currentDraft) =>
+            currentDraft
+              ? {
+                  ...currentDraft,
+                  width: clampTextNoteWidth(
+                    resizeState.startWidth +
+                      (event.clientX - resizeState.startClientX) / pageWidth,
+                  ),
+                }
+              : currentDraft,
+          );
+        }
+      } else {
+        textNoteResizeStateRef.current = null;
+        setTextNoteResizeState(null);
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [],
   );
 
   const getDefaultZoomMidpoint = React.useCallback((): PdfZoomPoint => {
@@ -1314,7 +1354,11 @@ export function PdfPreview({
   }, [scrollContainerRef]);
 
   const setZoomAtPoint = React.useCallback(
-    (nextZoom: number, midpoint: PdfZoomPoint) => {
+    (
+      nextZoom: number,
+      midpoint: PdfZoomPoint,
+      preserveHorizontalScroll = false,
+    ) => {
       const clampedZoom = clampPdfZoom(nextZoom);
       const currentZoom = zoomLevelRef.current;
       if (clampedZoom === currentZoom) {
@@ -1326,7 +1370,11 @@ export function PdfPreview({
       persistenceHydratedRef.current = true;
       const anchor = captureFocalViewportAnchor(midpoint);
       if (anchor) {
-        pendingViewportRestoreRef.current = { mode: 'focal', ...anchor };
+        pendingViewportRestoreRef.current = {
+          mode: 'focal',
+          ...anchor,
+          preserveHorizontalScroll,
+        };
       }
 
       zoomLevelRef.current = clampedZoom;
@@ -1340,6 +1388,7 @@ export function PdfPreview({
       setZoomAtPoint(
         zoomLevelRef.current + PDF_ZOOM_STEP,
         midpoint ?? getDefaultZoomMidpoint(),
+        midpoint === undefined,
       );
     },
     [getDefaultZoomMidpoint, setZoomAtPoint],
@@ -1350,6 +1399,7 @@ export function PdfPreview({
       setZoomAtPoint(
         zoomLevelRef.current - PDF_ZOOM_STEP,
         midpoint ?? getDefaultZoomMidpoint(),
+        midpoint === undefined,
       );
     },
     [getDefaultZoomMidpoint, setZoomAtPoint],
@@ -2323,25 +2373,6 @@ export function PdfPreview({
       };
     }
 
-    if (
-      (state.kind === 'ready' || state.kind === 'loading') &&
-      zoomLevel === lastRenderedZoomRef.current &&
-      previewViewportWidth > 0 &&
-      renderedPageWidth > 0 &&
-      previewViewportWidth < renderedPageWidth
-    ) {
-      return () => {
-        cancelled = true;
-        if (pointerDiagnosticsFrameRef.current !== null) {
-          window.cancelAnimationFrame(pointerDiagnosticsFrameRef.current);
-        }
-        if (persistenceSaveTimerRef.current !== null) {
-          window.clearTimeout(persistenceSaveTimerRef.current);
-        }
-        void loadingTask?.destroy?.();
-      };
-    }
-
     const renderPreview = async () => {
       latchedToolRef.current = null;
       setPointerDiagnostics(createIdlePointerDiagnostics());
@@ -2579,7 +2610,14 @@ export function PdfPreview({
             viewport,
           );
 
-          pageSizes[pageNumber - 1] = { width, height };
+          // Keep the PDF's intrinsic dimensions separate from the rendered
+          // bitmap dimensions. The display scale applies zoom to these base
+          // dimensions; storing the zoomed viewport here would cancel the
+          // toolbar zoom when the page is laid out again.
+          pageSizes[pageNumber - 1] = {
+            width: baseViewport.width,
+            height: baseViewport.height,
+          };
           pageStatuses[pageNumber - 1] = 'ready';
           if (shouldHydrateWorkspace) {
             setState((currentState) => {
@@ -2595,7 +2633,10 @@ export function PdfPreview({
                 currentState.pageCount === pageCount
                   ? [...currentState.pageStatuses]
                   : createPageStatuses(pageCount);
-              nextPageSizes[pageNumber - 1] = { width, height };
+              nextPageSizes[pageNumber - 1] = {
+                width: baseViewport.width,
+                height: baseViewport.height,
+              };
               nextPageStatuses[pageNumber - 1] = 'ready';
 
               return {
@@ -2619,7 +2660,6 @@ export function PdfPreview({
             pageStatuses,
           });
           setPersistenceError(null);
-          lastRenderedZoomRef.current = zoomLevel;
         }
 
         await loadingTask.destroy();
@@ -2766,7 +2806,9 @@ export function PdfPreview({
         scrollLeft: scrollContainer.scrollLeft,
         scrollTop: scrollContainer.scrollTop,
       });
-      scrollContainer.scrollLeft = nextScrollPosition.left;
+      scrollContainer.scrollLeft = viewportRestore.preserveHorizontalScroll
+        ? viewportRestore.scrollLeft
+        : nextScrollPosition.left;
       scrollContainer.scrollTop = nextScrollPosition.top;
     } else if (viewportRestore.mode === 'preserve-scroll') {
       scrollContainer.scrollLeft = viewportRestore.scrollLeft;
@@ -3030,6 +3072,10 @@ export function PdfPreview({
                 width: 1,
                 height: 1,
               };
+              const pageDisplayScale =
+                previewViewportWidth > 0 && pageSize.width > 0
+                  ? (previewViewportWidth * zoomLevel) / pageSize.width
+                  : 1;
               const displayWidth = Math.max(
                 1,
                 Math.round(pageSize.width * pageDisplayScale),
@@ -3306,6 +3352,27 @@ export function PdfPreview({
                                 onPointerDown={(event) =>
                                   handleTextNoteResizeStart(index, event)
                                 }
+                                onPointerMove={(event) =>
+                                  handleTextNoteResizePointerEvent(
+                                    index,
+                                    'pointermove',
+                                    event,
+                                  )
+                                }
+                                onPointerUp={(event) =>
+                                  handleTextNoteResizePointerEvent(
+                                    index,
+                                    'pointerup',
+                                    event,
+                                  )
+                                }
+                                onPointerCancel={(event) =>
+                                  handleTextNoteResizePointerEvent(
+                                    index,
+                                    'pointercancel',
+                                    event,
+                                  )
+                                }
                               />
                             ) : null}
                           </article>
@@ -3348,6 +3415,27 @@ export function PdfPreview({
                             aria-label={`Resize note on page ${index + 1}`}
                             onPointerDown={(event) =>
                               handleTextNoteResizeStart(index, event)
+                            }
+                            onPointerMove={(event) =>
+                              handleTextNoteResizePointerEvent(
+                                index,
+                                'pointermove',
+                                event,
+                              )
+                            }
+                            onPointerUp={(event) =>
+                              handleTextNoteResizePointerEvent(
+                                index,
+                                'pointerup',
+                                event,
+                              )
+                            }
+                            onPointerCancel={(event) =>
+                              handleTextNoteResizePointerEvent(
+                                index,
+                                'pointercancel',
+                                event,
+                              )
                             }
                           />
                         </article>

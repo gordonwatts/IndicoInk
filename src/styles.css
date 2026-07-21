@@ -477,6 +477,7 @@ input:focus-visible {
 .page-surface.is-slides-view {
   padding-top: 0;
   padding-bottom: 12px;
+  overflow-x: hidden;
 }
 
 .page-stack {

@@ -487,3 +487,97 @@ test('a quick touch pan continues moving after release', async () => {
     await harness.close().catch(() => {});
   }
 });
+
+test('toolbar zoom scales the PDF without resizing its viewport', async () => {
+  const { userDataDir } = await prepareSmallFixtureTalk();
+  const harness = await launchElectronHarness({ userDataDir });
+
+  try {
+    await harness.page
+      .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
+      .click();
+    await harness.page
+      .getByRole('button', {
+        name: 'Open talk for Designing a calm note-taking workflow',
+      })
+      .click();
+    await expect(
+      harness.page.getByRole('button', { name: 'Zoom in' }),
+    ).toBeVisible();
+    await expect(
+      harness.page.locator('.pdf-preview-pages.is-rendering'),
+    ).toHaveCount(0);
+
+    const page = harness.page.locator('.pdf-preview-sheet').first();
+    const stage = harness.page.locator('.pdf-preview-stage');
+    const talkStatusStrip = harness.page.locator('.slides-view-controls');
+    await expect
+      .poll(async () => (await page.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(100);
+    const initialPageBox = await page.boundingBox();
+    const initialStageBox = await stage.boundingBox();
+    const initialStatusStripBox = await talkStatusStrip.boundingBox();
+    if (!initialPageBox || !initialStageBox || !initialStatusStripBox) {
+      throw new Error(
+        'The PDF preview was not visible for toolbar zoom testing.',
+      );
+    }
+    const initialSurfaceMetrics = await harness.page
+      .locator('.page-surface')
+      .evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        overflowX: getComputedStyle(element).overflowX,
+        scrollLeft: element.scrollLeft,
+      }));
+
+    await harness.page.getByRole('button', { name: 'Zoom in' }).click();
+    await expect(harness.page.getByText('115%')).toBeVisible();
+    await expect
+      .poll(async () => (await page.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(initialPageBox.width * 1.1);
+
+    const finalStageBox = await stage.boundingBox();
+    const finalStatusStripBox = await talkStatusStrip.boundingBox();
+    const finalSurfaceMetrics = await harness.page
+      .locator('.page-surface')
+      .evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        overflowX: getComputedStyle(element).overflowX,
+        scrollLeft: element.scrollLeft,
+      }));
+    expect(finalSurfaceMetrics).toEqual(initialSurfaceMetrics);
+    expect(finalStageBox?.width ?? 0).toBeCloseTo(initialStageBox.width, 0);
+    expect(finalStatusStripBox?.x ?? 0).toBeCloseTo(
+      initialStatusStripBox.x,
+      0,
+    );
+    expect(finalStatusStripBox?.width ?? 0).toBeCloseTo(
+      initialStatusStripBox.width,
+      0,
+    );
+
+    await harness.page.getByRole('button', { name: 'Zoom out' }).click();
+    await expect(harness.page.getByText('100%')).toBeVisible();
+    await expect
+      .poll(async () => (await page.boundingBox())?.width ?? 0)
+      .toBeCloseTo(initialPageBox.width, 0);
+    await expect
+      .poll(() =>
+        harness.page
+          .locator('.page-surface')
+          .evaluate((element) => element.scrollLeft),
+      )
+      .toBe(initialSurfaceMetrics.scrollLeft);
+    const restoredStatusStripBox = await talkStatusStrip.boundingBox();
+    expect(restoredStatusStripBox?.x ?? 0).toBeCloseTo(
+      initialStatusStripBox.x,
+      0,
+    );
+    expect(restoredStatusStripBox?.width ?? 0).toBeCloseTo(
+      initialStatusStripBox.width,
+      0,
+    );
+  } finally {
+    await harness.close().catch(() => {});
+  }
+});
