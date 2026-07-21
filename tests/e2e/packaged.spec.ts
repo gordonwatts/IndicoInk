@@ -119,6 +119,7 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await page.mouse.move(
     resizeHandleBox.x + resizeHandleBox.width / 2 + 48,
     resizeHandleBox.y + resizeHandleBox.height / 2,
+    { steps: 8 },
   );
   await page.mouse.up();
   await expect
@@ -138,6 +139,7 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await page.mouse.move(
     dragHandleBox.x + dragHandleBox.width / 2 + 36,
     dragHandleBox.y + dragHandleBox.height / 2 + 24,
+    { steps: 8 },
   );
   await page.mouse.up();
   await expect
