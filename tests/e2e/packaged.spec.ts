@@ -75,7 +75,9 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     throw new Error('Acceptance PDF sheet was not visible.');
   }
 
-  const noteX = Math.round(box.width * 0.55);
+  // Leave enough room on the right for the resize and drag acceptance steps
+  // when the PDF fills the viewport at its real zoom level.
+  const noteX = Math.round(box.width * 0.35);
   const noteY = Math.round(box.height * 0.26);
 
   await page.getByRole('button', { name: 'Text' }).click();
