@@ -54,7 +54,7 @@ const buildRefreshEvent = () => ({
 });
 
 describe('refreshIndicoEvent', () => {
-  it('detects annotated deck conflicts, keeps the old cache when requested, and imports new PDFs', async () => {
+  it('does not report a conflict when an annotated PDF keeps its URL but its label changes', async () => {
     const store = makeStore();
     const eventUrl = 'https://indico.example.org/event/refresh-2026';
     const conferenceId = createConferenceId(eventUrl);
@@ -128,7 +128,7 @@ describe('refreshIndicoEvent', () => {
       updatedAt: now,
     });
 
-    const conflictResult = await refreshIndicoEvent(store, eventUrl, {
+    const firstRefreshResult = await refreshIndicoEvent(store, eventUrl, {
       fetchImpl: vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -138,27 +138,7 @@ describe('refreshIndicoEvent', () => {
       }),
     });
 
-    expect(conflictResult).toMatchObject({
-      kind: 'conflict',
-      conferenceId,
-      title: 'Refreshed Indico Event',
-    });
-    if (conflictResult.kind === 'conflict') {
-      expect(conflictResult.conflicts).toHaveLength(1);
-    }
-
-    const keepResult = await refreshIndicoEvent(store, eventUrl, {
-      fetchImpl: vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        headers: { get: vi.fn().mockReturnValue(null) },
-        text: vi.fn().mockResolvedValue(JSON.stringify(buildRefreshEvent())),
-      }),
-      decision: 'keep',
-    });
-
-    expect(keepResult).toMatchObject({
+    expect(firstRefreshResult).toMatchObject({
       kind: 'refreshed',
       conferenceId,
       title: 'Refreshed Indico Event',
@@ -166,10 +146,28 @@ describe('refreshIndicoEvent', () => {
       newlyAvailableDeckCount: 1,
     });
 
+    const refreshResult = await refreshIndicoEvent(store, eventUrl, {
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: vi.fn().mockReturnValue(null) },
+        text: vi.fn().mockResolvedValue(JSON.stringify(buildRefreshEvent())),
+      }),
+    });
+
+    expect(refreshResult).toMatchObject({
+      kind: 'refreshed',
+      conferenceId,
+      title: 'Refreshed Indico Event',
+      changedTalkCount: 0,
+      newlyAvailableDeckCount: 0,
+    });
+
     const decks = await store.listDecksByTalk(talkId);
     expect(decks).toHaveLength(2);
     expect(decks.find((deck) => deck.id === deckId)?.displayName).toBe(
-      'Slides v1',
+      'Slides v2',
     );
     expect(
       decks.find((deck) => deck.sourceUrl.endsWith('/materials/extras.pdf'))
@@ -178,7 +176,7 @@ describe('refreshIndicoEvent', () => {
 
     const talk = await store.getTalk(talkId);
     expect(talk?.title).toBe('Updated talk title');
-    expect(talk?.upstreamStatus).toBe('changed');
+    expect(talk?.upstreamStatus).toBe('present');
 
     await store.close();
   });
