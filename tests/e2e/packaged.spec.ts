@@ -77,8 +77,9 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
 
   // Leave enough room on the right for the resize and drag acceptance steps
   // when the PDF fills the viewport at its real zoom level.
-  const noteX = Math.round(box.width * 0.35);
+  const noteX = Math.round(box.width * 0.2);
   const noteY = Math.round(box.height * 0.26);
+  const resizeDelta = Math.max(48, Math.round(box.width * 0.25));
 
   await page.getByRole('button', { name: 'Text' }).click();
   await sheet.click({ position: { x: noteX, y: noteY } });
@@ -120,7 +121,7 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
   );
   await page.mouse.move(
-    resizeHandleBox.x + resizeHandleBox.width / 2 + 48,
+    resizeHandleBox.x + resizeHandleBox.width / 2 + resizeDelta,
     resizeHandleBox.y + resizeHandleBox.height / 2,
     { steps: 8 },
   );
