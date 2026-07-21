@@ -111,6 +111,7 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   const resizeHandle = page.getByRole('button', {
     name: 'Resize note on page 1',
   });
+  await resizeHandle.hover();
   const resizeHandleBox = await resizeHandle.boundingBox();
   if (!editorBox || !resizeHandleBox) {
     throw new Error('Acceptance text-note resize handle was not visible.');
@@ -138,6 +139,7 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     .toBeGreaterThan(noteWidthBeforeResize + 20);
 
   const editorPositionBeforeDrag = await editor.boundingBox();
+  await dragHandle.hover();
   const dragHandleBox = await dragHandle.boundingBox();
   if (!editorPositionBeforeDrag || !dragHandleBox) {
     throw new Error('Acceptance text-note drag handle was not visible.');
