@@ -487,3 +487,46 @@ test('a quick touch pan continues moving after release', async () => {
     await harness.close().catch(() => {});
   }
 });
+
+test('toolbar zoom scales the PDF without resizing its viewport', async () => {
+  const { userDataDir } = await prepareSmallFixtureTalk();
+  const harness = await launchElectronHarness({ userDataDir });
+
+  try {
+    await harness.page
+      .getByRole('button', { name: 'Open IndicoInk Small Event 2026' })
+      .click();
+    await harness.page
+      .getByRole('button', {
+        name: 'Open talk for Designing a calm note-taking workflow',
+      })
+      .click();
+    await expect(
+      harness.page.getByRole('button', { name: 'Zoom in' }),
+    ).toBeVisible();
+    await expect(
+      harness.page.locator('.pdf-preview-pages.is-rendering'),
+    ).toHaveCount(0);
+
+    const page = harness.page.locator('.pdf-preview-sheet').first();
+    const stage = harness.page.locator('.pdf-preview-stage');
+    const initialPageBox = await page.boundingBox();
+    const initialStageBox = await stage.boundingBox();
+    if (!initialPageBox || !initialStageBox) {
+      throw new Error(
+        'The PDF preview was not visible for toolbar zoom testing.',
+      );
+    }
+
+    await harness.page.getByRole('button', { name: 'Zoom in' }).click();
+    await expect(harness.page.getByText('115%')).toBeVisible();
+    await expect
+      .poll(async () => (await page.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(initialPageBox.width * 1.1);
+
+    const finalStageBox = await stage.boundingBox();
+    expect(finalStageBox?.width ?? 0).toBeCloseTo(initialStageBox.width, 0);
+  } finally {
+    await harness.close().catch(() => {});
+  }
+});
