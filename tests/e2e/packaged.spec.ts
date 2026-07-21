@@ -116,6 +116,9 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     resizeHandleBox.y + resizeHandleBox.height / 2,
   );
   await page.mouse.down();
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   await page.mouse.move(
     resizeHandleBox.x + resizeHandleBox.width / 2 + 48,
     resizeHandleBox.y + resizeHandleBox.height / 2,
@@ -136,6 +139,9 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
     dragHandleBox.y + dragHandleBox.height / 2,
   );
   await page.mouse.down();
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   await page.mouse.move(
     dragHandleBox.x + dragHandleBox.width / 2 + 36,
     dragHandleBox.y + dragHandleBox.height / 2 + 24,
