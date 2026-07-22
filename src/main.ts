@@ -40,7 +40,10 @@ import type {
 } from './shared/exportNotes';
 import { DeckCacheManager } from './deckCache';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
-import type { AgendaDownloadStatus } from './shared/agendaDownload';
+import type {
+  AgendaDownloadStatus,
+  AgendaDownloadSummary,
+} from './shared/agendaDownload';
 import {
   getIsolatedUserDataPath,
   getPersistenceDbPath,
@@ -138,6 +141,7 @@ const getAgendaDownloadManager = () =>
   (agendaDownloadManager = new AgendaDownloadManager(
     getPersistenceStore(),
     (deck) => getDeckCacheManager().ensureDeckAvailable(deck),
+    (deck) => getDeckCacheManager().isDeckCached(deck),
   ));
 
 const toExportAnnotation = (annotation: {
@@ -473,6 +477,12 @@ ipcMain.handle(
   'agenda:download-status',
   async (_event, operationId: string): Promise<AgendaDownloadStatus | null> =>
     getAgendaDownloadManager().getDownloadStatus(operationId),
+);
+
+ipcMain.handle(
+  'agenda:download-summary',
+  async (_event, conferenceId: string): Promise<AgendaDownloadSummary> =>
+    getAgendaDownloadManager().getDownloadSummary(conferenceId),
 );
 
 ipcMain.handle(

@@ -3,6 +3,7 @@ import type { AppSettings } from './shared/appSettings';
 import type { AgendaTalkSummary } from './shared/agenda';
 import type {
   AgendaDownloadStartResult,
+  AgendaDownloadSummary,
   AgendaDownloadStatus,
 } from './shared/agendaDownload';
 import type { PdfSelection } from './openPdf';
@@ -50,6 +51,9 @@ declare global {
       getAgendaDownloadStatus: (
         operationId: string,
       ) => Promise<AgendaDownloadStatus | null>;
+      getAgendaDownloadSummary: (
+        conferenceId: string,
+      ) => Promise<AgendaDownloadSummary>;
       cancelAgendaDownload: (operationId: string) => Promise<void>;
       deleteLibraryEvent: (conferenceId: string) => Promise<void>;
       refreshLibraryEvent: (

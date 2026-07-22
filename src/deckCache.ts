@@ -62,6 +62,12 @@ export class DeckCacheManager {
     return createCacheFilePath(this.cacheRoot, conferenceId, deckId);
   }
 
+  async isDeckCached(deck: Deck) {
+    return this.isValidPdfCache(
+      this.getCacheFilePath(deck.conferenceId, deck.id),
+    );
+  }
+
   getDownloadStatus(operationId: string) {
     return this.downloads.get(operationId)?.status ?? null;
   }

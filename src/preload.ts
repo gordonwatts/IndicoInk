@@ -19,6 +19,7 @@ import type {
 import type { AgendaTalkSummary } from './shared/agenda';
 import type {
   AgendaDownloadStartResult,
+  AgendaDownloadSummary,
   AgendaDownloadStatus,
 } from './shared/agendaDownload';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
@@ -82,6 +83,11 @@ const getAgendaDownloadStatus = async (
   operationId: string,
 ): Promise<AgendaDownloadStatus | null> =>
   ipcRenderer.invoke('agenda:download-status', operationId);
+
+const getAgendaDownloadSummary = async (
+  conferenceId: string,
+): Promise<AgendaDownloadSummary> =>
+  ipcRenderer.invoke('agenda:download-summary', conferenceId);
 
 const cancelAgendaDownload = async (operationId: string): Promise<void> =>
   ipcRenderer.invoke('agenda:download-cancel', operationId);
@@ -181,6 +187,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   listAgendaTalks,
   startAgendaDownload,
   getAgendaDownloadStatus,
+  getAgendaDownloadSummary,
   cancelAgendaDownload,
   deleteLibraryEvent,
   refreshLibraryEvent,
@@ -230,6 +237,9 @@ export type IndicoInkApi = {
   getAgendaDownloadStatus: (
     operationId: string,
   ) => Promise<AgendaDownloadStatus | null>;
+  getAgendaDownloadSummary: (
+    conferenceId: string,
+  ) => Promise<AgendaDownloadSummary>;
   cancelAgendaDownload: (operationId: string) => Promise<void>;
   deleteLibraryEvent: (conferenceId: string) => Promise<void>;
   refreshLibraryEvent: (

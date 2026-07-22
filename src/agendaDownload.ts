@@ -4,6 +4,7 @@ import type { Deck, Talk } from './persistenceModels';
 import type { DeckCacheEnsureResult } from './shared/deckCache';
 import type {
   AgendaDownloadStartResult,
+  AgendaDownloadSummary,
   AgendaDownloadStatus,
 } from './shared/agendaDownload';
 
@@ -18,6 +19,7 @@ type AgendaDownloadRecord = {
 };
 
 type EnsureDeckAvailable = (deck: Deck) => Promise<DeckCacheEnsureResult>;
+type IsDeckCached = (deck: Deck) => Promise<boolean>;
 
 export class AgendaDownloadManager {
   private readonly downloads = new Map<string, AgendaDownloadRecord>();
@@ -25,11 +27,32 @@ export class AgendaDownloadManager {
   constructor(
     private readonly store: AgendaDownloadStore,
     private readonly ensureDeckAvailable: EnsureDeckAvailable,
+    private readonly isDeckCached: IsDeckCached = async () => false,
     private readonly now = () => Date.now(),
   ) {}
 
   getDownloadStatus(operationId: string): AgendaDownloadStatus | null {
     return this.downloads.get(operationId)?.status ?? null;
+  }
+
+  async getDownloadSummary(
+    conferenceId: string,
+  ): Promise<AgendaDownloadSummary> {
+    const talkDeckGroups = await this.getTalkDeckGroups(conferenceId);
+    const downloadedTalks = (
+      await Promise.all(
+        talkDeckGroups.map(async ({ decks }) =>
+          (
+            await Promise.all(decks.map((deck) => this.isDeckCached(deck)))
+          ).every(Boolean),
+        ),
+      )
+    ).filter(Boolean).length;
+
+    return {
+      downloadedTalks,
+      totalTalks: talkDeckGroups.length,
+    };
   }
 
   startDownload(conferenceId: string): AgendaDownloadStartResult {
@@ -93,20 +116,9 @@ export class AgendaDownloadManager {
 
   private async runDownload(record: AgendaDownloadRecord) {
     try {
-      const talks = await this.store.listTalksByConference(
+      const talkDeckGroups = await this.getTalkDeckGroups(
         record.status.conferenceId,
       );
-      const talkDeckGroups = (
-        await Promise.all(
-          talks.map(async (talk) => ({
-            decks: await this.store.listDecksByTalk(talk.id),
-          })),
-        )
-      )
-        .map(({ decks }) => ({
-          decks: decks.filter((deck) => deck.mimeType === 'application/pdf'),
-        }))
-        .filter(({ decks }) => decks.length > 0);
       const decks = talkDeckGroups.flatMap(({ decks: talkDecks }) => talkDecks);
 
       if (record.canceled) {
@@ -193,5 +205,20 @@ export class AgendaDownloadManager {
         updatedAt: this.now(),
       };
     }
+  }
+
+  private async getTalkDeckGroups(conferenceId: string) {
+    const talks = await this.store.listTalksByConference(conferenceId);
+    return (
+      await Promise.all(
+        talks.map(async (talk) => ({
+          decks: await this.store.listDecksByTalk(talk.id),
+        })),
+      )
+    )
+      .map(({ decks }) => ({
+        decks: decks.filter((deck) => deck.mimeType === 'application/pdf'),
+      }))
+      .filter(({ decks }) => decks.length > 0);
   }
 }

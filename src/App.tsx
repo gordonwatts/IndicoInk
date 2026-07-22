@@ -16,7 +16,10 @@ import type {
 } from './shared/agenda';
 import type { LibraryEventSummary } from './shared/library';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
-import type { AgendaDownloadStatus } from './shared/agendaDownload';
+import type {
+  AgendaDownloadStatus,
+  AgendaDownloadSummary,
+} from './shared/agendaDownload';
 import type {
   ConferenceExportSnapshot,
   ExportRenderedSlide,
@@ -987,6 +990,8 @@ export function App() {
   );
   const [agendaDownloadStatus, setAgendaDownloadStatus] =
     React.useState<AgendaDownloadStatus | null>(null);
+  const [agendaDownloadSummary, setAgendaDownloadSummary] =
+    React.useState<AgendaDownloadSummary | null>(null);
   const [agendaDownloadBannerVisible, setAgendaDownloadBannerVisible] =
     React.useState(false);
   const [agendaDayLabel, setAgendaDayLabel] = React.useState<string | null>(
@@ -1345,6 +1350,14 @@ export function App() {
       : null;
   const activeSlideDownloadPercent =
     activeSlideDownloadProgress?.percentComplete ?? null;
+  const activeAgendaDownloadTalks =
+    agendaDownloadStatus?.conferenceId === selectedEventId
+      ? agendaDownloadStatus.downloadedTalks
+      : 0;
+  const downloadedAgendaTalks = Math.max(
+    agendaDownloadSummary?.downloadedTalks ?? 0,
+    activeAgendaDownloadTalks,
+  );
   const startAgendaDownload = async () => {
     if (!selectedEventId) {
       return;
@@ -2462,6 +2475,34 @@ export function App() {
   }, [agendaDownloadStatus?.operationId, agendaDownloadStatus?.kind]);
 
   React.useEffect(() => {
+    let canceled = false;
+
+    if (!selectedEventId || destination !== 'agenda') {
+      setAgendaDownloadSummary(null);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    void window.indicoInk
+      .getAgendaDownloadSummary(selectedEventId)
+      .then((summary) => {
+        if (!canceled) {
+          setAgendaDownloadSummary(summary);
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setAgendaDownloadSummary(null);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [destination, selectedEventId]);
+
+  React.useEffect(() => {
     if (slideViewerState.kind === 'closed') {
       setSlideViewerMetrics({
         currentSlideNumber: 1,
@@ -2987,11 +3028,11 @@ export function App() {
                       tone="success"
                       icon="check"
                     />
-                    {agendaDownloadStatus ? (
+                    {agendaDownloadSummary ? (
                       <StatusLabel
-                        label={`${agendaDownloadStatus.downloadedTalks} talk${agendaDownloadStatus.downloadedTalks === 1 ? '' : 's'} downloaded`}
+                        label={`${downloadedAgendaTalks} talk${downloadedAgendaTalks === 1 ? '' : 's'} downloaded`}
                         tone={
-                          agendaDownloadStatus.kind === 'error'
+                          agendaDownloadStatus?.kind === 'error'
                             ? 'warning'
                             : 'success'
                         }

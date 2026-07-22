@@ -108,4 +108,27 @@ describe('agenda download manager', () => {
     });
     expect(store.listTalksByConference).toHaveBeenCalledOnce();
   });
+
+  it('counts only talks whose PDF materials are all cached', async () => {
+    const store = {
+      listTalksByConference: vi
+        .fn()
+        .mockResolvedValue([makeTalk('talk-1'), makeTalk('talk-2')]),
+      listDecksByTalk: vi
+        .fn()
+        .mockResolvedValueOnce([makeDeck('deck-1')])
+        .mockResolvedValueOnce([makeDeck('deck-2a'), makeDeck('deck-2b')]),
+    };
+    const isDeckCached = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const manager = new AgendaDownloadManager(store, vi.fn(), isDeckCached);
+
+    await expect(manager.getDownloadSummary('conference-1')).resolves.toEqual({
+      downloadedTalks: 1,
+      totalTalks: 2,
+    });
+  });
 });

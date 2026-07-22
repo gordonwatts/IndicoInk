@@ -17,3 +17,8 @@ export type AgendaDownloadStartResult = {
   operationId: string;
   conferenceId: string;
 };
+
+export type AgendaDownloadSummary = {
+  downloadedTalks: number;
+  totalTalks: number;
+};

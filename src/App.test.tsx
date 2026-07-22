@@ -104,6 +104,10 @@ describe('App', () => {
         conferenceId: 'conference-opened',
       }),
       getAgendaDownloadStatus: vi.fn().mockResolvedValue(null),
+      getAgendaDownloadSummary: vi.fn().mockResolvedValue({
+        downloadedTalks: 0,
+        totalTalks: 0,
+      }),
       cancelAgendaDownload: vi.fn().mockResolvedValue(undefined),
       deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
       refreshLibraryEvent: vi.fn().mockResolvedValue({
@@ -1280,12 +1284,13 @@ describe('App', () => {
         name: `Open ${libraryEvent.title}`,
       }),
     );
+    expect(await screen.findByText('0 talks downloaded')).toBeTruthy();
     await user.click(
       await screen.findByRole('button', { name: 'Download Talks' }),
     );
 
-    expect(await screen.findByText('Downloading talks')).toBeTruthy();
     expect(await screen.findByText('1 talk downloaded')).toBeTruthy();
+    expect(await screen.findByText('Downloading talks')).toBeTruthy();
     expect(screen.getByRole('progressbar')).toBeTruthy();
     expect(screen.getByText('1/4 PDFs')).toBeTruthy();
 
