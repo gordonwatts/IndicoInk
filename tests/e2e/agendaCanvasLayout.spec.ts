@@ -386,6 +386,49 @@ test('keeps talk download progress above the agenda surface', async () => {
   }
 });
 
+test('keeps talk download progress width stable as the PDF name changes', async () => {
+  const harness = await openLargeAgenda();
+
+  try {
+    await harness.page.getByRole('button', { name: 'Download Talks' }).click();
+    await expect(harness.page.locator('.agenda-download-banner')).toBeVisible();
+
+    const widths = await harness.page.evaluate(() => {
+      const message = document.querySelector<HTMLElement>(
+        '.agenda-download-copy span',
+      );
+      const progress = document.querySelector<HTMLElement>(
+        '.agenda-download-progress-bar',
+      );
+      if (!message || !progress) {
+        return null;
+      }
+
+      const originalMessage = message.textContent;
+      message.textContent = 'Downloading short.pdf...';
+      const shortMessageWidth = progress.getBoundingClientRect().width;
+      message.textContent =
+        'Downloading an exceptionally long presentation filename that should be truncated.pdf...';
+      const longMessageWidth = progress.getBoundingClientRect().width;
+      message.textContent = originalMessage;
+
+      return {
+        shortMessageWidth,
+        longMessageWidth,
+        textOverflow: getComputedStyle(message).textOverflow,
+        whiteSpace: getComputedStyle(message).whiteSpace,
+      };
+    });
+
+    expect(widths).not.toBeNull();
+    expect(widths?.longMessageWidth).toBe(widths?.shortMessageWidth);
+    expect(widths?.textOverflow).toBe('ellipsis');
+    expect(widths?.whiteSpace).toBe('nowrap');
+  } finally {
+    await harness.close();
+  }
+});
+
 test('adapts agenda columns across wide and portrait layouts', async () => {
   const harness = await openLargeAgenda();
 
