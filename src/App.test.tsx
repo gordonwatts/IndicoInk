@@ -1279,16 +1279,16 @@ describe('App', () => {
       }),
     );
     await user.click(
-      await screen.findByRole('button', { name: 'Download agenda' }),
+      await screen.findByRole('button', { name: 'Download Talks' }),
     );
 
-    expect(await screen.findByText('Downloading agenda')).toBeTruthy();
+    expect(await screen.findByText('Downloading talks')).toBeTruthy();
     expect(screen.getByRole('progressbar')).toBeTruthy();
     expect(screen.getByText('1/4 PDFs')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Library' }));
 
-    expect(await screen.findByText('Downloading agenda')).toBeTruthy();
+    expect(await screen.findByText('Downloading talks')).toBeTruthy();
     expect(screen.getByText('Downloading Keynote slides...')).toBeTruthy();
   });
 

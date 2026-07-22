@@ -47,7 +47,7 @@ describe('agenda download manager', () => {
         totalDecks: 2,
         completedDecks: 2,
         failedDecks: 0,
-        message: 'Agenda ready for offline use.',
+        message: 'Talks ready for offline use.',
       }),
     );
   });

@@ -58,7 +58,7 @@ export class AgendaDownloadManager {
         completedDecks: 0,
         failedDecks: 0,
         currentDeckTitle: null,
-        message: 'Preparing agenda download...',
+        message: 'Preparing talks download...',
         updatedAt: startedAt,
       },
       canceled: false,
@@ -84,7 +84,7 @@ export class AgendaDownloadManager {
       ...record.status,
       kind: 'canceled',
       currentDeckTitle: null,
-      message: 'Agenda download canceled.',
+      message: 'Talks download canceled.',
       updatedAt: this.now(),
     };
   }
@@ -112,7 +112,7 @@ export class AgendaDownloadManager {
         totalDecks: decks.length,
         message: decks.length
           ? `Downloading ${decks.length} PDF${decks.length === 1 ? '' : 's'}...`
-          : 'No PDF materials found for this agenda.',
+          : 'No PDF materials found for these talks.',
         updatedAt: this.now(),
       };
 
@@ -152,7 +152,7 @@ export class AgendaDownloadManager {
         currentDeckTitle: null,
         message: failedDecks
           ? `${failedDecks} PDF${failedDecks === 1 ? '' : 's'} could not be downloaded.`
-          : 'Agenda ready for offline use.',
+          : 'Talks ready for offline use.',
         updatedAt: this.now(),
       };
     } catch (error) {
@@ -167,7 +167,7 @@ export class AgendaDownloadManager {
         message:
           error instanceof Error
             ? error.message
-            : 'Failed to download the agenda.',
+            : 'Failed to download the talks.',
         updatedAt: this.now(),
       };
     }

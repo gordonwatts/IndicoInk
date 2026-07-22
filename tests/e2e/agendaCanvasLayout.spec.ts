@@ -361,6 +361,31 @@ test('renders agenda canvas cards without same-column overlap', async () => {
   }
 });
 
+test('keeps talk download progress above the agenda surface', async () => {
+  const harness = await openLargeAgenda();
+
+  try {
+    await harness.page.getByRole('button', { name: 'Download Talks' }).click();
+    await expect(harness.page.locator('.agenda-download-banner')).toBeVisible();
+
+    const layout = await harness.page.evaluate(() => {
+      const banner = document.querySelector<HTMLElement>(
+        '.agenda-download-banner',
+      );
+      const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+
+      return {
+        bannerBottom: banner?.getBoundingClientRect().bottom ?? 0,
+        pageSurfaceTop: pageSurface?.getBoundingClientRect().top ?? 0,
+      };
+    });
+
+    expect(layout.bannerBottom).toBeLessThanOrEqual(layout.pageSurfaceTop);
+  } finally {
+    await harness.close();
+  }
+});
+
 test('adapts agenda columns across wide and portrait layouts', async () => {
   const harness = await openLargeAgenda();
 

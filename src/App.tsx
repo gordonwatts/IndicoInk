@@ -1513,7 +1513,7 @@ export function App() {
                 agendaDownloadStatus?.kind === 'downloading'
               }
             >
-              Download agenda
+              Download Talks
             </PrimaryButton>
             <IconButton
               label="Refresh"
@@ -2786,15 +2786,15 @@ export function App() {
             <div className="agenda-download-copy">
               <strong>
                 {agendaDownloadStatus.kind === 'ready'
-                  ? 'Agenda available offline'
+                  ? 'Talks available offline'
                   : agendaDownloadStatus.kind === 'error'
-                    ? 'Agenda download incomplete'
+                    ? 'Talks download incomplete'
                     : agendaDownloadStatus.kind === 'canceled'
-                      ? 'Agenda download canceled'
-                      : 'Downloading agenda'}
+                      ? 'Talks download canceled'
+                      : 'Downloading talks'}
               </strong>
               <span>
-                {agendaDownloadStatus.message ?? 'Preparing agenda download...'}
+                {agendaDownloadStatus.message ?? 'Preparing talks download...'}
               </span>
             </div>
             <progress
@@ -2814,8 +2814,8 @@ export function App() {
             {agendaDownloadStatus.kind === 'queued' ||
             agendaDownloadStatus.kind === 'downloading' ? (
               <IconButton
-                label="Cancel agenda download"
-                title="Cancel agenda download"
+                label="Cancel talks download"
+                title="Cancel talks download"
                 icon="trash"
                 onClick={() => {
                   void cancelAgendaDownload();
@@ -2823,7 +2823,7 @@ export function App() {
               />
             ) : (
               <IconButton
-                label="Dismiss agenda download status"
+                label="Dismiss talks download status"
                 title="Dismiss"
                 icon="check"
                 onClick={() => {
