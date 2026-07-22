@@ -606,6 +606,16 @@ export function PdfPreview({
     }, 160);
   }, [clearLinkPopoverHideTimer]);
 
+  const hideLinkPopoverOnPointerLeave = React.useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (event.pointerType === 'touch') {
+        return;
+      }
+      hideLinkPopoverSoon();
+    },
+    [hideLinkPopoverSoon],
+  );
+
   const showLinkPopover = React.useCallback(
     (pageIndex: number, link: PdfLinkHotspot, x: number, y: number) => {
       clearLinkPopoverHideTimer();
@@ -618,6 +628,42 @@ export function PdfPreview({
     },
     [clearLinkPopoverHideTimer],
   );
+
+  React.useEffect(() => {
+    if (!activeLinkPopover) {
+      return;
+    }
+
+    const dismissTouchPopoverOutside = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (
+        target.closest('.pdf-preview-link-hotspot') ||
+        target.closest('.pdf-preview-link-popover')
+      ) {
+        return;
+      }
+
+      clearLinkPopoverHideTimer();
+      setActiveLinkPopover(null);
+    };
+
+    document.addEventListener('pointerdown', dismissTouchPopoverOutside, true);
+    return () => {
+      document.removeEventListener(
+        'pointerdown',
+        dismissTouchPopoverOutside,
+        true,
+      );
+    };
+  }, [activeLinkPopover, clearLinkPopoverHideTimer]);
 
   const captureViewportAnchor = React.useCallback(() => {
     const scrollContainer = getScrollViewportElement(scrollContainerRef);
@@ -3201,7 +3247,7 @@ export function PdfPreview({
                                 event.clientY,
                               );
                             }}
-                            onPointerLeave={hideLinkPopoverSoon}
+                            onPointerLeave={hideLinkPopoverOnPointerLeave}
                             onPointerDown={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -3455,7 +3501,7 @@ export function PdfPreview({
           role="toolbar"
           aria-label="Link actions"
           onPointerEnter={clearLinkPopoverHideTimer}
-          onPointerLeave={hideLinkPopoverSoon}
+          onPointerLeave={hideLinkPopoverOnPointerLeave}
           style={{
             left: `${Math.max(
               12,
