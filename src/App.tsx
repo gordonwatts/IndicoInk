@@ -987,6 +987,8 @@ export function App() {
   );
   const [agendaDownloadStatus, setAgendaDownloadStatus] =
     React.useState<AgendaDownloadStatus | null>(null);
+  const [agendaDownloadBannerVisible, setAgendaDownloadBannerVisible] =
+    React.useState(false);
   const [agendaDayLabel, setAgendaDayLabel] = React.useState<string | null>(
     null,
   );
@@ -1356,6 +1358,7 @@ export function App() {
       );
       if (status) {
         setAgendaDownloadStatus(status);
+        setAgendaDownloadBannerVisible(true);
       }
     } catch (error) {
       setOpenEventFeedback({
@@ -2777,7 +2780,7 @@ export function App() {
           />
         )}
 
-        {agendaDownloadStatus ? (
+        {agendaDownloadStatus && agendaDownloadBannerVisible ? (
           <div
             className="agenda-download-banner"
             role="status"
@@ -2827,7 +2830,7 @@ export function App() {
                 title="Dismiss"
                 icon="check"
                 onClick={() => {
-                  setAgendaDownloadStatus(null);
+                  setAgendaDownloadBannerVisible(false);
                 }}
               />
             )}
@@ -2984,6 +2987,17 @@ export function App() {
                       tone="success"
                       icon="check"
                     />
+                    {agendaDownloadStatus ? (
+                      <StatusLabel
+                        label={`${agendaDownloadStatus.downloadedTalks} talk${agendaDownloadStatus.downloadedTalks === 1 ? '' : 's'} downloaded`}
+                        tone={
+                          agendaDownloadStatus.kind === 'error'
+                            ? 'warning'
+                            : 'success'
+                        }
+                        icon="download"
+                      />
+                    ) : null}
                     <StatusLabel
                       label={`${agendaTalks.length} ${
                         agendaTalks.length === 1 ? 'talk shown' : 'talks shown'

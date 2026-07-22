@@ -3,9 +3,11 @@ export type AgendaDownloadStatus = {
   conferenceId: string;
   startedAt: number;
   kind: 'queued' | 'downloading' | 'ready' | 'error' | 'canceled';
+  totalTalks: number;
   totalDecks: number;
   completedDecks: number;
   failedDecks: number;
+  downloadedTalks: number;
   currentDeckTitle: string | null;
   message: string | null;
   updatedAt: number;

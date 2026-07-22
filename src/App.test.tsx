@@ -1245,6 +1245,8 @@ describe('App', () => {
       totalDecks: 4,
       completedDecks: 1,
       failedDecks: 0,
+      totalTalks: 4,
+      downloadedTalks: 1,
       currentDeckTitle: 'Keynote slides',
       message: 'Downloading Keynote slides...',
       updatedAt: Date.now(),
@@ -1283,6 +1285,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('Downloading talks')).toBeTruthy();
+    expect(await screen.findByText('1 talk downloaded')).toBeTruthy();
     expect(screen.getByRole('progressbar')).toBeTruthy();
     expect(screen.getByText('1/4 PDFs')).toBeTruthy();
 

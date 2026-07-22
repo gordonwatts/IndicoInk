@@ -57,6 +57,8 @@ export class AgendaDownloadManager {
         totalDecks: 0,
         completedDecks: 0,
         failedDecks: 0,
+        downloadedTalks: 0,
+        totalTalks: 0,
         currentDeckTitle: null,
         message: 'Preparing talks download...',
         updatedAt: startedAt,
@@ -94,13 +96,18 @@ export class AgendaDownloadManager {
       const talks = await this.store.listTalksByConference(
         record.status.conferenceId,
       );
-      const decks = (
+      const talkDeckGroups = (
         await Promise.all(
-          talks.map(async (talk) => this.store.listDecksByTalk(talk.id)),
+          talks.map(async (talk) => ({
+            decks: await this.store.listDecksByTalk(talk.id),
+          })),
         )
       )
-        .flat()
-        .filter((deck) => deck.mimeType === 'application/pdf');
+        .map(({ decks }) => ({
+          decks: decks.filter((deck) => deck.mimeType === 'application/pdf'),
+        }))
+        .filter(({ decks }) => decks.length > 0);
+      const decks = talkDeckGroups.flatMap(({ decks: talkDecks }) => talkDecks);
 
       if (record.canceled) {
         return;
@@ -109,6 +116,7 @@ export class AgendaDownloadManager {
       record.status = {
         ...record.status,
         kind: 'downloading',
+        totalTalks: talkDeckGroups.length,
         totalDecks: decks.length,
         message: decks.length
           ? `Downloading ${decks.length} PDF${decks.length === 1 ? '' : 's'}...`
@@ -116,33 +124,47 @@ export class AgendaDownloadManager {
         updatedAt: this.now(),
       };
 
-      for (const deck of decks) {
+      for (const { decks: talkDecks } of talkDeckGroups) {
         if (record.canceled) {
           return;
         }
 
-        record.status = {
-          ...record.status,
-          currentDeckTitle: deck.displayName,
-          message: `Downloading ${deck.displayName}...`,
-          updatedAt: this.now(),
-        };
+        let talkDownloaded = true;
+        for (const deck of talkDecks) {
+          record.status = {
+            ...record.status,
+            currentDeckTitle: deck.displayName,
+            message: `Downloading ${deck.displayName}...`,
+            updatedAt: this.now(),
+          };
 
-        const result = await this.ensureDeckAvailable(deck);
-        if (record.canceled) {
-          return;
+          const result = await this.ensureDeckAvailable(deck);
+          if (record.canceled) {
+            return;
+          }
+
+          const failedDecks =
+            result.kind === 'ready'
+              ? record.status.failedDecks
+              : record.status.failedDecks + 1;
+          if (result.kind !== 'ready') {
+            talkDownloaded = false;
+          }
+          record.status = {
+            ...record.status,
+            completedDecks: record.status.completedDecks + 1,
+            failedDecks,
+            updatedAt: this.now(),
+          };
         }
 
-        const failedDecks =
-          result.kind === 'ready'
-            ? record.status.failedDecks
-            : record.status.failedDecks + 1;
-        record.status = {
-          ...record.status,
-          completedDecks: record.status.completedDecks + 1,
-          failedDecks,
-          updatedAt: this.now(),
-        };
+        if (talkDownloaded) {
+          record.status = {
+            ...record.status,
+            downloadedTalks: record.status.downloadedTalks + 1,
+            updatedAt: this.now(),
+          };
+        }
       }
 
       const failedDecks = record.status.failedDecks;

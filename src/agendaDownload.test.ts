@@ -47,6 +47,7 @@ describe('agenda download manager', () => {
         totalDecks: 2,
         completedDecks: 2,
         failedDecks: 0,
+        downloadedTalks: 2,
         message: 'Talks ready for offline use.',
       }),
     );
@@ -80,6 +81,7 @@ describe('agenda download manager', () => {
       expect.objectContaining({
         completedDecks: 2,
         failedDecks: 1,
+        downloadedTalks: 0,
         message: '1 PDF could not be downloaded.',
       }),
     );
