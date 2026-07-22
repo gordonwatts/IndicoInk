@@ -68,7 +68,15 @@ const iconPaths: Record<IconName, string> = {
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Z',
 };
 
-export function Icon({ name }: { name: IconName }) {
+const filledBookmarkPath = 'M5.5 4.5h13v15.2L12 16.1l-6.5 3.6V4.5Z';
+
+export function Icon({
+  name,
+  filled = false,
+}: {
+  name: IconName;
+  filled?: boolean | undefined;
+}) {
   if (name === 'atom') {
     return (
       <svg aria-hidden="true" viewBox="0 0 24 24" className="icon">
@@ -102,7 +110,9 @@ export function Icon({ name }: { name: IconName }) {
 
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="icon">
-      <path d={iconPaths[name]} />
+      <path
+        d={name === 'bookmark' && filled ? filledBookmarkPath : iconPaths[name]}
+      />
     </svg>
   );
 }
@@ -135,7 +145,7 @@ export function IconButton({
       disabled={disabled}
       aria-pressed={pressed}
     >
-      <Icon name={icon} />
+      <Icon name={icon} filled={icon === 'bookmark' && pressed} />
     </button>
   );
 }

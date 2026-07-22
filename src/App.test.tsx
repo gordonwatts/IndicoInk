@@ -1503,6 +1503,22 @@ describe('App', () => {
       }),
     );
 
+    const bookmarkedButton = screen
+      .getAllByRole('button', { name: 'Remove bookmark' })
+      .find(
+        (button) =>
+          button.querySelector('path')?.getAttribute('d') ===
+          'M5.5 4.5h13v15.2L12 16.1l-6.5 3.6V4.5Z',
+      );
+    expect(bookmarkedButton).toBeTruthy();
+    if (!bookmarkedButton) {
+      throw new Error('Expected a filled bookmark button.');
+    }
+    expect(bookmarkedButton.getAttribute('aria-pressed')).toBe('true');
+    expect(bookmarkedButton.querySelector('path')?.getAttribute('d')).toBe(
+      'M5.5 4.5h13v15.2L12 16.1l-6.5 3.6V4.5Z',
+    );
+
     expect(window.indicoInk.setTalkBookmarked).toHaveBeenCalledWith(
       'talk-2',
       true,
