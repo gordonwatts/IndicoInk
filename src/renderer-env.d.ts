@@ -1,6 +1,11 @@
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
 import type { AgendaTalkSummary } from './shared/agenda';
+import type {
+  AgendaDownloadStartResult,
+  AgendaDownloadSummary,
+  AgendaDownloadStatus,
+} from './shared/agendaDownload';
 import type { PdfSelection } from './openPdf';
 import type {
   LibraryEventSummary,
@@ -40,6 +45,16 @@ declare global {
       ) => Promise<PdfWorkspaceSaveResult>;
       listLibraryEvents: () => Promise<LibraryEventSummary[]>;
       listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
+      startAgendaDownload: (
+        conferenceId: string,
+      ) => Promise<AgendaDownloadStartResult>;
+      getAgendaDownloadStatus: (
+        operationId: string,
+      ) => Promise<AgendaDownloadStatus | null>;
+      getAgendaDownloadSummary: (
+        conferenceId: string,
+      ) => Promise<AgendaDownloadSummary>;
+      cancelAgendaDownload: (operationId: string) => Promise<void>;
       deleteLibraryEvent: (conferenceId: string) => Promise<void>;
       refreshLibraryEvent: (
         eventUrl: string,
