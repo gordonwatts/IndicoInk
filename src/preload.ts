@@ -17,6 +17,10 @@ import type {
   OpenLibraryEventResult,
 } from './shared/library';
 import type { AgendaTalkSummary } from './shared/agenda';
+import type {
+  AgendaDownloadStartResult,
+  AgendaDownloadStatus,
+} from './shared/agendaDownload';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 
@@ -68,6 +72,19 @@ const listAgendaTalks = async (
   conferenceId: string,
 ): Promise<AgendaTalkSummary[]> =>
   ipcRenderer.invoke('agenda:list-talks', conferenceId);
+
+const startAgendaDownload = async (
+  conferenceId: string,
+): Promise<AgendaDownloadStartResult> =>
+  ipcRenderer.invoke('agenda:download-start', conferenceId);
+
+const getAgendaDownloadStatus = async (
+  operationId: string,
+): Promise<AgendaDownloadStatus | null> =>
+  ipcRenderer.invoke('agenda:download-status', operationId);
+
+const cancelAgendaDownload = async (operationId: string): Promise<void> =>
+  ipcRenderer.invoke('agenda:download-cancel', operationId);
 
 const deleteLibraryEvent = async (conferenceId: string): Promise<void> =>
   ipcRenderer.invoke('library:delete-event', conferenceId);
@@ -162,6 +179,9 @@ contextBridge.exposeInMainWorld('indicoInk', {
   saveDeckWorkspaceState,
   listLibraryEvents,
   listAgendaTalks,
+  startAgendaDownload,
+  getAgendaDownloadStatus,
+  cancelAgendaDownload,
   deleteLibraryEvent,
   refreshLibraryEvent,
   openLibraryEvent,
@@ -204,6 +224,13 @@ export type IndicoInkApi = {
   ) => Promise<PdfWorkspaceSaveResult>;
   listLibraryEvents: () => Promise<LibraryEventSummary[]>;
   listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
+  startAgendaDownload: (
+    conferenceId: string,
+  ) => Promise<AgendaDownloadStartResult>;
+  getAgendaDownloadStatus: (
+    operationId: string,
+  ) => Promise<AgendaDownloadStatus | null>;
+  cancelAgendaDownload: (operationId: string) => Promise<void>;
   deleteLibraryEvent: (conferenceId: string) => Promise<void>;
   refreshLibraryEvent: (
     eventUrl: string,

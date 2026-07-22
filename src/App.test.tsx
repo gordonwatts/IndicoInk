@@ -99,6 +99,12 @@ describe('App', () => {
       }),
       listLibraryEvents: vi.fn().mockResolvedValue([]),
       listAgendaTalks: vi.fn().mockResolvedValue([]),
+      startAgendaDownload: vi.fn().mockResolvedValue({
+        operationId: 'agenda-download-1',
+        conferenceId: 'conference-opened',
+      }),
+      getAgendaDownloadStatus: vi.fn().mockResolvedValue(null),
+      cancelAgendaDownload: vi.fn().mockResolvedValue(undefined),
       deleteLibraryEvent: vi.fn().mockResolvedValue(undefined),
       refreshLibraryEvent: vi.fn().mockResolvedValue({
         kind: 'refreshed',
@@ -1217,6 +1223,73 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('2 annotated slides')).toBeTruthy();
+  });
+
+  it('keeps the agenda download progress visible after leaving the agenda', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-download',
+      sourceUrl: 'https://indico.example.org/event/download',
+      title: 'Downloadable Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const downloadStatus = {
+      operationId: 'agenda-download-1',
+      conferenceId: libraryEvent.id,
+      startedAt: Date.now(),
+      kind: 'downloading' as const,
+      totalDecks: 4,
+      completedDecks: 1,
+      failedDecks: 0,
+      currentDeckTitle: 'Keynote slides',
+      message: 'Downloading Keynote slides...',
+      updatedAt: Date.now(),
+    };
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.openLibraryEvent = vi.fn().mockResolvedValue({
+      kind: 'opened',
+      result: {
+        conferenceId: libraryEvent.id,
+        title: libraryEvent.title,
+        talkCount: 0,
+        deckCount: 4,
+        savedAt: Date.now(),
+      },
+    });
+    window.indicoInk.startAgendaDownload = vi.fn().mockResolvedValue({
+      operationId: downloadStatus.operationId,
+      conferenceId: libraryEvent.id,
+    });
+    window.indicoInk.getAgendaDownloadStatus = vi
+      .fn()
+      .mockResolvedValue(downloadStatus);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Download agenda' }),
+    );
+
+    expect(await screen.findByText('Downloading agenda')).toBeTruthy();
+    expect(screen.getByRole('progressbar')).toBeTruthy();
+    expect(screen.getByText('1/4 PDFs')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Library' }));
+
+    expect(await screen.findByText('Downloading agenda')).toBeTruthy();
+    expect(screen.getByText('Downloading Keynote slides...')).toBeTruthy();
   });
 
   it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {

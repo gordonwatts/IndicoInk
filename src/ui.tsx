@@ -12,6 +12,7 @@ export type IconName =
   | 'search'
   | 'refresh'
   | 'export'
+  | 'download'
   | 'trash'
   | 'copy'
   | 'undo'
@@ -47,6 +48,8 @@ const iconPaths: Record<IconName, string> = {
   refresh:
     'M17.35 8.65A6.5 6.5 0 1 0 18.5 12h-2a4.5 4.5 0 1 1-.83-2.6L14 11h5V6l-1.65 1.65Z',
   export: 'M12 4.5 16 8.5h-2.75V14h-2.5V8.5H8L12 4.5Zm-6 11h12v2H6v-2Z',
+  download:
+    'M11 4.5h2v8.1l2.6-2.6 1.4 1.4-5 5-5-5 1.4-1.4 2.6 2.6V4.5ZM5.5 18h13v2h-13v-2Z',
   trash:
     'M9.5 4.75h5l.75 1.25H19v2H5v-2h3.75l.75-1.25Zm-1 4.5h7l-.55 9.5A1.5 1.5 0 0 1 13.96 20h-3.92a1.5 1.5 0 0 1-1.49-1.25l-.55-9.5Zm2 2v5h1.5v-5h-1.5Zm3 0v5h1.5v-5h-1.5Z',
   copy: 'M9.5 5.5h7A1.5 1.5 0 0 1 18 7v7h-2V7h-7V5.5Zm-2 3h7A1.5 1.5 0 0 1 16 10v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 18v-8A1.5 1.5 0 0 1 7.5 8.5Zm0 2v7h7v-7h-7Z',

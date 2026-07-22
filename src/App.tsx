@@ -16,6 +16,7 @@ import type {
 } from './shared/agenda';
 import type { LibraryEventSummary } from './shared/library';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
+import type { AgendaDownloadStatus } from './shared/agendaDownload';
 import type {
   ConferenceExportSnapshot,
   ExportRenderedSlide,
@@ -984,6 +985,8 @@ export function App() {
   const [agendaTalksError, setAgendaTalksError] = React.useState<string | null>(
     null,
   );
+  const [agendaDownloadStatus, setAgendaDownloadStatus] =
+    React.useState<AgendaDownloadStatus | null>(null);
   const [agendaDayLabel, setAgendaDayLabel] = React.useState<string | null>(
     null,
   );
@@ -1020,6 +1023,7 @@ export function App() {
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const deckDownloadPollRef = React.useRef<number | null>(null);
+  const agendaDownloadPollRef = React.useRef<number | null>(null);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
     null,
   );
@@ -1339,6 +1343,43 @@ export function App() {
       : null;
   const activeSlideDownloadPercent =
     activeSlideDownloadProgress?.percentComplete ?? null;
+  const startAgendaDownload = async () => {
+    if (!selectedEventId) {
+      return;
+    }
+
+    try {
+      const result =
+        await window.indicoInk.startAgendaDownload(selectedEventId);
+      const status = await window.indicoInk.getAgendaDownloadStatus(
+        result.operationId,
+      );
+      if (status) {
+        setAgendaDownloadStatus(status);
+      }
+    } catch (error) {
+      setOpenEventFeedback({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to start the agenda download.',
+      });
+    }
+  };
+  const cancelAgendaDownload = async () => {
+    if (!agendaDownloadStatus) {
+      return;
+    }
+
+    await window.indicoInk.cancelAgendaDownload(
+      agendaDownloadStatus.operationId,
+    );
+    const status = await window.indicoInk.getAgendaDownloadStatus(
+      agendaDownloadStatus.operationId,
+    );
+    setAgendaDownloadStatus(status);
+  };
   const commandBarStatus =
     destination === 'slides' ? (
       activeSlideDownloadStatus?.kind === 'downloading' ? (
@@ -1451,6 +1492,45 @@ export function App() {
                 activeSlideDownloadStatus?.kind === 'downloading' ||
                 activeSlideDownloadStatus?.kind === 'error' ||
                 activeSlideDownloadStatus?.kind === 'canceled' ||
+                exportState.kind === 'rendering' ||
+                exportState.kind === 'writing' ||
+                exportState.kind === 'preparing'
+              }
+            >
+              Export notes
+            </PrimaryButton>
+          </>
+        ) : destination === 'agenda' ? (
+          <>
+            <PrimaryButton
+              icon="download"
+              onClick={() => {
+                void startAgendaDownload();
+              }}
+              disabled={
+                !selectedEventId ||
+                agendaDownloadStatus?.kind === 'queued' ||
+                agendaDownloadStatus?.kind === 'downloading'
+              }
+            >
+              Download agenda
+            </PrimaryButton>
+            <IconButton
+              label="Refresh"
+              title="Refresh Event from Indico"
+              icon="refresh"
+              onClick={() => {
+                void handleRefreshAction();
+              }}
+              disabled={!selectedEventId}
+            />
+            <PrimaryButton
+              icon="export"
+              onClick={() => {
+                void handleExportNotes();
+              }}
+              disabled={
+                !selectedEventId ||
                 exportState.kind === 'rendering' ||
                 exportState.kind === 'writing' ||
                 exportState.kind === 'preparing'
@@ -2343,6 +2423,42 @@ export function App() {
   }, [activeSlideDownloadStatus, slideViewerState.kind]);
 
   React.useEffect(() => {
+    const operationId = agendaDownloadStatus?.operationId;
+    if (
+      !operationId ||
+      agendaDownloadStatus?.kind === 'ready' ||
+      agendaDownloadStatus?.kind === 'error' ||
+      agendaDownloadStatus?.kind === 'canceled'
+    ) {
+      if (agendaDownloadPollRef.current !== null) {
+        window.clearInterval(agendaDownloadPollRef.current);
+        agendaDownloadPollRef.current = null;
+      }
+      return undefined;
+    }
+
+    const poll = async () => {
+      const status =
+        await window.indicoInk.getAgendaDownloadStatus(operationId);
+      if (status) {
+        setAgendaDownloadStatus(status);
+      }
+    };
+
+    void poll();
+    agendaDownloadPollRef.current = window.setInterval(() => {
+      void poll();
+    }, 500);
+
+    return () => {
+      if (agendaDownloadPollRef.current !== null) {
+        window.clearInterval(agendaDownloadPollRef.current);
+        agendaDownloadPollRef.current = null;
+      }
+    };
+  }, [agendaDownloadStatus?.operationId, agendaDownloadStatus?.kind]);
+
+  React.useEffect(() => {
     if (slideViewerState.kind === 'closed') {
       setSlideViewerMetrics({
         currentSlideNumber: 1,
@@ -2660,6 +2776,63 @@ export function App() {
             actions={commandBarActions}
           />
         )}
+
+        {agendaDownloadStatus ? (
+          <div
+            className="agenda-download-banner"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="agenda-download-copy">
+              <strong>
+                {agendaDownloadStatus.kind === 'ready'
+                  ? 'Agenda available offline'
+                  : agendaDownloadStatus.kind === 'error'
+                    ? 'Agenda download incomplete'
+                    : agendaDownloadStatus.kind === 'canceled'
+                      ? 'Agenda download canceled'
+                      : 'Downloading agenda'}
+              </strong>
+              <span>
+                {agendaDownloadStatus.message ?? 'Preparing agenda download...'}
+              </span>
+            </div>
+            <progress
+              className="agenda-download-progress-bar"
+              value={
+                agendaDownloadStatus.totalDecks > 0
+                  ? agendaDownloadStatus.completedDecks
+                  : undefined
+              }
+              max={Math.max(agendaDownloadStatus.totalDecks, 1)}
+            />
+            <span className="agenda-download-count">
+              {agendaDownloadStatus.totalDecks > 0
+                ? `${agendaDownloadStatus.completedDecks}/${agendaDownloadStatus.totalDecks} PDFs`
+                : 'Preparing'}
+            </span>
+            {agendaDownloadStatus.kind === 'queued' ||
+            agendaDownloadStatus.kind === 'downloading' ? (
+              <IconButton
+                label="Cancel agenda download"
+                title="Cancel agenda download"
+                icon="trash"
+                onClick={() => {
+                  void cancelAgendaDownload();
+                }}
+              />
+            ) : (
+              <IconButton
+                label="Dismiss agenda download status"
+                title="Dismiss"
+                icon="check"
+                onClick={() => {
+                  setAgendaDownloadStatus(null);
+                }}
+              />
+            )}
+          </div>
+        ) : null}
 
         <main
           ref={pageSurfaceRef}

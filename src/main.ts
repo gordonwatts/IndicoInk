@@ -18,6 +18,7 @@ import {
   importConferenceFixtureByName,
 } from './libraryData';
 import { buildAgendaTalkSummaries } from './agendaData';
+import { AgendaDownloadManager } from './agendaDownload';
 import { importIndicoEvent } from './indicoImport';
 import { refreshIndicoEvent, resolveLinkedAgendaUrl } from './indicoRefresh';
 import { classifyRefreshError } from './refreshResult';
@@ -39,6 +40,7 @@ import type {
 } from './shared/exportNotes';
 import { DeckCacheManager } from './deckCache';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
+import type { AgendaDownloadStatus } from './shared/agendaDownload';
 import {
   getIsolatedUserDataPath,
   getPersistenceDbPath,
@@ -68,6 +70,7 @@ let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
 let credentialStore: IndicoCredentialStore | null = null;
 let deckCacheManager: DeckCacheManager | null = null;
+let agendaDownloadManager: AgendaDownloadManager | null = null;
 let appSettings: AppSettings | null = null;
 const importFixtureName = getImportFixtureName(process.argv);
 
@@ -128,6 +131,13 @@ const getDeckCacheManager = () =>
     join(getUserDataPath(), 'deck-cache'),
     session.defaultSession.fetch.bind(session.defaultSession),
     getStoredApiKeyForUrl,
+  ));
+
+const getAgendaDownloadManager = () =>
+  agendaDownloadManager ??
+  (agendaDownloadManager = new AgendaDownloadManager(
+    getPersistenceStore(),
+    (deck) => getDeckCacheManager().ensureDeckAvailable(deck),
   ));
 
 const toExportAnnotation = (annotation: {
@@ -453,6 +463,23 @@ ipcMain.handle('library:list-events', async () =>
 
 ipcMain.handle('agenda:list-talks', async (_event, conferenceId: string) =>
   buildAgendaTalkSummaries(getPersistenceStore(), conferenceId),
+);
+
+ipcMain.handle('agenda:download-start', async (_event, conferenceId: string) =>
+  getAgendaDownloadManager().startDownload(conferenceId),
+);
+
+ipcMain.handle(
+  'agenda:download-status',
+  async (_event, operationId: string): Promise<AgendaDownloadStatus | null> =>
+    getAgendaDownloadManager().getDownloadStatus(operationId),
+);
+
+ipcMain.handle(
+  'agenda:download-cancel',
+  async (_event, operationId: string): Promise<void> => {
+    getAgendaDownloadManager().cancelDownload(operationId);
+  },
 );
 
 ipcMain.handle(
