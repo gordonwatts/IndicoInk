@@ -325,6 +325,7 @@ const createWindow = () => {
     width: 1280,
     height: 900,
     backgroundColor: '#f6f4ef',
+    icon: join(app.getAppPath(), 'assets', 'icons', 'indicoink.ico'),
     show: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),

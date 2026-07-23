@@ -14,6 +14,7 @@ const electronZipDir = existsSync(electronCacheRoot)
 module.exports = {
   packagerConfig: {
     asar: true,
+    icon: join(__dirname, 'assets', 'icons', 'indicoink.ico'),
     electronZipDir: electronZipDir
       ? join(electronCacheRoot, electronZipDir)
       : undefined,

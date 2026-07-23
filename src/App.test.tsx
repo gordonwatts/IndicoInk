@@ -194,6 +194,17 @@ describe('App', () => {
     render(<App />);
 
     expect(
+      document.querySelector('.brand-mark img')?.getAttribute('src'),
+    ).toContain('indicoink-light');
+    expect(
+      document
+        .querySelector(
+          '.brand-mark source[media="(prefers-color-scheme: dark)"]',
+        )
+        ?.getAttribute('srcset'),
+    ).toContain('indicoink-dark');
+
+    expect(
       screen.getByRole('button', {
         name: 'Library',
       }),

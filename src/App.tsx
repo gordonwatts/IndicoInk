@@ -1,5 +1,8 @@
 import React from 'react';
 
+import darkBrandIcon from '../assets/icons/indicoink-dark.png';
+import lightBrandIcon from '../assets/icons/indicoink-light.png';
+
 import {
   agendaCanvasColumnWidth as layoutAgendaCanvasColumnWidth,
   agendaTimeGutterWidth as layoutAgendaTimeGutterWidth,
@@ -2739,7 +2742,13 @@ export function App() {
       <aside className="nav-rail" aria-label="Primary navigation">
         <div className="nav-rail-brand" aria-label="IndicoInk">
           <div className="brand-mark">
-            <Icon name="atom" />
+            <picture>
+              <source
+                media="(prefers-color-scheme: dark)"
+                srcSet={darkBrandIcon}
+              />
+              <img src={lightBrandIcon} alt="" />
+            </picture>
           </div>
           <div className="brand-copy">
             <span className="brand-title">IndicoInk</span>
