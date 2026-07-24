@@ -93,13 +93,23 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
       throw new Error('PDF sheet was not visible for the diagnostic draw.');
     }
 
-    await harness.page.mouse.move(
-      box.x + box.width * 0.25,
-      box.y + box.height * 0.35,
-    );
+    const pointerPosition = {
+      x: box.x + box.width * 0.25,
+      y: box.y + box.height * 0.35,
+    };
+    await harness.page.mouse.move(pointerPosition.x, pointerPosition.y);
     await harness.page.mouse.down();
     await harness.page.waitForTimeout(100);
 
+    const inkCenter = await targetPage
+      .locator('.pdf-preview-overlay circle')
+      .evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return {
+          x: bounds.left + bounds.width / 2,
+          y: bounds.top + bounds.height / 2,
+        };
+      });
     const afterDown = await harness.page.evaluate(() => {
       const surface = document.querySelector<HTMLElement>('.page-surface');
       const preview = document.querySelector<HTMLElement>('.pdf-preview');
@@ -116,6 +126,8 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
 
     await harness.page.mouse.up();
 
+    expect(inkCenter.x).toBeCloseTo(pointerPosition.x, 0);
+    expect(inkCenter.y).toBeCloseTo(pointerPosition.y, 0);
     expect(afterDown.surfaceScrollTop).toBeCloseTo(before.surfaceScrollTop, 1);
     expect(afterDown.previewTop).toBeCloseTo(before.previewTop, 1);
     expect(afterDown.stageTop).toBeCloseTo(before.stageTop, 1);

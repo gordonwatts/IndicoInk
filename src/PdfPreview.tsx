@@ -27,9 +27,8 @@ import {
   type TouchPanSample,
 } from './touchMomentum';
 import {
-  toNormalizedPagePoint,
   type NormalizedPagePoint,
-  type PageSize,
+  toNormalizedViewportPoint,
 } from './inkGeometry';
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
@@ -420,7 +419,6 @@ const toPointerSample = (
 
 const getPagePoint = (
   event: React.PointerEvent<HTMLElement>,
-  pageSize: PageSize,
 ): NormalizedPagePoint => {
   const canvas = event.currentTarget.querySelector<HTMLCanvasElement>(
     '.pdf-preview-canvas',
@@ -428,14 +426,16 @@ const getPagePoint = (
   const bounds =
     canvas?.getBoundingClientRect() ??
     event.currentTarget.getBoundingClientRect();
-  const relativePoint = {
-    x: event.clientX - bounds.left,
-    y: event.clientY - bounds.top,
-    pressure: event.pressure,
-    time: event.timeStamp,
-  };
 
-  return toNormalizedPagePoint(relativePoint, pageSize);
+  return toNormalizedViewportPoint(
+    {
+      x: event.clientX,
+      y: event.clientY,
+      pressure: event.pressure,
+      time: event.timeStamp,
+    },
+    bounds,
+  );
 };
 
 const createStrokeId = () =>
@@ -2046,7 +2046,7 @@ export function PdfPreview({
 
         const pagePoint =
           pageSize && pageSize.width > 0 && pageSize.height > 0
-            ? getPagePoint(event, pageSize)
+            ? getPagePoint(event)
             : null;
         const { interactionMode, renderedTool } = resolution;
         const isStylusTool =

@@ -23,6 +23,13 @@ export type NormalizedPagePoint = {
 } & PointPressure &
   PointTime;
 
+export type ViewportBounds = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 const normalizeAxis = (value: number, size: number) => value / size;
 
 const denormalizeAxis = (value: number, size: number) => value * size;
@@ -46,6 +53,19 @@ export const toNormalizedPagePoint = (
     time: point.time,
   };
 };
+
+export const toNormalizedViewportPoint = (
+  point: ScreenPoint,
+  viewportBounds: ViewportBounds,
+): NormalizedPagePoint =>
+  toNormalizedPagePoint(
+    {
+      ...point,
+      x: point.x - viewportBounds.left,
+      y: point.y - viewportBounds.top,
+    },
+    viewportBounds,
+  );
 
 export const toScreenPoint = (
   point: NormalizedPagePoint,
