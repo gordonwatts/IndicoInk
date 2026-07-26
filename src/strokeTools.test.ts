@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   strokeHitsPoint,
+  createStrokeSegmentCache,
   createStrokeSegmentList,
   getStrokeWidth,
 } from './strokeTools';
@@ -11,6 +12,42 @@ describe('strokeTools', () => {
     width: 100,
     height: 100,
   };
+
+  it('reuses rendered segments and only calculates newly appended points', () => {
+    const firstPoint = { x: 0.1, y: 0.1, pressure: 0.5, time: 1 };
+    const secondPoint = { x: 0.2, y: 0.2, pressure: 0.5, time: 2 };
+    const thirdPoint = { x: 0.3, y: 0.3, pressure: 0.5, time: 3 };
+    const cache = createStrokeSegmentCache();
+    const firstSegments = cache.get(
+      {
+        id: 'stroke-1',
+        pageNumber: 1,
+        points: [firstPoint, secondPoint],
+      },
+      pageSize,
+    );
+    const unchangedSegments = cache.get(
+      {
+        id: 'stroke-1',
+        pageNumber: 1,
+        points: [firstPoint, secondPoint],
+      },
+      pageSize,
+    );
+    const appendedSegments = cache.get(
+      {
+        id: 'stroke-1',
+        pageNumber: 1,
+        points: [firstPoint, secondPoint, thirdPoint],
+      },
+      pageSize,
+    );
+
+    expect(unchangedSegments).toBe(firstSegments);
+    expect(appendedSegments).toBe(firstSegments);
+    expect(appendedSegments).toHaveLength(2);
+    expect(appendedSegments[0]).toBe(firstSegments[0]);
+  });
 
   it('scales stroke width with pressure up to 50 percent', () => {
     expect(getStrokeWidth(0)).toBeCloseTo(2, 5);
