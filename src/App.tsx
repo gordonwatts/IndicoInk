@@ -2684,6 +2684,15 @@ export function App() {
         return;
       }
 
+      const maxScrollTop =
+        scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      if (maxScrollTop < restoredScroll.scrollTop && remainingFrames > 0) {
+        agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
+          applyRestoredScroll(remainingFrames - 1);
+        });
+        return;
+      }
+
       if (typeof scrollContainer.scrollTo === 'function') {
         scrollContainer.scrollTo({
           left: restoredScroll.scrollLeft,
@@ -2706,7 +2715,7 @@ export function App() {
     };
 
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
-      applyRestoredScroll(3);
+      applyRestoredScroll(120);
     });
   }, [selectedAgendaDay, selectedEventId]);
 
