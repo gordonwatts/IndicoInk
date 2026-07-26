@@ -1380,9 +1380,9 @@ input:focus-visible {
 }
 
 .pdf-preview-stage-status {
-  position: sticky;
+  position: absolute;
   top: 16px;
-  justify-self: end;
+  right: 16px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -1419,6 +1419,7 @@ input:focus-visible {
 
 .pdf-preview-stage-status--loading {
   align-items: flex-start;
+  pointer-events: none;
 }
 
 .pdf-preview-stage-spinner {
