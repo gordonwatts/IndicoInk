@@ -390,7 +390,7 @@ export function DialogSurface({
   title: string;
   body: React.ReactNode;
   primaryLabel: string;
-  secondaryLabel: string;
+  secondaryLabel?: string;
   onPrimary?: () => void;
   onSecondary?: () => void;
 }) {
@@ -415,13 +415,15 @@ export function DialogSurface({
         </div>
       </div>
       <div className="dialog-surface-actions">
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={onSecondary}
-        >
-          {secondaryLabel}
-        </button>
+        {secondaryLabel ? (
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={onSecondary}
+          >
+            {secondaryLabel}
+          </button>
+        ) : null}
         <button className="primary-button" type="button" onClick={onPrimary}>
           {primaryLabel}
         </button>

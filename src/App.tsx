@@ -3699,7 +3699,6 @@ export function App() {
                           </div>
                         }
                         primaryLabel="Cancel download"
-                        secondaryLabel="Keep waiting"
                         onPrimary={() => {
                           void handleCancelDeckDownload();
                         }}
