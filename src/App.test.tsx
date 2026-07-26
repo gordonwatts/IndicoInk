@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
+import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
 
 let clipboardWriteTextMock: ReturnType<typeof vi.fn>;
 
@@ -325,6 +326,63 @@ describe('App', () => {
     ).toBeTruthy();
     expect(screen.getByText('indico.example.org')).toBeTruthy();
     expect(screen.getByText('Online only')).toBeTruthy();
+  });
+
+  it('switches agenda labels between event and local time', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-time-zone',
+      sourceUrl: 'https://indico.example.org/event/time-zone',
+      title: 'Time Zone Event',
+      dates: 'July 7, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const startsAt = Date.UTC(2026, 6, 7, 3, 25, 0, 0);
+    const endsAt = Date.UTC(2026, 6, 7, 3, 35, 0, 0);
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([
+      {
+        id: 'talk-time-zone',
+        conferenceId: libraryEvent.id,
+        contributionId: 'time-zone-talk',
+        sortStartsAt: startsAt,
+        startsAt,
+        endsAt,
+        eventTimeZone: 'Pacific/Auckland',
+        dayLabel: 'Tuesday, July 7, 2026',
+        title: 'Time zone aware talk',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Timezone session',
+        timeRangeLabel: '15:25 - 15:35',
+        room: 'Room A',
+        bookmarked: false,
+        materialSummary: 'No slides',
+        materials: [],
+        annotatedSlideCount: 0,
+      },
+    ]);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', { name: `Open ${libraryEvent.title}` }),
+    );
+
+    expect(await screen.findAllByText('15:25 - 15:35')).toHaveLength(2);
+    expect(screen.getByText('Pacific/Auckland')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Local time' }));
+
+    const localTimeRange = formatAgendaTimeRange(startsAt, endsAt);
+    const localDayLabel = formatAgendaDayLabel(startsAt);
+    expect(await screen.findAllByText(localTimeRange)).toHaveLength(2);
+    expect(await screen.findByTitle(localDayLabel)).toBeTruthy();
+    expect(screen.queryAllByText('15:25 - 15:35')).toHaveLength(0);
   });
 
   it('prompts for an API key when the event requires private access', async () => {
@@ -894,6 +952,11 @@ describe('App', () => {
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Bookmarked' })).toBeTruthy();
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Local time' })
+        .disabled,
+    ).toBe(true);
+    expect(screen.getByText('Refresh event to enable local time')).toBeTruthy();
     expect(
       within(
         screen.getByRole('navigation', { name: 'Destinations' }),

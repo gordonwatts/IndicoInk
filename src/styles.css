@@ -1613,6 +1613,24 @@ input:focus-visible {
   flex: 1 1 320px;
 }
 
+.agenda-time-zone-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.agenda-control-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  font-weight: 600;
+}
+
+.agenda-control-help {
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+}
+
 .agenda-list-meta {
   display: flex;
   flex-wrap: wrap;

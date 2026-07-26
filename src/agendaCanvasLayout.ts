@@ -76,12 +76,19 @@ export function formatAgendaClockFromMinutes(minutes: number) {
 }
 
 export function getAgendaTalkStartMinutes(talk: AgendaTalkSummary) {
+  const parsedStartMinutes = parseAgendaTimeRange(
+    talk.timeRangeLabel,
+  ).startMinutes;
+  if (parsedStartMinutes !== null) {
+    return parsedStartMinutes;
+  }
+
   if (talk.sortStartsAt !== null) {
     const startsAt = new Date(talk.sortStartsAt);
     return startsAt.getUTCHours() * 60 + startsAt.getUTCMinutes();
   }
 
-  return parseAgendaTimeRange(talk.timeRangeLabel).startMinutes;
+  return null;
 }
 
 export function getAgendaTalkEndMinutes(talk: AgendaTalkSummary) {

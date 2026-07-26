@@ -19,13 +19,14 @@ describe('mapIndicoExportEnvelope', () => {
     expect(mapped.conference.sourceUrl).toBe(
       'https://indico.in2p3.fr/event/40025',
     );
+    expect(mapped.conference.timeZone).toBe('Europe/Paris');
     expect(mapped.talks).toHaveLength(5);
     expect(mapped.talks[0]?.contributionUrl).toBe(
       'https://indico.in2p3.fr/event/40025/contributions/174307/',
     );
     expect(mapped.talks[0]?.speakers[0]?.name).toBe('Tsaregorodtsev, Andrei');
     expect(mapped.talks[0]?.startsAt).toBe(
-      Date.UTC(2026, 7 - 1, 7, 15, 25, 0, 0),
+      Date.UTC(2026, 7 - 1, 7, 13, 25, 0, 0),
     );
   });
 

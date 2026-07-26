@@ -21,7 +21,9 @@ async function openLiveEvent(eventUrl: string) {
   return harness;
 }
 
-test('renders the FNAL Energy Frontier workshop talks', async ({ browserName }, testInfo) => {
+test('renders the FNAL Energy Frontier workshop talks', async ({
+  browserName,
+}, testInfo) => {
   void browserName;
   testInfo.skip(
     Boolean(process.env.CI),
@@ -56,7 +58,9 @@ test('renders the FNAL Energy Frontier workshop talks', async ({ browserName }, 
   }
 });
 
-test('separates Wednesday Energy Frontier session blocks vertically', async ({ browserName }, testInfo) => {
+test('separates Wednesday Energy Frontier session blocks vertically', async ({
+  browserName,
+}, testInfo) => {
   void browserName;
   testInfo.skip(
     Boolean(process.env.CI),
@@ -119,6 +123,13 @@ test('renders the ACAT 2025 parallel-session agenda', async () => {
         hasText: 'Tue Sep 9',
       })
       .click();
+    const trackBlocks = harness.page.locator(
+      '.agenda-session-block--absolute[aria-label*="Track"]',
+    );
+    await expect(trackBlocks).toHaveCount(6);
+    await harness.page.getByRole('button', { name: 'Local time' }).click();
+    await harness.page.getByRole('button', { name: 'Event time' }).click();
+    await expect(trackBlocks).toHaveCount(6);
     await harness.page.waitForTimeout(250);
     await harness.page.evaluate(() => {
       document.querySelector<HTMLElement>('.page-surface')?.scrollTo({
