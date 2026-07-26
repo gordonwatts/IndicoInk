@@ -23,10 +23,7 @@ import type {
   AgendaDownloadStatus,
   AgendaDownloadSummary,
 } from './shared/agendaDownload';
-import type {
-  ConferenceExportSnapshot,
-  ExportRenderedSlide,
-} from './shared/exportNotes';
+import type { ExportRenderedSlide } from './shared/exportNotes';
 import type {
   RefreshConflict,
   RefreshLibraryEventResult,
@@ -55,6 +52,7 @@ import {
   collectExportRenderJobs,
   renderAnnotatedSlidePng,
 } from './exportNotes';
+import { createExportFileName } from './exportFileName';
 
 type Destination =
   | 'library'
@@ -253,24 +251,6 @@ const validateEventUrl = (value: string) => {
   }
 
   return null;
-};
-
-const sanitizeFileName = (value: string) =>
-  Array.from(value.trim())
-    .map((character) =>
-      character.codePointAt(0) !== undefined && character.codePointAt(0)! < 32
-        ? ' '
-        : character,
-    )
-    .join('')
-    .replace(/[<>:"/\\|?*]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const createExportFileName = (snapshot: ConferenceExportSnapshot) => {
-  const baseName =
-    sanitizeFileName(snapshot.conference.title) || 'indico-notes';
-  return `${baseName} notes.md`;
 };
 
 const formatByteCount = (value: number) => {
@@ -2210,7 +2190,7 @@ export function App() {
 
       const saveResult = await window.indicoInk.showExportSaveDialog({
         title: `Export notes for ${snapshot.conference.title}`,
-        defaultPath: createExportFileName(snapshot),
+        defaultPath: createExportFileName(snapshot.conference),
       });
 
       if (cancellationState.cancelled) {
