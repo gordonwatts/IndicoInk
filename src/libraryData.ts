@@ -176,6 +176,7 @@ export const importConferenceFixture = async (
       title: fixture.title,
       dates: fixture.dates,
       host: fixture.host,
+      timeZone: 'UTC',
       lastOpenedAt: fixture.lastOpenedAt,
       createdAt: now,
       updatedAt: now,

@@ -28,6 +28,7 @@ export type Conference = {
   title: string;
   dates: string;
   host: string;
+  timeZone?: string | null;
   lastOpenedAt: number | null;
   createdAt: number;
   updatedAt: number;

@@ -4,6 +4,9 @@ export type AgendaTalkSummary = {
   contributionId: string;
   contributionUrl: string;
   sortStartsAt: number | null;
+  startsAt?: number | null;
+  endsAt?: number | null;
+  eventTimeZone?: string;
   dayLabel: string;
   title: string;
   speaker: string;

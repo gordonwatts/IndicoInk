@@ -1,6 +1,7 @@
 import type { Conference, Talk } from './persistenceModels';
 import type { IndicoEventIdentity } from './indicoEvent';
 import { sha1Hex } from './stableHash';
+import { parseWallClockTimeInZone } from './agendaTime';
 
 type IndicoDateValue = {
   date?: string;
@@ -183,7 +184,7 @@ export const isEmptyIndicoExportEnvelope = (envelope: RawEnvelope) =>
   Array.isArray(envelope.results) &&
   envelope.results.length === 0;
 
-const parseDateTime = (value?: IndicoDateValue | null) => {
+const parseDateTime = (value?: IndicoDateValue | null, timeZone = 'UTC') => {
   if (!value?.date) {
     return null;
   }
@@ -193,19 +194,10 @@ const parseDateTime = (value?: IndicoDateValue | null) => {
     return null;
   }
 
-  const timeParts = value.time?.split(':') ?? [];
-  const hours = Number(timeParts[0] ?? 0);
-  const minutes = Number(timeParts[1] ?? 0);
-  const seconds = Number(timeParts[2] ?? 0);
-
-  return Date.UTC(
-    Number(yearText),
-    Number(monthText) - 1,
-    Number(dayText),
-    Number.isFinite(hours) ? hours : 0,
-    Number.isFinite(minutes) ? minutes : 0,
-    Number.isFinite(seconds) ? seconds : 0,
-    0,
+  return parseWallClockTimeInZone(
+    `${yearText}-${monthText}-${dayText}`,
+    value.time,
+    getString(value.tz, timeZone),
   );
 };
 
@@ -452,6 +444,7 @@ const mapContribution = (
   identity: IndicoEventIdentity,
   contribution: IndicoContributionValue,
   index: number,
+  timeZone: string,
 ) => {
   const contributionId = getContributionId(contribution, index);
   const speakerEntities = asArray<IndicoPersonValue>(contribution.speakers).map(
@@ -479,8 +472,8 @@ const mapContribution = (
     speaker: speakers.join('; '),
     speakers: speakerEntities,
     sessionTitle: getContributionSessionTitle(contribution),
-    startsAt: parseDateTime(contribution.startDate),
-    endsAt: parseDateTime(contribution.endDate),
+    startsAt: parseDateTime(contribution.startDate, timeZone),
+    endsAt: parseDateTime(contribution.endDate, timeZone),
     room:
       getString(contribution.roomFullname) ||
       getString(contribution.room) ||
@@ -498,6 +491,7 @@ const mapLinkedAgenda = (
   session: IndicoSessionValue,
   index: number,
   linkedAgendaUrl: string,
+  timeZone: string,
 ) => {
   const contributionId =
     getNumberLike(session.id) || `linked-agenda-${index + 1}`;
@@ -507,8 +501,8 @@ const mapLinkedAgenda = (
     speaker: '',
     speakers: [],
     sessionTitle: getString(session.title, 'Linked agenda'),
-    startsAt: parseDateTime(session.startDate),
-    endsAt: parseDateTime(session.endDate),
+    startsAt: parseDateTime(session.startDate, timeZone),
+    endsAt: parseDateTime(session.endDate, timeZone),
     room:
       getString(session.roomFullname) ||
       getString(session.room) ||
@@ -528,6 +522,8 @@ export const mapIndicoExportEnvelope = (
 ): IndicoImportData => {
   const event = pickFirstResult(envelope);
   const eventTitle = getString(event?.title, 'Untitled Indico event');
+  const eventTimeZone =
+    getString(event?.timezone) || getString(event?.startDate?.tz, 'UTC');
   const sessions = asArray<IndicoSessionValue>(event?.sessions);
   const contributionSources = collectContributionSources(event ?? {});
   const talks = contributionSources.map((source, index) =>
@@ -536,8 +532,9 @@ export const mapIndicoExportEnvelope = (
           source.linkedAgenda,
           index,
           getLinkedAgendaUrl(source.linkedAgenda),
+          eventTimeZone,
         )
-      : mapContribution(identity, source.contribution!, index),
+      : mapContribution(identity, source.contribution!, index, eventTimeZone),
   );
 
   const talkByContributionId = new Map(
@@ -566,8 +563,8 @@ export const mapIndicoExportEnvelope = (
           getString(linkedAgenda.room) ||
           getString(linkedAgenda.location) ||
           'Room unavailable',
-        startAt: parseDateTime(linkedAgenda.startDate),
-        endAt: parseDateTime(linkedAgenda.endDate),
+        startAt: parseDateTime(linkedAgenda.startDate, eventTimeZone),
+        endAt: parseDateTime(linkedAgenda.endDate, eventTimeZone),
         contributionIds: [contributionId],
       });
       continue;
@@ -575,7 +572,7 @@ export const mapIndicoExportEnvelope = (
     const contribution = source.contribution;
     const contributionId =
       getNumberLike(contribution.friendly_id) || getNumberLike(contribution.id);
-    const startsAt = parseDateTime(contribution.startDate);
+    const startsAt = parseDateTime(contribution.startDate, eventTimeZone);
     const dateKey = contribution.startDate?.date ?? 'unknown';
     const dayLabel =
       formatDate(contribution.startDate) ??
@@ -596,7 +593,7 @@ export const mapIndicoExportEnvelope = (
       title: sessionTitle,
       room: sessionRoom,
       startAt: startsAt,
-      endAt: parseDateTime(contribution.endDate),
+      endAt: parseDateTime(contribution.endDate, eventTimeZone),
       contributionIds: [],
     };
 
@@ -614,7 +611,7 @@ export const mapIndicoExportEnvelope = (
     ) {
       session.startAt = startsAt;
     }
-    const endsAt = parseDateTime(contribution.endDate);
+    const endsAt = parseDateTime(contribution.endDate, eventTimeZone);
     if (session.endAt === null || (endsAt !== null && endsAt > session.endAt)) {
       session.endAt = endsAt;
     }
@@ -644,8 +641,8 @@ export const mapIndicoExportEnvelope = (
           getString(session.room) ||
           getString(session.location) ||
           'Room unavailable',
-        startAt: parseDateTime(session.startDate),
-        endAt: parseDateTime(session.endDate),
+        startAt: parseDateTime(session.startDate, eventTimeZone),
+        endAt: parseDateTime(session.endDate, eventTimeZone),
         contributionIds: [],
       });
     }
@@ -660,6 +657,7 @@ export const mapIndicoExportEnvelope = (
     title: eventTitle,
     dates: formatDateRange(event?.startDate, event?.endDate),
     host: identity.origin.replace(/^https?:\/\//, ''),
+    timeZone: eventTimeZone,
     lastOpenedAt: null,
     createdAt: 0,
     updatedAt: 0,

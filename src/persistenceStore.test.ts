@@ -40,6 +40,7 @@ describe('persistence store', () => {
           title: 'Conference One',
           dates: 'June 1-2, 2026',
           host: 'indico.example.org',
+          timeZone: 'Europe/Paris',
           lastOpenedAt: 1700000000000,
           createdAt: 1700000000000,
           updatedAt: 1700000000000,
@@ -66,6 +67,7 @@ describe('persistence store', () => {
 
     await expect(store.getConference('conference-1')).resolves.toMatchObject({
       title: 'Conference One',
+      timeZone: 'Europe/Paris',
     });
     await expect(store.getTalk('talk-1')).resolves.toMatchObject({
       bookmarked: true,
@@ -160,8 +162,51 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(5);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(6);
     versionDb.close();
+    await store.close();
+  });
+
+  it('does not invent a timezone when upgrading a version 5 conference', async () => {
+    const dbPath = createTempDbPath('legacy-timezone');
+    const SQL = await initSqlJs({
+      locateFile: () => getSqlWasmPath(),
+    });
+    const legacyDb = new SQL.Database();
+    legacyDb.exec(`
+      PRAGMA user_version = 5;
+      CREATE TABLE conferences (
+        id TEXT PRIMARY KEY,
+        source_url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        dates TEXT NOT NULL,
+        host TEXT NOT NULL,
+        last_opened_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO conferences (
+        id, source_url, title, dates, host, last_opened_at, created_at, updated_at
+      ) VALUES (
+        'legacy-conference',
+        'https://indico.example.org/event/legacy',
+        'Legacy conference',
+        'June 12, 2026',
+        'indico.example.org',
+        1700000000000,
+        1700000000000,
+        1700000000000
+      );
+    `);
+    writeFileSync(dbPath, legacyDb.export());
+    legacyDb.close();
+
+    const store = new PersistenceStore(dbPath, () => 1700000000000);
+    await expect(
+      store.getConference('legacy-conference'),
+    ).resolves.toMatchObject({
+      timeZone: null,
+    });
     await store.close();
   });
 

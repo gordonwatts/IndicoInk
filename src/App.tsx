@@ -23,6 +23,10 @@ import type {
   AgendaDownloadStatus,
   AgendaDownloadSummary,
 } from './shared/agendaDownload';
+import {
+  formatAgendaTalkForTimeZone,
+  type AgendaTimeZoneMode,
+} from './agendaTime';
 import type { ExportRenderedSlide } from './shared/exportNotes';
 import type {
   RefreshConflict,
@@ -988,6 +992,8 @@ export function App() {
   >(null);
   const [agendaSearchQuery, setAgendaSearchQuery] = React.useState('');
   const [agendaFilter, setAgendaFilter] = React.useState<GalleryFilter>('all');
+  const [agendaTimeZoneMode, setAgendaTimeZoneMode] =
+    React.useState<AgendaTimeZoneMode>('event');
   const [deleteTarget, setDeleteTarget] = React.useState<EventSummary | null>(
     null,
   );
@@ -1572,13 +1578,20 @@ export function App() {
   const selectedAgendaEvent = selectedEventId
     ? (libraryEvents.find((event) => event.id === selectedEventId) ?? null)
     : null;
+  const displayedAgendaTalks = React.useMemo(
+    () =>
+      agendaTalks.map((talk) =>
+        formatAgendaTalkForTimeZone(talk, agendaTimeZoneMode),
+      ),
+    [agendaTalks, agendaTimeZoneMode],
+  );
   const agendaDayLabels = Array.from(
-    new Set(agendaTalks.map((talk) => talk.dayLabel)),
+    new Set(displayedAgendaTalks.map((talk) => talk.dayLabel)),
   );
   const selectedAgendaDay = agendaDayLabels.includes(agendaDayLabel ?? '')
     ? agendaDayLabel
     : (agendaDayLabels[0] ?? null);
-  const visibleAgendaTalks = agendaTalks.filter((talk) => {
+  const visibleAgendaTalks = displayedAgendaTalks.filter((talk) => {
     const matchesDay =
       selectedAgendaDay === null || talk.dayLabel === selectedAgendaDay;
     const matchesFilter =
@@ -1592,12 +1605,14 @@ export function App() {
 
     return matchesDay && matchesFilter;
   });
-  const bookmarkedAgendaTalks = agendaTalks.filter((talk) => talk.bookmarked);
-  const annotatedAgendaTalks = agendaTalks.filter(
+  const bookmarkedAgendaTalks = displayedAgendaTalks.filter(
+    (talk) => talk.bookmarked,
+  );
+  const annotatedAgendaTalks = displayedAgendaTalks.filter(
     (talk) => talk.annotatedSlideCount > 0,
   );
   const normalizedAgendaSearchQuery = agendaSearchQuery.trim().toLowerCase();
-  const searchAgendaTalks = agendaTalks.filter((talk) =>
+  const searchAgendaTalks = displayedAgendaTalks.filter((talk) =>
     talkMatchesSearchQuery(talk, normalizedAgendaSearchQuery),
   );
   const selectedAgendaTalk =
@@ -1626,6 +1641,9 @@ export function App() {
         (material) => material.mimeType !== 'application/pdf',
       )
     : [];
+  const agendaEventTimeZone = agendaTalks[0]?.eventTimeZone ?? null;
+  const agendaLocalTimeZone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local time';
   const agendaMaterialsDeck = agendaMaterialsTalk
     ? getSelectedTalkDeck(agendaMaterialsTalk)
     : null;
@@ -2487,6 +2505,10 @@ export function App() {
   }, [destination, selectedEventId]);
 
   React.useEffect(() => {
+    setAgendaTimeZoneMode('event');
+  }, [selectedEventId]);
+
+  React.useEffect(() => {
     if (slideViewerState.kind === 'closed') {
       setSlideViewerMetrics({
         currentSlideNumber: 1,
@@ -2546,20 +2568,23 @@ export function App() {
   }, [destination, selectedEventId]);
 
   React.useEffect(() => {
-    if (!agendaTalks.length) {
+    if (!displayedAgendaTalks.length) {
       setAgendaDayLabel(null);
       setSelectedAgendaTalkId(null);
       return;
     }
 
     setAgendaDayLabel((current) => {
-      if (current && agendaTalks.some((talk) => talk.dayLabel === current)) {
+      if (
+        current &&
+        displayedAgendaTalks.some((talk) => talk.dayLabel === current)
+      ) {
         return current;
       }
 
-      return agendaTalks[0]?.dayLabel ?? null;
+      return displayedAgendaTalks[0]?.dayLabel ?? null;
     });
-  }, [agendaTalks]);
+  }, [displayedAgendaTalks]);
 
   React.useEffect(() => {
     if (!visibleAgendaTalks.length) {
@@ -3119,6 +3144,37 @@ export function App() {
                               }
                             }}
                           />
+                        </div>
+                        <div className="agenda-time-zone-control">
+                          <span className="agenda-control-label">
+                            Time zone
+                          </span>
+                          <SegmentedControl
+                            ariaLabel="Agenda time zone"
+                            options={[
+                              {
+                                label: 'Event time',
+                                value: 'event' as const,
+                                title: agendaEventTimeZone
+                                  ? `Event time (${agendaEventTimeZone})`
+                                  : 'Event time (cached)',
+                              },
+                              {
+                                label: 'Local time',
+                                value: 'local' as const,
+                                title: `Local time (${agendaLocalTimeZone})`,
+                                disabled: agendaEventTimeZone === null,
+                              },
+                            ]}
+                            value={agendaTimeZoneMode}
+                            onChange={setAgendaTimeZoneMode}
+                          />
+                          <span className="agenda-control-help">
+                            {agendaTimeZoneMode === 'event'
+                              ? (agendaEventTimeZone ??
+                                'Refresh event to enable local time')
+                              : agendaLocalTimeZone}
+                          </span>
                         </div>
                         <SegmentedControl
                           options={filterOptions}

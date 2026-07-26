@@ -236,7 +236,7 @@ describe('agenda canvas layout', () => {
   });
 
   it('keeps repeated parallel session slots separate after a break', () => {
-    const layout = buildAgendaCanvasLayout([
+    const talks = [
       makeTalk('track-1-a', 14, 30, 20, 'Track 1 first talk', 'Track 1'),
       makeTalk('track-1-b', 15, 0, 20, 'Track 1 second talk', 'Track 1'),
       makeTalk('track-2-a', 14, 30, 20, 'Track 2 first talk', 'Track 2'),
@@ -246,7 +246,11 @@ describe('agenda canvas layout', () => {
       makeTalk('track-1-c', 16, 40, 20, 'Track 1 third talk', 'Track 1'),
       makeTalk('track-2-c', 16, 40, 20, 'Track 2 third talk', 'Track 2'),
       makeTalk('track-3-c', 16, 40, 20, 'Track 3 third talk', 'Track 3'),
-    ]);
+    ];
+    for (const talk of talks) {
+      talk.sortStartsAt = (talk.sortStartsAt ?? 0) - 2 * 60 * 60 * 1000;
+    }
+    const layout = buildAgendaCanvasLayout(talks);
 
     const trackBlocks = layout.columns.filter((block) =>
       block.title.startsWith('Track'),

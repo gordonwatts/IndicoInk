@@ -304,13 +304,20 @@ export function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
+  ariaLabel = 'View filter',
 }: {
-  options: Array<{ label: string; value: T; title?: string }>;
+  options: Array<{
+    label: string;
+    value: T;
+    title?: string;
+    disabled?: boolean;
+  }>;
   value: T;
   onChange: (value: T) => void;
+  ariaLabel?: string;
 }) {
   return (
-    <div className="segmented-control" role="group" aria-label="View filter">
+    <div className="segmented-control" role="group" aria-label={ariaLabel}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -318,6 +325,7 @@ export function SegmentedControl<T extends string>({
           type="button"
           aria-pressed={value === option.value}
           title={option.title ?? option.label}
+          disabled={option.disabled}
           onClick={() => onChange(option.value)}
         >
           {option.label}

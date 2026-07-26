@@ -1,58 +1,6 @@
 import type { PersistenceStore } from './persistenceStore';
 import type { AgendaTalkSummary } from './shared/agenda';
-
-const agendaClockFormatter = new Intl.DateTimeFormat('en-GB', {
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-  timeZone: 'UTC',
-});
-
-const agendaDayLabelFormatter = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  month: 'long',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
-const formatAgendaClock = (timestamp: number | null) => {
-  if (timestamp === null) {
-    return null;
-  }
-
-  return agendaClockFormatter.format(new Date(timestamp));
-};
-
-const formatAgendaTimeRange = (
-  startsAt: number | null,
-  endsAt: number | null,
-) => {
-  const startLabel = formatAgendaClock(startsAt);
-  const endLabel = formatAgendaClock(endsAt);
-
-  if (startLabel && endLabel) {
-    return `${startLabel} - ${endLabel}`;
-  }
-
-  if (startLabel) {
-    return `${startLabel} onward`;
-  }
-
-  if (endLabel) {
-    return `Until ${endLabel}`;
-  }
-
-  return 'Time unavailable';
-};
-
-const formatAgendaDayLabel = (timestamp: number | null) => {
-  if (timestamp === null) {
-    return 'Unknown day';
-  }
-
-  return agendaDayLabelFormatter.format(new Date(timestamp));
-};
+import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
 
 const formatMaterialSummary = (pdfDeckCount: number) => {
   if (pdfDeckCount === 0) {
@@ -71,6 +19,9 @@ export const buildAgendaTalkSummaries = async (
   conferenceId: string,
 ): Promise<AgendaTalkSummary[]> => {
   const talks = await store.listTalksByConference(conferenceId);
+  const conference = await store.getConference(conferenceId);
+  const eventTimeZone = conference?.timeZone ?? null;
+  const eventTimeZoneForFormatting = eventTimeZone ?? 'UTC';
 
   const summaries = await Promise.all(
     talks.map(async (talk) => {
@@ -94,11 +45,21 @@ export const buildAgendaTalkSummaries = async (
         contributionId: talk.contributionId,
         contributionUrl: talk.contributionUrl,
         sortStartsAt: talk.startsAt,
-        dayLabel: formatAgendaDayLabel(talk.startsAt),
+        startsAt: talk.startsAt,
+        endsAt: talk.endsAt,
+        ...(eventTimeZone ? { eventTimeZone } : {}),
+        dayLabel: formatAgendaDayLabel(
+          talk.startsAt,
+          eventTimeZoneForFormatting,
+        ),
         title: talk.title,
         speaker: talk.speaker,
         sessionTitle: talk.sessionTitle,
-        timeRangeLabel: formatAgendaTimeRange(talk.startsAt, talk.endsAt),
+        timeRangeLabel: formatAgendaTimeRange(
+          talk.startsAt,
+          talk.endsAt,
+          eventTimeZoneForFormatting,
+        ),
         room: talk.room,
         bookmarked: talk.bookmarked,
         ...(talk.upstreamStatus ? { upstreamStatus: talk.upstreamStatus } : {}),

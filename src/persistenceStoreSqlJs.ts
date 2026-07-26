@@ -61,7 +61,7 @@ type InitSqlJs = (config?: {
   wasmBinary?: Uint8Array;
 }) => Promise<SqlJsModule>;
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 let initSqlJsLoader: InitSqlJs | null = null;
 
@@ -367,6 +367,7 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
       title TEXT NOT NULL,
       dates TEXT NOT NULL,
       host TEXT NOT NULL,
+      time_zone TEXT,
       last_opened_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -556,7 +557,28 @@ const migration5 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
-const migrations = [migration1, migration2, migration3, migration4, migration5];
+const migration6 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(conferences)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!columns.has('time_zone')) {
+    db.exec('ALTER TABLE conferences ADD COLUMN time_zone TEXT;');
+  }
+};
+
+const migrations = [
+  migration1,
+  migration2,
+  migration3,
+  migration4,
+  migration5,
+  migration6,
+];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -564,6 +586,10 @@ const rowToConference = (row: Record<string, unknown>): Conference => ({
   title: String(row.title),
   dates: String(row.dates),
   host: String(row.host),
+  timeZone:
+    row.time_zone === null || row.time_zone === undefined
+      ? null
+      : String(row.time_zone),
   lastOpenedAt:
     row.last_opened_at === null || row.last_opened_at === undefined
       ? null
@@ -904,21 +930,23 @@ export class PersistenceStore {
     db.prepare(
       `
         INSERT INTO conferences (
-          id, source_url, title, dates, host, last_opened_at, created_at, updated_at
+          id, source_url, title, dates, host, time_zone, last_opened_at, created_at, updated_at
         ) VALUES (
-          @id, @sourceUrl, @title, @dates, @host, @lastOpenedAt, @createdAt, @updatedAt
+          @id, @sourceUrl, @title, @dates, @host, @timeZone, @lastOpenedAt, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           source_url = excluded.source_url,
           title = excluded.title,
           dates = excluded.dates,
           host = excluded.host,
+          time_zone = excluded.time_zone,
           last_opened_at = excluded.last_opened_at,
           updated_at = excluded.updated_at
       `,
     ).run({
       ...conference,
       sourceUrl: conference.sourceUrl,
+      timeZone: conference.timeZone ?? null,
       lastOpenedAt: conference.lastOpenedAt,
     });
 
@@ -1507,6 +1535,7 @@ export class PersistenceStore {
       title: fileName || 'Local PDF workspace',
       dates: 'Local workspace',
       host: 'IndicoInk',
+      timeZone: 'UTC',
       lastOpenedAt: now,
       createdAt: now,
       updatedAt: now,
