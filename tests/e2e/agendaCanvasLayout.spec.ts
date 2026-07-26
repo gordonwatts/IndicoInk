@@ -509,9 +509,20 @@ test('returns from a talk to the previous agenda scroll position', async () => {
     await harness.page.setViewportSize({ width: 1220, height: 900 });
 
     const pageSurface = harness.page.locator('.page-surface');
+    await expect
+      .poll(async () =>
+        pageSurface.evaluate(
+          (element) => element.scrollHeight - element.clientHeight,
+        ),
+      )
+      .toBeGreaterThan(900);
+
     await pageSurface.evaluate((element) => {
       element.scrollTop = 920;
     });
+    await expect
+      .poll(async () => pageSurface.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(850);
 
     await harness.page
       .getByRole('button', {
