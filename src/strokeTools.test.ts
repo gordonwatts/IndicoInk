@@ -4,6 +4,7 @@ import {
   strokeHitsPoint,
   createStrokeSegmentCache,
   createStrokeSegmentList,
+  getFitWidthNormalizedPenWidth,
   getStrokeWidth,
 } from './strokeTools';
 
@@ -53,6 +54,13 @@ describe('strokeTools', () => {
     expect(getStrokeWidth(0)).toBeCloseTo(2, 5);
     expect(getStrokeWidth(1)).toBeCloseTo(3, 5);
     expect(getStrokeWidth(1, 6)).toBeCloseTo(9, 5);
+  });
+
+  it('stores pen widths relative to the page fit-width scale', () => {
+    expect(getFitWidthNormalizedPenWidth(2, 800, 400)).toBeCloseTo(1, 5);
+    expect(getFitWidthNormalizedPenWidth(2, 800, 1600)).toBeCloseTo(4, 5);
+    expect(getFitWidthNormalizedPenWidth(2, 0, 400)).toBe(2);
+    expect(getFitWidthNormalizedPenWidth(2, 800, 0)).toBe(2);
   });
 
   it('builds screen-space segments for rendered strokes', () => {
