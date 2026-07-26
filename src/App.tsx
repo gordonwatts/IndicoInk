@@ -2156,10 +2156,6 @@ export function App() {
 
     const cancellationState = { cancelled: false };
     exportCancellationRef.current = cancellationState;
-    setExportState({
-      kind: 'preparing',
-      label: 'Preparing export and restoring missing PDF decks...',
-    });
 
     try {
       const snapshot =
@@ -2180,14 +2176,6 @@ export function App() {
         return;
       }
 
-      if (snapshot.restoredDecks?.length) {
-        const restored = snapshot.restoredDecks[0]!;
-        setExportState({
-          kind: 'preparing',
-          label: `Restored ${restored.deckDisplayName} for ${restored.talkTitle}. Preparing export...`,
-        });
-      }
-
       const saveResult = await window.indicoInk.showExportSaveDialog({
         title: `Export notes for ${snapshot.conference.title}`,
         defaultPath: createExportFileName(snapshot.conference),
@@ -2204,6 +2192,19 @@ export function App() {
       if (saveResult.canceled || !saveResult.filePath) {
         setExportState({ kind: 'idle' });
         return;
+      }
+
+      if (snapshot.restoredDecks?.length) {
+        const restored = snapshot.restoredDecks[0]!;
+        setExportState({
+          kind: 'preparing',
+          label: `Restored ${restored.deckDisplayName} for ${restored.talkTitle}. Preparing export...`,
+        });
+      } else {
+        setExportState({
+          kind: 'preparing',
+          label: 'Preparing export and restoring missing PDF decks...',
+        });
       }
 
       const renderJobs = collectExportRenderJobs(snapshot);
