@@ -59,11 +59,19 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     await harness.page.evaluate(() => {
       const state = window as typeof window & {
         __pdfPreviewVisibleIncompleteFrames?: number;
+        __pdfPreviewLoadingLayoutSamples?: Array<{
+          canvasOffsetY: number;
+          statusPosition: string;
+        }>;
+        __pdfPreviewInitialRenderComplete?: boolean;
         __pdfPreviewStopFrameWatch?: () => void;
       };
       state.__pdfPreviewVisibleIncompleteFrames = 0;
+      state.__pdfPreviewLoadingLayoutSamples = [];
+      state.__pdfPreviewInitialRenderComplete = false;
 
       let frameId = 0;
+      let sawInitialLoadingStatus = false;
       const watchFrame = () => {
         const pages = document.querySelector<HTMLElement>('.pdf-preview-pages');
         const canvases = Array.from(
@@ -79,6 +87,37 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
             (canvas) => !canvas.style.width || !canvas.style.height,
           );
         const loadingCaptions = document.body.textContent?.includes('Loading');
+
+        const status = document.querySelector<HTMLElement>(
+          '.pdf-preview-stage-status--loading',
+        );
+        const firstCanvas = document.querySelector<HTMLCanvasElement>(
+          '.pdf-preview-canvas',
+        );
+        const stage = document.querySelector<HTMLElement>('.pdf-preview-stage');
+        if (status && !state.__pdfPreviewInitialRenderComplete) {
+          sawInitialLoadingStatus = true;
+        }
+        if (
+          status &&
+          firstCanvas &&
+          !state.__pdfPreviewInitialRenderComplete
+        ) {
+          state.__pdfPreviewLoadingLayoutSamples?.push({
+            canvasOffsetY:
+              firstCanvas.getBoundingClientRect().y -
+              (stage?.getBoundingClientRect().y ?? 0),
+            statusPosition: window.getComputedStyle(status).position,
+          });
+        }
+        if (
+          sawInitialLoadingStatus &&
+          !status &&
+          firstCanvas &&
+          !state.__pdfPreviewInitialRenderComplete
+        ) {
+          state.__pdfPreviewInitialRenderComplete = true;
+        }
 
         if (visiblePageRoll && (incompleteCanvases || loadingCaptions)) {
           state.__pdfPreviewVisibleIncompleteFrames =
@@ -316,11 +355,62 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     const visibleIncompleteFrames = await harness.page.evaluate(() => {
       const state = window as typeof window & {
         __pdfPreviewVisibleIncompleteFrames?: number;
+        __pdfPreviewLoadingLayoutSamples?: Array<{
+          canvasOffsetY: number;
+          statusPosition: string;
+        }>;
+        __pdfPreviewInitialRenderComplete?: boolean;
         __pdfPreviewStopFrameWatch?: () => void;
       };
       state.__pdfPreviewStopFrameWatch?.();
       return state.__pdfPreviewVisibleIncompleteFrames ?? 0;
     });
+
+    const loadingLayout = await harness.page.evaluate(() => {
+      const state = window as typeof window & {
+        __pdfPreviewLoadingLayoutSamples?: Array<{
+          canvasOffsetY: number;
+          statusPosition: string;
+        }>;
+      };
+      const samples = state.__pdfPreviewLoadingLayoutSamples ?? [];
+      const finalCanvasY = document
+        .querySelector<HTMLCanvasElement>('.pdf-preview-canvas')
+        ?.getBoundingClientRect().y;
+      return {
+        samples,
+        finalCanvasOffsetY:
+          finalCanvasY === undefined
+            ? null
+            : finalCanvasY -
+              (document
+                .querySelector<HTMLElement>('.pdf-preview-stage')
+                ?.getBoundingClientRect().y ?? 0),
+      };
+    });
+    expect(loadingLayout.samples.length).toBeGreaterThan(0);
+    expect(
+      new Set(loadingLayout.samples.map((sample) => sample.statusPosition)),
+    ).toEqual(new Set(['absolute']));
+    expect(loadingLayout.finalCanvasOffsetY).not.toBeNull();
+    expect(
+      Math.max(
+        ...loadingLayout.samples.map((sample) => sample.canvasOffsetY),
+      ) -
+        Math.min(
+          ...loadingLayout.samples.map((sample) => sample.canvasOffsetY),
+        ),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.max(
+        ...loadingLayout.samples.map((sample) =>
+          Math.abs(
+            sample.canvasOffsetY -
+              (loadingLayout.finalCanvasOffsetY ?? 0),
+          ),
+        ),
+      ),
+    ).toBeLessThanOrEqual(1);
 
     await harness.page.waitForFunction(() => {
       const stage = document.querySelector<HTMLElement>('.pdf-preview-stage');
