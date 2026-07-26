@@ -1081,6 +1081,90 @@ describe('App', () => {
     ).toBeNull();
   });
 
+  it('only shows the export dialog after a destination is selected', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-export',
+      sourceUrl: 'https://indico.example.org/event/export-2026',
+      title: 'Export Event 2026',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '1 annotated slide',
+      cacheStatus: 'Cached for offline use',
+    };
+    let resolveSaveDialog: (result: {
+      canceled: boolean;
+      filePath: string | null;
+    }) => void = () => undefined;
+    const saveDialog = new Promise<{
+      canceled: boolean;
+      filePath: string | null;
+    }>((resolve) => {
+      resolveSaveDialog = resolve;
+    });
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([]);
+    window.indicoInk.getConferenceExportSnapshot = vi.fn().mockResolvedValue({
+      conference: {
+        id: libraryEvent.id,
+        title: libraryEvent.title,
+        dates: libraryEvent.dates,
+        host: libraryEvent.host,
+        sourceUrl: libraryEvent.sourceUrl,
+        exportedAt: Date.now(),
+      },
+      talks: [
+        {
+          id: 'talk-export',
+          contributionId: 'contribution-export',
+          contributionUrl: `${libraryEvent.sourceUrl}/contributions/export/`,
+          title: 'Export talk',
+          speaker: 'Ada Lovelace',
+          sessionTitle: 'Export session',
+          startsAt: null,
+          endsAt: null,
+          room: 'Room A',
+          bookmarked: false,
+          decks: [],
+        },
+      ],
+    });
+    window.indicoInk.showExportSaveDialog = vi.fn().mockReturnValue(saveDialog);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Export notes' }));
+
+    await waitFor(() => {
+      expect(window.indicoInk.showExportSaveDialog).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('dialog', { name: 'Export notes' })).toBeNull();
+
+    resolveSaveDialog({ canceled: true, filePath: null });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Export notes' })).toBeNull();
+    });
+
+    window.indicoInk.showExportSaveDialog = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePath: 'C:/temp/export.md',
+    });
+    await user.click(screen.getByRole('button', { name: 'Export notes' }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Export notes' }),
+    ).toBeTruthy();
+  });
+
   it('refreshes the recently opened list after returning from slides', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
