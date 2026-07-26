@@ -2917,6 +2917,11 @@ export function App() {
                         setEventUrl(event.target.value);
                         setEventUrlTouched(true);
                       }}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.currentTarget.focus();
+                        event.currentTarget.select();
+                      }}
                       onBlur={() => setEventUrlTouched(true)}
                       type="url"
                       inputMode="url"

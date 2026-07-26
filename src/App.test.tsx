@@ -326,6 +326,20 @@ describe('App', () => {
     ).toBeTruthy();
     expect(screen.getByText('indico.example.org')).toBeTruthy();
     expect(screen.getByText('Online only')).toBeTruthy();
+
+    await user.click(
+      within(
+        screen.getByRole('navigation', { name: 'Destinations' }),
+      ).getByRole('button', { name: 'Library' }),
+    );
+
+    const eventUrlInput = screen.getByRole<HTMLInputElement>('textbox', {
+      name: 'Event URL',
+    });
+    await user.click(eventUrlInput);
+    expect(eventUrlInput.value).toBe(openedEvent.sourceUrl);
+    expect(eventUrlInput.selectionStart).toBe(0);
+    expect(eventUrlInput.selectionEnd).toBe(openedEvent.sourceUrl.length);
   });
 
   it('switches agenda labels between event and local time', async () => {
