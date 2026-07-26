@@ -20,6 +20,20 @@ export type StrokeSegment = {
   width: number;
 };
 
+type StrokeSegmentCacheEntry = {
+  width: number;
+  height: number;
+  baseWidth: number;
+  pointCount: number;
+  lastPoint: NormalizedPagePoint | undefined;
+  segments: StrokeSegment[];
+};
+
+export type StrokeSegmentCache = {
+  clear: () => void;
+  get: (stroke: InkStroke, pageSize: PageSize) => StrokeSegment[];
+};
+
 export const DEFAULT_PEN_THICKNESS = 2;
 export const MIN_PEN_THICKNESS = 1;
 export const MAX_PEN_THICKNESS = 8;
@@ -57,6 +71,57 @@ export const createStrokeSegmentList = (
         2,
     };
   });
+};
+
+export const createStrokeSegmentCache = (): StrokeSegmentCache => {
+  const entries = new Map<string, StrokeSegmentCacheEntry>();
+
+  return {
+    clear: () => entries.clear(),
+    get: (stroke, pageSize) => {
+      const baseWidth = stroke.baseWidth ?? DEFAULT_PEN_THICKNESS;
+      const cached = entries.get(stroke.id);
+      const canAppend =
+        cached !== undefined &&
+        cached.width === pageSize.width &&
+        cached.height === pageSize.height &&
+        cached.baseWidth === baseWidth &&
+        cached.pointCount > 0 &&
+        cached.pointCount <= stroke.points.length &&
+        stroke.points[cached.pointCount - 1] === cached.lastPoint;
+
+      if (canAppend) {
+        if (cached.pointCount === stroke.points.length) {
+          return cached.segments;
+        }
+
+        const appendedSegments = createStrokeSegmentList(
+          stroke.points.slice(cached.pointCount - 1),
+          pageSize,
+          baseWidth,
+        );
+        cached.segments.push(...appendedSegments);
+        cached.pointCount = stroke.points.length;
+        cached.lastPoint = stroke.points.at(-1);
+        return cached.segments;
+      }
+
+      const segments = createStrokeSegmentList(
+        stroke.points,
+        pageSize,
+        baseWidth,
+      );
+      entries.set(stroke.id, {
+        width: pageSize.width,
+        height: pageSize.height,
+        baseWidth,
+        pointCount: stroke.points.length,
+        lastPoint: stroke.points.at(-1),
+        segments,
+      });
+      return segments;
+    },
+  };
 };
 
 const distanceToSegment = (

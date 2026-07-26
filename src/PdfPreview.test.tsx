@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   PdfPreview,
+  getCoalescedPagePoints,
   isLikelyDownloadableUrl,
   PEN_POINTER_MARKER_RADIUS,
 } from './PdfPreview';
@@ -73,6 +74,50 @@ describe('PdfPreview', () => {
 
   it('keeps the pen pointer overlay point-like', () => {
     expect(PEN_POINTER_MARKER_RADIUS).toBeLessThanOrEqual(3);
+  });
+
+  it('captures every coalesced stylus sample using cached page bounds', () => {
+    const event = {
+      nativeEvent: {
+        clientX: 140,
+        clientY: 100,
+        pressure: 0.7,
+        timeStamp: 3,
+        getCoalescedEvents: () => [
+          {
+            clientX: 120,
+            clientY: 80,
+            pressure: 0.3,
+            timeStamp: 1,
+          },
+          {
+            clientX: 130,
+            clientY: 90,
+            pressure: 0.5,
+            timeStamp: 2,
+          },
+          {
+            clientX: 140,
+            clientY: 100,
+            pressure: 0.7,
+            timeStamp: 3,
+          },
+        ],
+      },
+    } as unknown as React.PointerEvent<HTMLElement>;
+
+    expect(
+      getCoalescedPagePoints(event, {
+        left: 100,
+        top: 60,
+        width: 200,
+        height: 100,
+      }),
+    ).toEqual([
+      { x: 0.1, y: 0.2, pressure: 0.3, time: 1 },
+      { x: 0.15, y: 0.3, pressure: 0.5, time: 2 },
+      { x: 0.2, y: 0.4, pressure: 0.7, time: 3 },
+    ]);
   });
 
   it('returns to the first slide from the home control', async () => {

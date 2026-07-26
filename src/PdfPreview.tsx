@@ -32,7 +32,7 @@ import {
 } from './inkGeometry';
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
-  createStrokeSegmentList,
+  createStrokeSegmentCache,
   DEFAULT_PEN_THICKNESS,
   getStrokeWidth,
   strokeHitsPoint,
@@ -419,13 +419,9 @@ const toPointerSample = (
 
 const getPagePoint = (
   event: React.PointerEvent<HTMLElement>,
+  bounds?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
 ): NormalizedPagePoint => {
-  const canvas = event.currentTarget.querySelector<HTMLCanvasElement>(
-    '.pdf-preview-canvas',
-  );
-  const bounds =
-    canvas?.getBoundingClientRect() ??
-    event.currentTarget.getBoundingClientRect();
+  const pageBounds = bounds ?? event.currentTarget.getBoundingClientRect();
 
   return toNormalizedViewportPoint(
     {
@@ -434,7 +430,29 @@ const getPagePoint = (
       pressure: event.pressure,
       time: event.timeStamp,
     },
-    bounds,
+    pageBounds,
+  );
+};
+
+export const getCoalescedPagePoints = (
+  event: React.PointerEvent<HTMLElement>,
+  bounds: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+) => {
+  const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+  const pointerEvents = coalescedEvents.length
+    ? coalescedEvents
+    : [event.nativeEvent];
+
+  return pointerEvents.map((pointerEvent) =>
+    toNormalizedViewportPoint(
+      {
+        x: pointerEvent.clientX,
+        y: pointerEvent.clientY,
+        pressure: pointerEvent.pressure,
+        time: pointerEvent.timeStamp,
+      },
+      bounds,
+    ),
   );
 };
 
@@ -531,8 +549,7 @@ export function PdfPreview({
     React.useState<TextNoteDragState | null>(null);
   const [textNoteResizeState, setTextNoteResizeState] =
     React.useState<TextNoteResizeState | null>(null);
-  const textNoteResizeStateRef =
-    React.useRef<TextNoteResizeState | null>(null);
+  const textNoteResizeStateRef = React.useRef<TextNoteResizeState | null>(null);
   const [pointerMarker, setPointerMarker] =
     React.useState<PointerMarker | null>(null);
   const [linkHotspotsByPage, setLinkHotspotsByPage] = React.useState<
@@ -552,6 +569,13 @@ export function PdfPreview({
   const pendingPointerDiagnosticsRef = React.useRef<PointerDiagnostics | null>(
     null,
   );
+  const pointerDiagnosticsRef = React.useRef(pointerDiagnostics);
+  const activePageBoundsRef = React.useRef<{
+    pointerId: number;
+    pageIndex: number;
+    bounds: DOMRect;
+  } | null>(null);
+  const strokeSegmentCacheRef = React.useRef(createStrokeSegmentCache());
   const persistenceSaveTimerRef = React.useRef<number | null>(null);
   const textNoteEditorRef = React.useRef<HTMLTextAreaElement | null>(null);
   const persistenceHydratedRef = React.useRef(false);
@@ -832,7 +856,7 @@ export function PdfPreview({
           const anchor = captureViewportAnchor();
           const scrollContainer = scrollContainerRef?.current ?? stageElement;
           pendingViewportRestoreRef.current =
-              nextWidth > currentWidth
+            nextWidth > currentWidth
               ? {
                   mode: 'preserve-scroll',
                   pageIndex: Math.max(0, currentSlideNumberRef.current - 1),
@@ -982,6 +1006,19 @@ export function PdfPreview({
         cursor: getPointerCursorForInteraction(renderedTool, interactionMode),
         overlayClass: getPointerOverlayClass(renderedTool),
       };
+      const currentDiagnostics =
+        pendingPointerDiagnosticsRef.current ?? pointerDiagnosticsRef.current;
+      if (
+        eventKind === 'pointermove' &&
+        currentDiagnostics.renderedTool ===
+          nextPointerDiagnostics.renderedTool &&
+        currentDiagnostics.interactionMode ===
+          nextPointerDiagnostics.interactionMode &&
+        currentDiagnostics.cursor === nextPointerDiagnostics.cursor &&
+        currentDiagnostics.overlayClass === nextPointerDiagnostics.overlayClass
+      ) {
+        return;
+      }
       if (
         eventKind === 'pointerdown' ||
         eventKind === 'pointerup' ||
@@ -996,6 +1033,10 @@ export function PdfPreview({
     },
     [flushPointerDiagnostics, schedulePointerDiagnostics],
   );
+
+  React.useEffect(() => {
+    pointerDiagnosticsRef.current = pointerDiagnostics;
+  }, [pointerDiagnostics]);
 
   const handlePointerEvent = React.useCallback(
     (eventKind: PointerEventKind) =>
@@ -2044,11 +2085,32 @@ export function PdfPreview({
           touchPointersRef.current.delete(event.pointerId);
         }
 
-        const pagePoint =
-          pageSize && pageSize.width > 0 && pageSize.height > 0
-            ? getPagePoint(event)
-            : null;
         const { interactionMode, renderedTool } = resolution;
+        const needsPagePoint =
+          interactionMode === 'draw' ||
+          interactionMode === 'erase' ||
+          interactionMode === 'text';
+        if (eventKind === 'pointerdown' && needsPagePoint) {
+          activePageBoundsRef.current = {
+            pointerId: event.pointerId,
+            pageIndex,
+            bounds: event.currentTarget.getBoundingClientRect(),
+          };
+        }
+        const activePageBounds = activePageBoundsRef.current;
+        const pagePoint =
+          needsPagePoint &&
+          pageSize &&
+          pageSize.width > 0 &&
+          pageSize.height > 0
+            ? getPagePoint(
+                event,
+                activePageBounds?.pointerId === event.pointerId &&
+                  activePageBounds.pageIndex === pageIndex
+                  ? activePageBounds.bounds
+                  : undefined,
+              )
+            : null;
         const isStylusTool =
           resolution.toolState.resolvedTool === 'pen' ||
           resolution.toolState.resolvedTool === 'eraser';
@@ -2177,10 +2239,16 @@ export function PdfPreview({
           ) {
             event.preventDefault();
             const currentStrokeId = activeInkActionRef.current.strokeId;
+            const pageBounds =
+              activePageBoundsRef.current?.pointerId === event.pointerId &&
+              activePageBoundsRef.current.pageIndex === pageIndex
+                ? activePageBoundsRef.current.bounds
+                : event.currentTarget.getBoundingClientRect();
+            const pagePoints = getCoalescedPagePoints(event, pageBounds);
             updateStrokePage(pageIndex, (currentStrokes) =>
               currentStrokes.map((stroke) =>
                 stroke.id === currentStrokeId
-                  ? { ...stroke, points: [...stroke.points, pagePoint] }
+                  ? { ...stroke, points: [...stroke.points, ...pagePoints] }
                   : stroke,
               ),
             );
@@ -2304,6 +2372,9 @@ export function PdfPreview({
           ) {
             setTextNoteDragState(null);
           }
+          if (activePageBoundsRef.current?.pointerId === event.pointerId) {
+            activePageBoundsRef.current = null;
+          }
         }
       },
     [
@@ -2421,6 +2492,7 @@ export function PdfPreview({
 
     const renderPreview = async () => {
       latchedToolRef.current = null;
+      strokeSegmentCacheRef.current.clear();
       setPointerDiagnostics(createIdlePointerDiagnostics());
       if (!filePath) {
         pageCanvasRefs.current = [];
@@ -3158,23 +3230,21 @@ export function PdfPreview({
                       ];
                     }
 
-                    return createStrokeSegmentList(
-                      strokePoints,
-                      pageSize,
-                      strokeBaseWidth,
-                    ).map((segment, segmentIndex) => (
-                      <line
-                        key={`${stroke.id}-${segmentIndex}`}
-                        x1={segment.x1}
-                        y1={segment.y1}
-                        x2={segment.x2}
-                        y2={segment.y2}
-                        stroke="#111111"
-                        strokeWidth={segment.width}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ));
+                    return strokeSegmentCacheRef.current
+                      .get(stroke, pageSize)
+                      .map((segment, segmentIndex) => (
+                        <line
+                          key={`${stroke.id}-${segmentIndex}`}
+                          x1={segment.x1}
+                          y1={segment.y1}
+                          x2={segment.x2}
+                          y2={segment.y2}
+                          stroke="#111111"
+                          strokeWidth={segment.width}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ));
                   })
                 : [];
 
