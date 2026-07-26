@@ -131,29 +131,26 @@ test('keeps the talk PDF preview stable after diagnostics are removed', async ()
     expect(initialLayout.sheetLeftInset).toBeLessThanOrEqual(8);
     expect(initialLayout.sheetRightInset).toBeLessThanOrEqual(8);
 
-    const compactNavigationMetrics = await harness.page.evaluate(() => {
-      const rail = document.querySelector<HTMLElement>('.nav-rail');
-      const button = document.querySelector<HTMLElement>(
-        '.nav-rail .shell-button',
-      );
-      const brand = document.querySelector<HTMLElement>('.brand-mark');
-      const railBox = rail?.getBoundingClientRect();
-      const brandBox = brand?.getBoundingClientRect();
+    const fullWidthViewerMetrics = await harness.page.evaluate(() => {
+      const appFrame = document.querySelector<HTMLElement>('.app-frame');
+      const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+      const appFrameBox = appFrame?.getBoundingClientRect();
+      const pageSurfaceBox = pageSurface?.getBoundingClientRect();
       return {
-        railWidth: railBox?.width ?? 0,
-        buttonWidth: button?.getBoundingClientRect().width ?? 0,
-        brandCenterOffset: Math.abs(
-          (railBox?.left ?? 0) +
-            (railBox?.width ?? 0) / 2 -
-            ((brandBox?.left ?? 0) + (brandBox?.width ?? 0) / 2),
-        ),
+        navigationCount: document.querySelectorAll('.nav-rail').length,
+        appFrameLeft: appFrameBox?.left ?? 0,
+        appFrameWidth: appFrameBox?.width ?? 0,
+        pageSurfaceLeft: pageSurfaceBox?.left ?? 0,
+        pageSurfaceWidth: pageSurfaceBox?.width ?? 0,
       };
     });
-    expect(compactNavigationMetrics.railWidth).toBeCloseTo(
-      compactNavigationMetrics.buttonWidth * 1.5,
+    expect(fullWidthViewerMetrics.navigationCount).toBe(0);
+    expect(fullWidthViewerMetrics.appFrameLeft).toBeCloseTo(0, 0);
+    expect(fullWidthViewerMetrics.pageSurfaceLeft).toBeCloseTo(0, 0);
+    expect(fullWidthViewerMetrics.pageSurfaceWidth).toBeCloseTo(
+      fullWidthViewerMetrics.appFrameWidth,
       0,
     );
-    expect(compactNavigationMetrics.brandCenterOffset).toBeLessThanOrEqual(1);
 
     await harness.page.waitForFunction(() => {
       const surface = document.querySelector<HTMLElement>('.page-surface');
