@@ -958,6 +958,9 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
+      screen.queryByRole('navigation', { name: 'Primary navigation' }),
+    ).toBeNull();
+    expect(
       screen.queryByRole('heading', {
         name: 'Slide Notes',
       }),
@@ -1226,6 +1229,12 @@ describe('App', () => {
     await user.click(
       screen.getByRole('button', {
         name: 'Open talk for Navigating back to the library',
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Back to agenda',
       }),
     );
 

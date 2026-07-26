@@ -2734,54 +2734,54 @@ export function App() {
   return (
     <div
       className={`app-frame${
-        destination === 'agenda' || destination === 'slides'
-          ? ' is-compact-nav'
-          : ''
-      }`}
+        destination === 'agenda' ? ' is-compact-nav' : ''
+      }${destination === 'slides' ? ' is-slides-view' : ''}`}
     >
-      <aside className="nav-rail" aria-label="Primary navigation">
-        <div className="nav-rail-brand" aria-label="IndicoInk">
-          <div className="brand-mark">
-            <picture>
-              <source
-                media="(prefers-color-scheme: dark)"
-                srcSet={darkBrandIcon}
-              />
-              <img src={lightBrandIcon} alt="" />
-            </picture>
+      {destination === 'slides' ? null : (
+        <aside className="nav-rail" aria-label="Primary navigation">
+          <div className="nav-rail-brand" aria-label="IndicoInk">
+            <div className="brand-mark">
+              <picture>
+                <source
+                  media="(prefers-color-scheme: dark)"
+                  srcSet={darkBrandIcon}
+                />
+                <img src={lightBrandIcon} alt="" />
+              </picture>
+            </div>
+            <div className="brand-copy">
+              <span className="brand-title">IndicoInk</span>
+            </div>
           </div>
-          <div className="brand-copy">
-            <span className="brand-title">IndicoInk</span>
-          </div>
-        </div>
 
-        <nav className="nav-group" aria-label="Destinations">
-          {destinations.map((item) => (
-            <NavButton
-              key={item.id}
-              active={destination === item.id}
-              label={item.label}
-              shortLabel={item.shortLabel}
-              icon={item.icon}
-              title={
-                item.id === 'library'
-                  ? 'Library (Alt+L)'
-                  : item.id === 'search'
-                    ? 'Search (Ctrl+F)'
-                    : item.label
-              }
-              onClick={() => {
-                if (item.id === 'library') {
-                  void returnToLibrary();
-                  return;
+          <nav className="nav-group" aria-label="Destinations">
+            {destinations.map((item) => (
+              <NavButton
+                key={item.id}
+                active={destination === item.id}
+                label={item.label}
+                shortLabel={item.shortLabel}
+                icon={item.icon}
+                title={
+                  item.id === 'library'
+                    ? 'Library (Alt+L)'
+                    : item.id === 'search'
+                      ? 'Search (Ctrl+F)'
+                      : item.label
                 }
+                onClick={() => {
+                  if (item.id === 'library') {
+                    void returnToLibrary();
+                    return;
+                  }
 
-                setDestination(item.id);
-              }}
-            />
-          ))}
-        </nav>
-      </aside>
+                  setDestination(item.id);
+                }}
+              />
+            ))}
+          </nav>
+        </aside>
+      )}
 
       <section className="workspace">
         {destination === 'slides' ? null : (

@@ -315,6 +315,10 @@ input:focus-visible {
   grid-template-columns: 66px minmax(0, 1fr);
 }
 
+.app-frame.is-slides-view {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .app-frame.is-compact-nav .nav-rail {
   padding: 14px 10px;
 }
