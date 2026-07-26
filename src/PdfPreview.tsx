@@ -34,6 +34,7 @@ import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import {
   createStrokeSegmentCache,
   DEFAULT_PEN_THICKNESS,
+  getFitWidthNormalizedPenWidth,
   getStrokeWidth,
   strokeHitsPoint,
   type InkStroke,
@@ -2156,7 +2157,7 @@ export function PdfPreview({
             return;
           }
 
-          if (interactionMode === 'draw' && pagePoint) {
+          if (interactionMode === 'draw' && pagePoint && pageSize) {
             event.preventDefault();
             recordWorkspaceSnapshot();
             const strokeId = createStrokeId();
@@ -2166,6 +2167,11 @@ export function PdfPreview({
               pageIndex,
               strokeId,
             };
+            const storedBaseWidth = getFitWidthNormalizedPenWidth(
+              selectedPenThickness,
+              previewViewportWidth,
+              pageSize.width,
+            );
             setStrokesByPage((currentPages) => {
               const nextPages = currentPages.length
                 ? [...currentPages]
@@ -2180,7 +2186,7 @@ export function PdfPreview({
                 {
                   id: strokeId,
                   pageNumber: pageIndex + 1,
-                  baseWidth: selectedPenThickness,
+                  baseWidth: storedBaseWidth,
                   points: [pagePoint],
                 },
               ];
@@ -2388,6 +2394,7 @@ export function PdfPreview({
       startTouchMomentum,
       state,
       recordWorkspaceSnapshot,
+      previewViewportWidth,
       selectedPenThickness,
       textNoteDragState,
       textNoteDraft,

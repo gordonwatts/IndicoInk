@@ -7,7 +7,7 @@ import {
 export type InkStroke = {
   id: string;
   pageNumber: number;
-  /** The selector value captured when this stroke was started. */
+  /** The stroke width in the PDF page's native coordinate system. */
   baseWidth?: number;
   points: NormalizedPagePoint[];
 };
@@ -39,6 +39,15 @@ export const MIN_PEN_THICKNESS = 1;
 export const MAX_PEN_THICKNESS = 8;
 export const STROKE_PRESSURE_SCALE = 0.5;
 export const ERASER_HIT_RADIUS = 12;
+
+export const getFitWidthNormalizedPenWidth = (
+  desiredScreenWidth: number,
+  fitWidthViewportWidth: number,
+  pdfPageWidth: number,
+) =>
+  fitWidthViewportWidth > 0 && pdfPageWidth > 0
+    ? desiredScreenWidth / (fitWidthViewportWidth / pdfPageWidth)
+    : desiredScreenWidth;
 
 export const getStrokeWidth = (
   pressure: number,
