@@ -7,6 +7,12 @@ const builtins = [
 ];
 export const external = [...builtins];
 
+// Development persistence lives inside the repository so each checkout gets an
+// isolated database. Vite and Rollup must not watch that directory: SQLite can
+// hold its database, journal, and migration backup files open, which makes
+// fs.watch fail with EBUSY on Windows.
+export const runtimeWatchIgnored = ['**/.indicoink-dev-data/**'];
+
 const viteDevServerUrls = {};
 
 export const getBuildConfig = (env) => {
@@ -18,8 +24,13 @@ export const getBuildConfig = (env) => {
       emptyOutDir: false,
       outDir: '.vite/build',
       target: 'es2022',
-      watch: command === 'serve' ? {} : null,
+      watch: command === 'serve' ? { exclude: runtimeWatchIgnored } : null,
       minify: command === 'build',
+    },
+    server: {
+      watch: {
+        ignored: runtimeWatchIgnored,
+      },
     },
     clearScreen: false,
   };
