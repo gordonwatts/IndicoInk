@@ -65,7 +65,16 @@ async function drawAcceptanceStroke(page: import('@playwright/test').Page) {
   await page.mouse.move(endX, endY, { steps: 12 });
   await page.mouse.up();
 
-  await expect(page.locator('.pdf-preview-overlay line').first()).toBeVisible();
+  await expect
+    .poll(async () =>
+      Number(
+        (await page
+          .locator('.pdf-preview-ink-canvas.dry')
+          .first()
+          .getAttribute('data-stroke-count')) ?? 0,
+      ),
+    )
+    .toBeGreaterThan(0);
 }
 
 async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
@@ -95,7 +104,9 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   });
   await dragHandle.hover();
   await expect
-    .poll(() => dragHandle.evaluate((element) => getComputedStyle(element).opacity))
+    .poll(() =>
+      dragHandle.evaluate((element) => getComputedStyle(element).opacity),
+    )
     .toBe('1');
 
   await page.getByRole('button', { name: 'Acceptance note' }).click();
@@ -122,7 +133,8 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   );
   await page.mouse.down();
   await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
   );
   await page.mouse.move(
     resizeHandleBox.x + resizeHandleBox.width / 2 + resizeDelta,
@@ -150,7 +162,8 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   );
   await page.mouse.down();
   await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
   );
   await page.mouse.move(
     dragHandleBox.x + dragHandleBox.width / 2 + 36,
@@ -168,10 +181,15 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
   await expect(page.getByText('Edited acceptance note')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pen' }).click();
-  const strokeCount = await page.locator('.pdf-preview-overlay line').count();
+  const strokeCount = await page
+    .locator('.pdf-preview-ink-canvas.dry')
+    .first()
+    .getAttribute('data-stroke-count');
   await page.getByRole('button', { name: 'Edited acceptance note' }).click();
   await expect(editor).toBeVisible();
-  await expect(page.locator('.pdf-preview-overlay line')).toHaveCount(strokeCount);
+  await expect(
+    page.locator('.pdf-preview-ink-canvas.dry').first(),
+  ).toHaveAttribute('data-stroke-count', strokeCount ?? '0');
   await editor.press('Escape');
 }
 
@@ -268,8 +286,8 @@ test.describe.serial('packaged app', () => {
 
         await openAcceptanceTalk(reloadedHarness.page);
         await expect(
-          reloadedHarness.page.locator('.pdf-preview-overlay line').first(),
-        ).toBeVisible();
+          reloadedHarness.page.locator('.pdf-preview-ink-canvas.dry').first(),
+        ).toHaveAttribute('data-stroke-count', /[1-9]\d*/);
         await expect
           .poll(
             async () => {

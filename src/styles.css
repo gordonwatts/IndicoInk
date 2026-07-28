@@ -1152,8 +1152,7 @@ input:focus-visible {
   -webkit-user-drag: none;
 }
 
-.pdf-preview-sheet > canvas,
-.pdf-preview-sheet > svg {
+.pdf-preview-sheet > canvas {
   grid-area: 1 / 1;
   user-select: none;
   -webkit-user-drag: none;
@@ -1165,13 +1164,26 @@ input:focus-visible {
   border-radius: 12px;
 }
 
-.pdf-preview-overlay {
+.pdf-preview-ink-layers {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
   overflow: visible;
+}
+
+.pdf-preview-ink-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pdf-preview-ink-canvas.predicted {
+  opacity: 0.55;
 }
 
 .pdf-preview-text-notes {
@@ -1496,18 +1508,28 @@ input:focus-visible {
 }
 
 .pdf-preview-pointer-marker {
-  fill: rgba(15, 23, 42, 0.12);
-  stroke: rgba(15, 23, 42, 0.75);
-  stroke-width: 0.75;
+  position: absolute;
+  z-index: 4;
+  display: block;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(15, 23, 42, 0.75);
+  background: rgba(15, 23, 42, 0.12);
 }
 
 .pdf-preview-pointer-marker.pen {
-  fill: rgba(15, 23, 42, 0.1);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.1);
 }
 
 .pdf-preview-pointer-marker.eraser {
-  fill: rgba(239, 68, 68, 0.08);
-  stroke: rgba(239, 68, 68, 0.82);
+  width: 12px;
+  height: 12px;
+  border-color: rgba(239, 68, 68, 0.82);
+  border-radius: 3px;
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .surface-panel-header {

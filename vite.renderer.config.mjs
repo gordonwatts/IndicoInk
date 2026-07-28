@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 
-import { pluginExposeRenderer } from './vite.base.config.mjs';
+import {
+  pluginExposeRenderer,
+  runtimeWatchIgnored,
+} from './vite.base.config.mjs';
 
 export default defineConfig((env) => {
   const { root, mode, forgeConfigSelf } = env;
@@ -22,6 +25,11 @@ export default defineConfig((env) => {
     plugins: [pluginExposeRenderer(name)],
     resolve: {
       preserveSymlinks: true,
+    },
+    server: {
+      watch: {
+        ignored: runtimeWatchIgnored,
+      },
     },
     clearScreen: false,
   };

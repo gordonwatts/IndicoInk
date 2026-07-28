@@ -1,8 +1,9 @@
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
@@ -10,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createSlideId } from './persistenceModels';
 import { PersistenceStore } from './persistenceStore';
+import { createWorkspaceHistory } from './workspaceHistory';
 
 const createTempDbPath = (name: string) =>
   join(
@@ -162,8 +164,181 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(6);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(7);
     versionDb.close();
+    expect(existsSync(`${dbPath}.pre-node-sqlite-v7.bak`)).toBe(true);
+    const backupDb = new SQL.Database(
+      new Uint8Array(await readFile(`${dbPath}.pre-node-sqlite-v7.bak`)),
+    );
+    expect(
+      backupDb.exec('SELECT id FROM legacy_marker;')[0]?.values[0]?.[0],
+    ).toBe('legacy-row');
+    backupDb.close();
+    await store.close();
+  });
+
+  it('updates only touched workspace rows and leaves another talk unchanged', async () => {
+    const dbPath = createTempDbPath('incremental-isolation');
+    const store = new PersistenceStore(dbPath, () => 1700000000000);
+    const createSnapshot = (sourceUrl: string, strokeId: string) => ({
+      sourceUrl,
+      pageCount: 1,
+      strokesByPage: [
+        [
+          {
+            id: strokeId,
+            pageNumber: 1,
+            points: [
+              { x: 0.1, y: 0.2, pressure: 0.5, time: 1 },
+              { x: 0.2, y: 0.3, pressure: 0.6, time: 2 },
+            ],
+          },
+        ],
+      ],
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+
+    await store.saveLocalPdfWorkspace(
+      createSnapshot('C:\\slides\\talk-a.pdf', 'stroke-a'),
+    );
+    await store.saveLocalPdfWorkspace(
+      createSnapshot('C:\\slides\\talk-b.pdf', 'stroke-b'),
+    );
+
+    const inspectBefore = new DatabaseSync(dbPath, { readOnly: true });
+    const untouchedBefore = inspectBefore
+      .prepare('SELECT payload_json, updated_at FROM annotations WHERE id = ?')
+      .get('stroke-b');
+    inspectBefore.close();
+
+    await store.saveLocalPdfWorkspaceChanges({
+      sourceUrl: 'C:\\slides\\talk-a.pdf',
+      pageCount: 1,
+      revision: 1,
+      changes: [
+        {
+          kind: 'upsert-stroke',
+          pageIndex: 0,
+          stroke: {
+            id: 'stroke-a-2',
+            pageNumber: 1,
+            points: [
+              { x: 0.3, y: 0.4, pressure: 0.4, time: 3 },
+              { x: 0.5, y: 0.6, pressure: 0.8, time: 4 },
+            ],
+          },
+        },
+      ],
+      history: createWorkspaceHistory(),
+      currentSlideNumber: 1,
+      scrollLeft: 10,
+      scrollTop: 20,
+      zoom: 1,
+    });
+
+    const inspectAfter = new DatabaseSync(dbPath, { readOnly: true });
+    const untouchedAfter = inspectAfter
+      .prepare('SELECT payload_json, updated_at FROM annotations WHERE id = ?')
+      .get('stroke-b');
+    inspectAfter.close();
+    expect(untouchedAfter).toEqual(untouchedBefore);
+    await expect(
+      store.loadLocalPdfWorkspace('C:\\slides\\talk-b.pdf'),
+    ).resolves.toMatchObject({
+      strokesByPage: [[{ id: 'stroke-b' }]],
+    });
+    await expect(
+      store.loadLocalPdfWorkspace('C:\\slides\\talk-a.pdf'),
+    ).resolves.toMatchObject({
+      revision: 1,
+      strokesByPage: [[{ id: 'stroke-a' }, { id: 'stroke-a-2' }]],
+    });
+
+    await store.saveLocalPdfWorkspaceChanges({
+      sourceUrl: 'C:\\slides\\talk-a.pdf',
+      pageCount: 1,
+      revision: 1,
+      changes: [
+        {
+          kind: 'upsert-stroke',
+          pageIndex: 0,
+          stroke: {
+            id: 'stale-stroke',
+            pageNumber: 1,
+            points: [{ x: 0.9, y: 0.9, pressure: 0.5, time: 9 }],
+          },
+        },
+      ],
+      history: createWorkspaceHistory(),
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+    await expect(
+      store.loadLocalPdfWorkspace('C:\\slides\\talk-a.pdf'),
+    ).resolves.not.toMatchObject({
+      strokesByPage: [expect.arrayContaining([{ id: 'stale-stroke' }])],
+    });
+    await store.close();
+  });
+
+  it('rolls back a failed incremental transaction', async () => {
+    const dbPath = createTempDbPath('incremental-rollback');
+    const sourceUrl = 'C:\\slides\\rollback.pdf';
+    const store = new PersistenceStore(dbPath, () => 1700000000000);
+    await store.saveLocalPdfWorkspace({
+      sourceUrl,
+      pageCount: 1,
+      strokesByPage: [[]],
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+
+    await expect(
+      store.saveLocalPdfWorkspaceChanges({
+        sourceUrl,
+        pageCount: 1,
+        revision: 1,
+        changes: [
+          {
+            kind: 'upsert-stroke',
+            pageIndex: 0,
+            stroke: {
+              id: 'stroke-valid',
+              pageNumber: 1,
+              points: [{ x: 0.1, y: 0.2, pressure: 0.5, time: 1 }],
+            },
+          },
+          {
+            kind: 'upsert-stroke',
+            pageIndex: 99,
+            stroke: {
+              id: 'stroke-invalid',
+              pageNumber: 100,
+              points: [{ x: 0.2, y: 0.3, pressure: 0.5, time: 2 }],
+            },
+          },
+        ],
+        history: createWorkspaceHistory(),
+        currentSlideNumber: 1,
+        scrollLeft: 0,
+        scrollTop: 0,
+        zoom: 1,
+      }),
+    ).rejects.toThrow();
+
+    await expect(store.loadLocalPdfWorkspace(sourceUrl)).resolves.toMatchObject(
+      {
+        revision: 0,
+        strokesByPage: [[]],
+      },
+    );
     await store.close();
   });
 

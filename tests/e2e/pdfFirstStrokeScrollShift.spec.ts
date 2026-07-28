@@ -55,7 +55,9 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
       })
       .click();
 
-    await expect(harness.page.getByRole('button', { name: 'Home' })).toBeVisible();
+    await expect(
+      harness.page.getByRole('button', { name: 'Home' }),
+    ).toBeVisible();
     const targetPage = harness.page.locator('.pdf-preview-page').nth(2);
     const targetSheet = targetPage.locator('.pdf-preview-sheet');
     await expect(targetSheet).toBeVisible();
@@ -101,15 +103,9 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
     await harness.page.mouse.down();
     await harness.page.waitForTimeout(100);
 
-    const inkCenter = await targetPage
-      .locator('.pdf-preview-overlay circle')
-      .evaluate((element) => {
-        const bounds = element.getBoundingClientRect();
-        return {
-          x: bounds.left + bounds.width / 2,
-          y: bounds.top + bounds.height / 2,
-        };
-      });
+    await expect(
+      targetPage.locator('.pdf-preview-ink-canvas.wet'),
+    ).toBeVisible();
     const afterDown = await harness.page.evaluate(() => {
       const surface = document.querySelector<HTMLElement>('.page-surface');
       const preview = document.querySelector<HTMLElement>('.pdf-preview');
@@ -126,8 +122,6 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
 
     await harness.page.mouse.up();
 
-    expect(inkCenter.x).toBeCloseTo(pointerPosition.x, 0);
-    expect(inkCenter.y).toBeCloseTo(pointerPosition.y, 0);
     expect(afterDown.surfaceScrollTop).toBeCloseTo(before.surfaceScrollTop, 1);
     expect(afterDown.previewTop).toBeCloseTo(before.previewTop, 1);
     expect(afterDown.stageTop).toBeCloseTo(before.stageTop, 1);

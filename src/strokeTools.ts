@@ -158,13 +158,20 @@ export const strokeHitsPoint = (
   stroke: InkStroke,
   point: NormalizedPagePoint,
   pageSize: PageSize,
+  segmentCache?: StrokeSegmentCache,
 ) => {
   if (pageSize.width <= 0 || pageSize.height <= 0) {
     return false;
   }
 
   const screenPoint = toScreenPoint(point, pageSize);
-  const segments = createStrokeSegmentList(stroke.points, pageSize);
+  const segments = segmentCache
+    ? segmentCache.get(stroke, pageSize)
+    : createStrokeSegmentList(
+        stroke.points,
+        pageSize,
+        stroke.baseWidth ?? DEFAULT_PEN_THICKNESS,
+      );
 
   if (stroke.points.length === 1) {
     const singlePoint = toScreenPoint(stroke.points[0]!, pageSize);

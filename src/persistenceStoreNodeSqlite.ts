@@ -1,8 +1,12 @@
-import sqlJsSource from 'sql.js/dist/sql-wasm.js?raw';
-import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { mkdirSync } from 'node:fs';
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { constants, existsSync, mkdirSync } from 'node:fs';
+import { copyFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import {
+  DatabaseSync,
+  type SQLInputValue,
+  type StatementResultingChanges,
+  type StatementSync,
+} from 'node:sqlite';
 
 import type { NormalizedPagePoint } from './inkGeometry';
 import { DEFAULT_PEN_THICKNESS } from './strokeTools';
@@ -18,9 +22,13 @@ import type {
   ViewState,
 } from './persistenceModels';
 import type {
+  PdfWorkspaceChangeBatch,
+  PdfWorkspaceChangeSaveResult,
+  PdfWorkspaceHistory,
   PdfWorkspaceSaveResult,
   PdfWorkspaceSnapshot,
   PdfWorkspacePageState,
+  WorkspaceHistoryEntry,
 } from './shared/pdfWorkspace';
 import {
   createConferenceId,
@@ -30,108 +38,8 @@ import {
   createViewStateId,
 } from './persistenceModels';
 
-type SqlJsDatabase = {
-  exec(sql: string): Array<{
-    columns: string[];
-    values: Array<Array<unknown>>;
-  }>;
-  prepare(sql: string): SqlJsStatement;
-  export(): Uint8Array;
-  close(): void;
-  getRowsModified(): number;
-};
-
-type SqlJsStatement = {
-  bind(params?: unknown): SqlJsStatement;
-  run(params?: unknown): SqlJsStatement;
-  step(): boolean;
-  get(params?: unknown): unknown[] | undefined;
-  getAsObject(params?: unknown): Record<string, unknown> | undefined;
-  all(params?: unknown): Record<string, unknown>[];
-  reset(): SqlJsStatement;
-  free(): void;
-};
-
-type SqlJsModule = {
-  Database: new (data?: Uint8Array | ArrayBuffer) => SqlJsDatabase;
-};
-
-type InitSqlJs = (config?: {
-  locateFile?: (file: string) => string;
-  wasmBinary?: Uint8Array;
-}) => Promise<SqlJsModule>;
-
-const CURRENT_SCHEMA_VERSION = 6;
-
-let initSqlJsLoader: InitSqlJs | null = null;
-
-const getSqlWasmPath = () => {
-  if (sqlWasmUrl.startsWith('/node_modules/')) {
-    return join(process.cwd(), sqlWasmUrl.slice(1));
-  }
-
-  if (isAbsolute(sqlWasmUrl) || /^[a-z]+:/i.test(sqlWasmUrl)) {
-    return sqlWasmUrl;
-  }
-
-  const baseDir = typeof __dirname === 'string' ? __dirname : process.cwd();
-  return join(baseDir, sqlWasmUrl);
-};
-
-const getSqlJsConfig = () => {
-  const dataUrlPrefix = 'data:application/wasm;base64,';
-
-  if (sqlWasmUrl.startsWith(dataUrlPrefix)) {
-    return {
-      wasmBinary: new Uint8Array(
-        Buffer.from(sqlWasmUrl.slice(dataUrlPrefix.length), 'base64'),
-      ),
-    };
-  }
-
-  return {
-    locateFile: (file: string) =>
-      file === 'sql-wasm.wasm' ? getSqlWasmPath() : file,
-  };
-};
-
-const getInitSqlJs = (): InitSqlJs => {
-  if (initSqlJsLoader) {
-    return initSqlJsLoader;
-  }
-
-  const module = {
-    exports: {},
-  } as {
-    exports: InitSqlJs | { default?: InitSqlJs };
-  };
-
-  const loadSqlJs = new Function(
-    'module',
-    'exports',
-    'require',
-    '__dirname',
-    '__filename',
-    `${sqlJsSource}
-return module.exports.default || module.exports;`,
-  ) as (
-    module: { exports: InitSqlJs | { default?: InitSqlJs } },
-    exports: InitSqlJs | { default?: InitSqlJs },
-    require: NodeJS.Require,
-    __dirname: string,
-    __filename: string,
-  ) => InitSqlJs;
-
-  const sqlWasmPath = getSqlWasmPath();
-  initSqlJsLoader = loadSqlJs(
-    module,
-    module.exports,
-    require,
-    dirname(sqlWasmPath),
-    join(dirname(sqlWasmPath), 'sql-wasm.js'),
-  );
-  return initSqlJsLoader;
-};
+const CURRENT_SCHEMA_VERSION = 7;
+const PRE_NODE_SQLITE_BACKUP_SUFFIX = '.pre-node-sqlite-v7.bak';
 
 const getFileName = (value: string) => {
   const normalized = value.replaceAll('\\', '/');
@@ -152,6 +60,17 @@ const createEmptyPageState = (): PdfWorkspacePageState => ({
 
 const serializeWorkspaceHistory = (history: PdfWorkspacePageState[][]) =>
   JSON.stringify(history);
+
+const parseWorkspaceHistoryEntry = (value: string) => {
+  try {
+    const parsed = JSON.parse(value) as Partial<WorkspaceHistoryEntry>;
+    return typeof parsed.id === 'string' && Array.isArray(parsed.changes)
+      ? (parsed as WorkspaceHistoryEntry)
+      : null;
+  } catch {
+    return null;
+  }
+};
 
 const isStrokeCandidate = (
   value: unknown,
@@ -571,6 +490,29 @@ const migration6 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
+const migration7 = (db: SqliteDatabaseAdapter) => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workspace_history (
+      id TEXT PRIMARY KEY,
+      deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+      stack TEXT NOT NULL CHECK(stack IN ('undo', 'redo')),
+      position INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(deck_id, stack, position)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_history_deck_stack
+      ON workspace_history(deck_id, stack, position);
+
+    CREATE TABLE IF NOT EXISTS workspace_revision (
+      deck_id TEXT PRIMARY KEY REFERENCES decks(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+};
+
 const migrations = [
   migration1,
   migration2,
@@ -578,6 +520,7 @@ const migrations = [
   migration4,
   migration5,
   migration6,
+  migration7,
 ];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
@@ -727,57 +670,46 @@ const rowToViewState = (row: Record<string, unknown>): StoredViewState => ({
 });
 
 class SqliteStatementAdapter {
-  constructor(private readonly statement: SqlJsStatement) {}
+  constructor(
+    private readonly statement: StatementSync,
+    private readonly parameterNames: Set<string>,
+  ) {}
 
   run(params?: unknown) {
-    this.statement.run(normalizeParams(params));
+    const result = invokeStatement(
+      this.statement,
+      'run',
+      params,
+      this.parameterNames,
+    ) as StatementResultingChanges;
     return {
-      changes: 0,
-      lastInsertRowid: 0,
+      changes: Number(result.changes),
+      lastInsertRowid: Number(result.lastInsertRowid),
     };
   }
 
   get(params?: unknown) {
-    const normalizedParams = normalizeParams(params);
-    if (normalizedParams !== undefined) {
-      this.statement.bind(normalizedParams);
-    }
-
-    try {
-      if (!this.statement.step()) {
-        return undefined;
-      }
-
-      const row = this.statement.getAsObject();
-      return row && Object.keys(row).length ? row : undefined;
-    } finally {
-      this.statement.reset();
-    }
+    const row = invokeStatement(
+      this.statement,
+      'get',
+      params,
+      this.parameterNames,
+    ) as Record<string, unknown> | undefined;
+    return row && Object.keys(row).length ? row : undefined;
   }
 
   all(params?: unknown) {
-    const normalizedParams = normalizeParams(params);
-    if (normalizedParams !== undefined) {
-      this.statement.bind(normalizedParams);
-    }
-
-    const rows: Record<string, unknown>[] = [];
-    try {
-      while (this.statement.step()) {
-        const row = this.statement.getAsObject();
-        if (row) {
-          rows.push(row);
-        }
-      }
-      return rows;
-    } finally {
-      this.statement.reset();
-    }
+    return invokeStatement(
+      this.statement,
+      'all',
+      params,
+      this.parameterNames,
+    ) as Record<string, unknown>[];
   }
 }
 
 class SqliteDatabaseAdapter {
-  constructor(private readonly db: SqlJsDatabase) {}
+  constructor(private readonly db: DatabaseSync) {}
 
   pragma<T = unknown>(statement: string, options?: { simple?: boolean }): T {
     const trimmed = statement.trim();
@@ -786,13 +718,21 @@ class SqliteDatabaseAdapter {
         ? trimmed
         : `${trimmed};`
       : `PRAGMA ${trimmed};`;
-    const results = this.db.exec(sql);
+    const prepared = this.db.prepare(sql);
+    const rows = prepared.all() as Record<string, unknown>[];
 
     if (options?.simple) {
-      return (results[0]?.values[0]?.[0] ?? 0) as T;
+      const firstRow = rows[0];
+      return (firstRow ? Object.values(firstRow)[0] : 0) as T;
     }
 
-    return results as T;
+    const columns = rows[0] ? Object.keys(rows[0]) : [];
+    return [
+      {
+        columns,
+        values: rows.map((row) => columns.map((column) => row[column])),
+      },
+    ] as T;
   }
 
   exec(sql: string) {
@@ -800,7 +740,10 @@ class SqliteDatabaseAdapter {
   }
 
   prepare(sql: string) {
-    return new SqliteStatementAdapter(this.db.prepare(sql));
+    return new SqliteStatementAdapter(
+      this.db.prepare(sql),
+      new Set(sql.match(/[@:$][A-Za-z_][A-Za-z0-9_]*/g) ?? []),
+    );
   }
 
   transaction<T>(work: () => T): () => T {
@@ -824,14 +767,6 @@ class SqliteDatabaseAdapter {
   close() {
     this.db.close();
   }
-
-  export() {
-    return this.db.export();
-  }
-
-  getRowsModified() {
-    return this.db.getRowsModified();
-  }
 }
 
 const getStatementValue = (
@@ -846,47 +781,74 @@ const getStatementValue = (
   return row;
 };
 
-const normalizeParams = (params?: unknown) => {
+const toSqlInputValue = (value: unknown): SQLInputValue => {
+  if (
+    value === null ||
+    typeof value === 'number' ||
+    typeof value === 'bigint' ||
+    typeof value === 'string'
+  ) {
+    return value;
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return value as SQLInputValue;
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+
+  return String(value);
+};
+
+const normalizeParams = (
+  params?: unknown,
+): SQLInputValue[] | Record<string, SQLInputValue> | undefined => {
   if (params === null || params === undefined) {
     return undefined;
   }
 
   if (Array.isArray(params)) {
-    return params;
+    return params.map((value) => toSqlInputValue(value ?? null));
   }
 
   if (typeof params === 'object') {
     return Object.fromEntries(
       Object.entries(params as Record<string, unknown>).map(([key, value]) => [
         /^[@:$]/.test(key) ? key : `@${key}`,
-        value,
+        toSqlInputValue(value ?? null),
       ]),
     );
   }
 
-  return [params];
+  return [toSqlInputValue(params)];
 };
 
-const writeFileAtomically = async (filePath: string, bytes: Uint8Array) => {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tempPath, bytes);
-  try {
-    await rename(tempPath, filePath);
-  } catch (error) {
-    try {
-      await unlink(filePath);
-      await rename(tempPath, filePath);
-    } catch {
-      await unlink(tempPath).catch(() => {});
-      throw error;
-    }
+const invokeStatement = (
+  statement: StatementSync,
+  method: 'run' | 'get' | 'all',
+  params?: unknown,
+  parameterNames: Set<string> = new Set(),
+) => {
+  const normalizedParams = normalizeParams(params);
+  if (normalizedParams === undefined) {
+    return statement[method]();
   }
+
+  if (Array.isArray(normalizedParams)) {
+    return statement[method](...normalizedParams);
+  }
+
+  const namedParameters = Object.fromEntries(
+    Object.entries(normalizedParams).filter(([key]) => parameterNames.has(key)),
+  );
+  return statement[method](namedParameters);
 };
 
 export class PersistenceStore {
   private db: SqliteDatabaseAdapter | null = null;
   private loadPromise: Promise<void> | null = null;
-  private dirty = false;
   private transactionDepth = 0;
 
   constructor(
@@ -1357,6 +1319,138 @@ export class PersistenceStore {
     return row ? rowToViewState(row as Record<string, unknown>) : null;
   }
 
+  async getWorkspaceHistory(
+    deckId: string,
+  ): Promise<PdfWorkspaceHistory | null> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(
+        `SELECT stack, payload_json
+         FROM workspace_history
+         WHERE deck_id = ?
+         ORDER BY stack, position`,
+      )
+      .all(deckId) as Array<{
+      stack: 'undo' | 'redo';
+      payload_json: string;
+    }>;
+    if (!rows.length) {
+      return null;
+    }
+
+    const history: PdfWorkspaceHistory = {
+      version: 2,
+      undo: [],
+      redo: [],
+    };
+    for (const row of rows) {
+      const entry = parseWorkspaceHistoryEntry(String(row.payload_json));
+      if (entry && (row.stack === 'undo' || row.stack === 'redo')) {
+        history[row.stack].push(entry);
+      }
+    }
+    return history;
+  }
+
+  async getWorkspaceRevision(deckId: string) {
+    const db = await this.getDb();
+    const row = db
+      .prepare('SELECT revision FROM workspace_revision WHERE deck_id = ?')
+      .get(deckId) as { revision?: number } | undefined;
+    return Number(row?.revision ?? 0);
+  }
+
+  async replaceWorkspaceHistory(deckId: string, history: PdfWorkspaceHistory) {
+    const db = await this.getDb();
+    const existingRows = db
+      .prepare(
+        `SELECT id, stack, position, payload_json
+         FROM workspace_history
+         WHERE deck_id = ?
+         ORDER BY stack, position`,
+      )
+      .all(deckId) as Array<{
+      id: string;
+      stack: 'undo' | 'redo';
+      position: number;
+      payload_json: string;
+    }>;
+    const desiredIds = new Set(
+      (['undo', 'redo'] as const).flatMap((stack) =>
+        history[stack].map((entry) => `${deckId}:${stack}:${entry.id}`),
+      ),
+    );
+    const deleteRow = db.prepare(
+      'DELETE FROM workspace_history WHERE id = ? AND deck_id = ?',
+    );
+    for (const row of existingRows) {
+      if (!desiredIds.has(row.id)) {
+        deleteRow.run([row.id, deckId]);
+      }
+    }
+
+    const upsert = db.prepare(
+      `INSERT INTO workspace_history (
+         id, deck_id, stack, position, payload_json, created_at
+       ) VALUES (
+         @id, @deckId, @stack, @position, @payloadJson, @createdAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         stack = excluded.stack,
+         position = excluded.position,
+         payload_json = excluded.payload_json`,
+    );
+    for (const stack of ['undo', 'redo'] as const) {
+      const existingForStack = existingRows.filter(
+        (row) => row.stack === stack && desiredIds.has(row.id),
+      );
+      const existingById = new Map(
+        existingForStack.map((row) => [row.id, row]),
+      );
+      const desired = history[stack].map((entry) => ({
+        entry,
+        id: `${deckId}:${stack}:${entry.id}`,
+      }));
+      const firstExistingIndex = desired.findIndex(({ id }) =>
+        existingById.has(id),
+      );
+      const canPreservePositions =
+        firstExistingIndex < 0 ||
+        desired
+          .slice(firstExistingIndex)
+          .every(({ id }) => existingById.has(id));
+      const firstPosition = existingForStack[0]?.position ?? 0;
+
+      desired.forEach(({ entry, id }, index) => {
+        const existing = existingById.get(id);
+        const position =
+          canPreservePositions && existing
+            ? existing.position
+            : canPreservePositions
+              ? firstPosition - firstExistingIndex + index
+              : index;
+        const payloadJson = JSON.stringify(entry);
+        if (
+          existing &&
+          existing.position === position &&
+          existing.payload_json === payloadJson
+        ) {
+          return;
+        }
+        upsert.run({
+          id,
+          deckId,
+          stack,
+          position,
+          payloadJson,
+          createdAt: this.now(),
+        });
+      });
+    }
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
   async deleteViewState(deckId: string) {
     const db = await this.getDb();
     db.prepare('DELETE FROM view_state WHERE deck_id = ?').run(deckId);
@@ -1396,6 +1490,8 @@ export class PersistenceStore {
       );
     }
     const viewState = await this.getViewState(deckId);
+    const history = await this.getWorkspaceHistory(deckId);
+    const revision = await this.getWorkspaceRevision(deckId);
 
     return {
       sourceUrl,
@@ -1403,6 +1499,8 @@ export class PersistenceStore {
       talkId: talkId,
       deckId,
       pageCount: slides.length,
+      revision,
+      ...(history ? { history } : {}),
       undoStack: viewState?.undoStack ?? [],
       redoStack: viewState?.redoStack ?? [],
       strokesByPage: slides.map((slide) =>
@@ -1470,6 +1568,8 @@ export class PersistenceStore {
       );
     }
     const viewState = await this.getViewState(deckId);
+    const history = await this.getWorkspaceHistory(deckId);
+    const revision = await this.getWorkspaceRevision(deckId);
 
     return {
       sourceUrl: deck.sourceUrl,
@@ -1477,6 +1577,8 @@ export class PersistenceStore {
       talkId: talk.id,
       deckId,
       pageCount: slides.length,
+      revision,
+      ...(history ? { history } : {}),
       undoStack: viewState?.undoStack ?? [],
       redoStack: viewState?.redoStack ?? [],
       strokesByPage: slides.map((slide) =>
@@ -1642,6 +1744,9 @@ export class PersistenceStore {
         createdAt: now,
         updatedAt: now,
       });
+      if (state.history) {
+        await this.replaceWorkspaceHistory(deckId, state.history);
+      }
     });
 
     return {
@@ -1741,6 +1846,9 @@ export class PersistenceStore {
         createdAt: now,
         updatedAt: now,
       });
+      if (state.history) {
+        await this.replaceWorkspaceHistory(deckId, state.history);
+      }
     });
 
     return {
@@ -1748,6 +1856,187 @@ export class PersistenceStore {
       pageCount: state.pageCount,
       savedAt: now,
     };
+  }
+
+  async saveLocalPdfWorkspaceChanges(
+    state: PdfWorkspaceChangeBatch,
+  ): Promise<PdfWorkspaceChangeSaveResult> {
+    const now = this.now();
+    const conferenceId = createConferenceId(state.sourceUrl);
+    const talkId = createTalkId(conferenceId, state.sourceUrl);
+    const deckId = createDeckId(talkId, state.sourceUrl);
+    const fileName = getFileName(state.sourceUrl);
+    const transactionStartedAt = performance.now();
+
+    await this.transaction(async () => {
+      await this.upsertConference({
+        id: conferenceId,
+        sourceUrl: state.sourceUrl,
+        title: fileName || 'Local PDF workspace',
+        dates: 'Local workspace',
+        host: 'IndicoInk',
+        timeZone: 'UTC',
+        lastOpenedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.upsertTalk({
+        id: talkId,
+        conferenceId,
+        contributionId: state.sourceUrl,
+        contributionUrl: state.sourceUrl,
+        title: fileName || 'Local PDF workspace',
+        speaker: '',
+        sessionTitle: 'Local PDF preview',
+        startsAt: null,
+        endsAt: null,
+        room: '',
+        bookmarked: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.upsertDeck({
+        id: deckId,
+        conferenceId,
+        talkId,
+        sourceUrl: state.sourceUrl,
+        displayName: fileName || 'Local PDF workspace',
+        mimeType: 'application/pdf',
+        selected: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.applyWorkspaceChanges(state, conferenceId, talkId, deckId);
+    });
+
+    return {
+      sourceUrl: state.sourceUrl,
+      pageCount: state.pageCount,
+      revision: state.revision,
+      transactionDurationMs: performance.now() - transactionStartedAt,
+      savedAt: now,
+    };
+  }
+
+  async saveDeckPdfWorkspaceChanges(
+    state: PdfWorkspaceChangeBatch,
+  ): Promise<PdfWorkspaceChangeSaveResult> {
+    const { conferenceId, talkId, deckId } = state;
+    if (!conferenceId || !talkId || !deckId) {
+      return this.saveLocalPdfWorkspaceChanges(state);
+    }
+    const deck = await this.getDeck(deckId);
+    if (!deck) {
+      throw new Error('Cannot save a deck workspace for an unknown deck.');
+    }
+    const now = this.now();
+    const transactionStartedAt = performance.now();
+
+    await this.transaction(async () => {
+      await this.applyWorkspaceChanges(state, conferenceId, talkId, deckId);
+    });
+
+    return {
+      sourceUrl: deck.sourceUrl,
+      pageCount: state.pageCount,
+      revision: state.revision,
+      transactionDurationMs: performance.now() - transactionStartedAt,
+      savedAt: now,
+    };
+  }
+
+  private async applyWorkspaceChanges(
+    state: PdfWorkspaceChangeBatch,
+    conferenceId: string,
+    talkId: string,
+    deckId: string,
+  ) {
+    const now = this.now();
+    const currentRevision = await this.getWorkspaceRevision(deckId);
+    if (state.revision <= currentRevision) {
+      return;
+    }
+    const existingSlides = await this.listSlidesByDeck(deckId);
+    const existingSlidesByNumber = new Map(
+      existingSlides.map((slide) => [slide.slideNumber, slide]),
+    );
+    if (existingSlides.length !== state.pageCount) {
+      for (let pageIndex = 0; pageIndex < state.pageCount; pageIndex += 1) {
+        if (existingSlidesByNumber.has(pageIndex + 1)) {
+          continue;
+        }
+        await this.upsertSlide({
+          id: createSlideId(deckId, pageIndex + 1),
+          conferenceId,
+          talkId,
+          deckId,
+          slideNumber: pageIndex + 1,
+          annotated: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    for (const change of state.changes) {
+      const slideId = createSlideId(deckId, change.pageIndex + 1);
+      if (change.kind === 'delete') {
+        const annotation = await this.getAnnotation(change.annotationId);
+        if (annotation?.deckId === deckId) {
+          await this.deleteAnnotation(change.annotationId);
+        }
+      } else if (change.kind === 'upsert-stroke') {
+        await this.upsertAnnotation({
+          id: change.stroke.id,
+          conferenceId,
+          talkId,
+          deckId,
+          slideId,
+          ...(change.stroke.baseWidth === undefined
+            ? {}
+            : { baseWidth: change.stroke.baseWidth }),
+          points: change.stroke.points,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await this.upsertAnnotation({
+          ...change.note,
+          conferenceId,
+          talkId,
+          deckId,
+          slideId,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await this.upsertViewState({
+      id: createViewStateId(deckId),
+      conferenceId,
+      talkId,
+      deckId,
+      slideId: state.currentSlideNumber
+        ? createSlideId(deckId, state.currentSlideNumber)
+        : null,
+      currentSlideNumber: state.currentSlideNumber,
+      zoom: state.zoom,
+      scrollLeft: state.scrollLeft,
+      scrollTop: state.scrollTop,
+      undoStack: [],
+      redoStack: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    await this.replaceWorkspaceHistory(deckId, state.history);
+    const db = await this.getDb();
+    db.prepare(
+      `INSERT INTO workspace_revision (deck_id, revision, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(deck_id) DO UPDATE SET
+         revision = excluded.revision,
+         updated_at = excluded.updated_at`,
+    ).run([deckId, state.revision, now]);
   }
 
   private async deleteSlidesByDeck(deckId: string) {
@@ -1771,25 +2060,37 @@ export class PersistenceStore {
 
   private async initialize() {
     mkdirSync(dirname(this.dbPath), { recursive: true });
-    const initSqlJs = getInitSqlJs();
-    const SQL = (await initSqlJs(getSqlJsConfig())) as SqlJsModule;
+    if (existsSync(this.dbPath)) {
+      const inspectionDb = new DatabaseSync(this.dbPath, { readOnly: true });
+      const currentVersion = Number(
+        Object.values(
+          inspectionDb.prepare('PRAGMA user_version;').get() ?? {},
+        )[0] ?? 0,
+      );
+      inspectionDb.close();
 
-    let bytes: Uint8Array | undefined;
-    try {
-      bytes = new Uint8Array(await readFile(this.dbPath));
-    } catch {
-      bytes = undefined;
+      if (currentVersion < CURRENT_SCHEMA_VERSION) {
+        await copyFile(
+          this.dbPath,
+          `${this.dbPath}${PRE_NODE_SQLITE_BACKUP_SUFFIX}`,
+          constants.COPYFILE_EXCL,
+        ).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') {
+            throw error;
+          }
+        });
+      }
     }
 
-    const rawDb = bytes ? new SQL.Database(bytes) : new SQL.Database();
+    const rawDb = new DatabaseSync(this.dbPath, {
+      timeout: 5000,
+    });
     const adapter = new SqliteDatabaseAdapter(rawDb);
     adapter.exec('PRAGMA foreign_keys = ON;');
-    this.dirty = bytes === undefined;
+    adapter.exec('PRAGMA journal_mode = DELETE;');
+    adapter.exec('PRAGMA synchronous = FULL;');
     this.ensureSchema(adapter);
     this.db = adapter;
-    if (this.dirty) {
-      await this.flushIfNeeded();
-    }
   }
 
   private ensureSchema(db: SqliteDatabaseAdapter) {
@@ -1819,15 +2120,10 @@ export class PersistenceStore {
   }
 
   private markDirty() {
-    this.dirty = true;
+    // File-backed SQLite persists changes transactionally.
   }
 
   private async flushIfNeeded() {
-    if (!this.db || !this.dirty || this.transactionDepth > 0) {
-      return;
-    }
-
-    await writeFileAtomically(this.dbPath, this.db.export());
-    this.dirty = false;
+    // File-backed SQLite does not require exporting and rewriting the database.
   }
 }
