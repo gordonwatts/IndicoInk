@@ -26,42 +26,18 @@ export const buildAgendaTalkSummaries = async (
   const summaries = await Promise.all(
     talks.map(async (talk) => {
       const decks = await store.listDecksByTalk(talk.id);
-      const deckDetails = await Promise.all(
-        decks.map(async (deck) => {
-          const slides =
-            deck.mimeType === 'application/pdf'
-              ? await store.listSlidesByDeck(deck.id)
-              : [];
-          const annotatedSlideCount = slides.filter(
-            (slide) => slide.annotated,
-          ).length;
-          const annotationCount =
-            deck.upstreamStatus === 'missing'
-              ? (
-                  await Promise.all(
-                    slides.map(
-                      async (slide) =>
-                        (await store.listAnnotationsBySlide(slide.id)).length,
-                    ),
-                  )
-                ).reduce((total, count) => total + count, 0)
-              : 0;
-
-          return { deck, slides, annotatedSlideCount, annotationCount };
-        }),
-      );
-      const visibleDeckDetails = deckDetails.filter(
-        ({ deck, annotationCount }) =>
-          deck.upstreamStatus !== 'missing' || annotationCount > 0,
-      );
-      const pdfDecks = visibleDeckDetails.filter(
-        ({ deck }) => deck.mimeType === 'application/pdf',
+      const pdfDecks = decks.filter(
+        (deck) => deck.mimeType === 'application/pdf',
       );
 
-      const annotatedSlideCount = pdfDecks.reduce(
-        (total, { annotatedSlideCount: count }) => total + count,
-        0,
-      );
+      const annotatedSlideCount = (
+        await Promise.all(
+          pdfDecks.map(async (deck) => {
+            const slides = await store.listSlidesByDeck(deck.id);
+            return slides.filter((slide) => slide.annotated).length;
+          }),
+        )
+      ).reduce((total, count) => total + count, 0);
 
       return {
         id: talk.id,
@@ -99,7 +75,7 @@ export const buildAgendaTalkSummaries = async (
           : {}),
         materialSummary: formatMaterialSummary(pdfDecks.length),
         materials: await Promise.all(
-          visibleDeckDetails.map(async ({ deck, slides }) => ({
+          decks.map(async (deck) => ({
             id: deck.id,
             title: deck.displayName,
             sourceUrl: deck.sourceUrl,
@@ -109,7 +85,9 @@ export const buildAgendaTalkSummaries = async (
               ? { upstreamStatus: deck.upstreamStatus }
               : {}),
             pageCount:
-              deck.mimeType === 'application/pdf' ? slides.length : null,
+              deck.mimeType === 'application/pdf'
+                ? (await store.listSlidesByDeck(deck.id)).length
+                : null,
           })),
         ),
         annotatedSlideCount,

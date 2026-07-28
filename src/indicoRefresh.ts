@@ -381,11 +381,17 @@ export const refreshIndicoEvent = async (
           continue;
         }
 
-        await transactionStore.upsertDeck({
-          ...currentDeck,
-          upstreamStatus: 'missing',
-          updatedAt: Date.now(),
-        });
+        const deckHasAnnotations =
+          (await getDeckAnnotationCount(transactionStore, currentDeck.id)) > 0;
+        if (deckHasAnnotations) {
+          await transactionStore.upsertDeck({
+            ...currentDeck,
+            upstreamStatus: 'missing',
+            updatedAt: Date.now(),
+          });
+        } else {
+          await transactionStore.deleteDeck(currentDeck.id);
+        }
       }
     }
 

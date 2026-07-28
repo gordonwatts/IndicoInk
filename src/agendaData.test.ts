@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildAgendaTalkSummaries } from './agendaData';
 
 describe('buildAgendaTalkSummaries', () => {
-  it('hides missing PDFs without annotations but keeps annotated missing PDFs', async () => {
+  it('includes stored PDF materials in the agenda summary', async () => {
     const store = {
       listTalksByConference: vi.fn().mockResolvedValue([
         {
@@ -85,8 +85,9 @@ describe('buildAgendaTalkSummaries', () => {
       'conference-1',
     );
 
-    expect(talk?.materialSummary).toBe('2 PDFs');
+    expect(talk?.materialSummary).toBe('3 PDFs');
     expect(talk?.materials.map((material) => material.id)).toEqual([
+      'missing-unannotated',
       'missing-annotated',
       'new-deck',
     ]);
