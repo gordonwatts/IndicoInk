@@ -12,7 +12,8 @@ import type {
   OpenLibraryEventResult,
 } from './shared/library';
 import type {
-  PdfWorkspaceSaveResult,
+  PdfWorkspaceChangeBatch,
+  PdfWorkspaceChangeSaveResult,
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
 import type {
@@ -34,15 +35,15 @@ declare global {
       loadPdfWorkspaceState: (
         sourceUrl: string,
       ) => Promise<PdfWorkspaceSnapshot | null>;
-      savePdfWorkspaceState: (
-        snapshot: PdfWorkspaceSnapshot,
-      ) => Promise<PdfWorkspaceSaveResult>;
+      savePdfWorkspaceChanges: (
+        batch: PdfWorkspaceChangeBatch,
+      ) => Promise<PdfWorkspaceChangeSaveResult>;
       loadDeckWorkspaceState: (
         deckId: string,
       ) => Promise<PdfWorkspaceSnapshot | null>;
-      saveDeckWorkspaceState: (
-        snapshot: PdfWorkspaceSnapshot,
-      ) => Promise<PdfWorkspaceSaveResult>;
+      saveDeckWorkspaceChanges: (
+        batch: PdfWorkspaceChangeBatch,
+      ) => Promise<PdfWorkspaceChangeSaveResult>;
       listLibraryEvents: () => Promise<LibraryEventSummary[]>;
       listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
       startAgendaDownload: (

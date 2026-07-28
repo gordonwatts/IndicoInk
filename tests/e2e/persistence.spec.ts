@@ -9,12 +9,15 @@ test('persists a workspace across restart', async () => {
 
   const savedWorkspace = await firstApp.page.evaluate(
     async (workspaceSourceUrl) =>
-      window.indicoInk.savePdfWorkspaceState({
+      window.indicoInk.savePdfWorkspaceChanges({
         sourceUrl: workspaceSourceUrl,
         pageCount: 2,
-        strokesByPage: [
-          [
-            {
+        revision: 1,
+        changes: [
+          {
+            kind: 'upsert-stroke',
+            pageIndex: 0,
+            stroke: {
               id: 'stroke-1',
               pageNumber: 1,
               points: [
@@ -22,52 +25,59 @@ test('persists a workspace across restart', async () => {
                 { x: 0.3, y: 0.4, pressure: 0.8, time: 2 },
               ],
             },
-          ],
-          [],
+          },
         ],
-        textNotesByPage: [[], []],
-        undoStack: [
-          [
+        history: {
+          version: 2,
+          undo: [
             {
-              strokes: [
+              id: 'history-undo',
+              changes: [
                 {
-                  id: 'stroke-undo',
-                  pageNumber: 1,
-                  points: [
-                    { x: 0.15, y: 0.25, pressure: 0.5, time: 3 },
-                    { x: 0.25, y: 0.35, pressure: 0.7, time: 4 },
-                  ],
+                  kind: 'stroke',
+                  pageIndex: 0,
+                  annotationId: 'stroke-1',
+                  before: null,
+                  after: {
+                    index: 0,
+                    value: {
+                      id: 'stroke-1',
+                      pageNumber: 1,
+                      points: [
+                        { x: 0.1, y: 0.2, pressure: 0.4, time: 1 },
+                        { x: 0.3, y: 0.4, pressure: 0.8, time: 2 },
+                      ],
+                    },
+                  },
                 },
               ],
-              textNotes: [],
-            },
-            {
-              strokes: [],
-              textNotes: [],
             },
           ],
-        ],
-        redoStack: [
-          [
+          redo: [
             {
-              strokes: [],
-              textNotes: [],
-            },
-            {
-              strokes: [
+              id: 'history-redo',
+              changes: [
                 {
-                  id: 'stroke-redo',
-                  pageNumber: 2,
-                  points: [
-                    { x: 0.45, y: 0.55, pressure: 0.3, time: 5 },
-                    { x: 0.65, y: 0.75, pressure: 0.6, time: 6 },
-                  ],
+                  kind: 'stroke',
+                  pageIndex: 1,
+                  annotationId: 'stroke-redo',
+                  before: null,
+                  after: {
+                    index: 0,
+                    value: {
+                      id: 'stroke-redo',
+                      pageNumber: 2,
+                      points: [
+                        { x: 0.45, y: 0.55, pressure: 0.3, time: 5 },
+                        { x: 0.65, y: 0.75, pressure: 0.6, time: 6 },
+                      ],
+                    },
+                  },
                 },
               ],
-              textNotes: [],
             },
           ],
-        ],
+        },
         currentSlideNumber: 2,
         scrollLeft: 17,
         scrollTop: 42,
@@ -94,16 +104,18 @@ test('persists a workspace across restart', async () => {
   expect(restoredWorkspace?.strokesByPage[0]).toHaveLength(1);
   expect(restoredWorkspace?.strokesByPage[1]).toHaveLength(0);
   expect(restoredWorkspace?.textNotesByPage?.[0]).toHaveLength(0);
-  expect(restoredWorkspace?.undoStack).toHaveLength(1);
-  expect(restoredWorkspace?.undoStack?.[0]?.[0]?.strokes).toHaveLength(1);
-  expect(restoredWorkspace?.undoStack?.[0]?.[0]?.strokes[0]?.pageNumber).toBe(
-    1,
-  );
-  expect(restoredWorkspace?.redoStack).toHaveLength(1);
-  expect(restoredWorkspace?.redoStack?.[0]?.[1]?.strokes).toHaveLength(1);
-  expect(restoredWorkspace?.redoStack?.[0]?.[1]?.strokes[0]?.pageNumber).toBe(
-    2,
-  );
+  expect(restoredWorkspace?.history?.undo).toHaveLength(1);
+  expect(restoredWorkspace?.history?.undo[0]?.changes[0]).toMatchObject({
+    kind: 'stroke',
+    pageIndex: 0,
+    annotationId: 'stroke-1',
+  });
+  expect(restoredWorkspace?.history?.redo).toHaveLength(1);
+  expect(restoredWorkspace?.history?.redo[0]?.changes[0]).toMatchObject({
+    kind: 'stroke',
+    pageIndex: 1,
+    annotationId: 'stroke-redo',
+  });
   expect(restoredWorkspace?.currentSlideNumber).toBe(2);
   expect(restoredWorkspace?.scrollLeft).toBe(17);
   expect(restoredWorkspace?.scrollTop).toBe(42);

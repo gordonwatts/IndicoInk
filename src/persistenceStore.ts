@@ -1,1 +1,1 @@
-export * from './persistenceStoreSqlJs';
+export * from './persistenceStoreNodeSqlite';

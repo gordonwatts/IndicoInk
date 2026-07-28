@@ -31,7 +31,7 @@ import { IndicoHttpError } from './indicoHttp';
 import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
-import type { PdfWorkspaceSnapshot } from './shared/pdfWorkspace';
+import type { PdfWorkspaceChangeBatch } from './shared/pdfWorkspace';
 import type {
   ConferenceExportSnapshot,
   ExportDeckSnapshot,
@@ -389,6 +389,35 @@ const createWindow = () => {
     },
   );
 
+  let allowWorkspaceClose = false;
+  const workspaceWindow = mainWindow;
+  workspaceWindow.on('close', (event) => {
+    if (allowWorkspaceClose || workspaceWindow.isDestroyed()) {
+      return;
+    }
+    event.preventDefault();
+    const rendererFlush = workspaceWindow.webContents.executeJavaScript(
+      'globalThis.__indicoInkFlushWorkspace?.()',
+    );
+    const flushTimeout = new Promise<void>((resolve) => {
+      setTimeout(resolve, 5_000);
+    });
+    void Promise.race([rendererFlush, flushTimeout])
+      .catch((error) => {
+        appendStartupLogEntry(
+          app.getPath('userData'),
+          'workspace:flush-before-close',
+          error,
+        );
+      })
+      .finally(() => {
+        allowWorkspaceClose = true;
+        if (!workspaceWindow.isDestroyed()) {
+          workspaceWindow.close();
+        }
+      });
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -635,9 +664,9 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
-  'persistence:save-pdf-workspace',
-  async (_event, snapshot: PdfWorkspaceSnapshot) =>
-    getPersistenceStore().saveLocalPdfWorkspace(snapshot),
+  'persistence:save-pdf-workspace-changes',
+  async (_event, batch: PdfWorkspaceChangeBatch) =>
+    getPersistenceStore().saveLocalPdfWorkspaceChanges(batch),
 );
 
 ipcMain.handle(
@@ -647,9 +676,9 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
-  'persistence:save-deck-workspace',
-  async (_event, snapshot: PdfWorkspaceSnapshot) =>
-    getPersistenceStore().saveDeckPdfWorkspace(snapshot),
+  'persistence:save-deck-workspace-changes',
+  async (_event, batch: PdfWorkspaceChangeBatch) =>
+    getPersistenceStore().saveDeckPdfWorkspaceChanges(batch),
 );
 
 ipcMain.handle(

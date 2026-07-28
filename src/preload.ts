@@ -5,7 +5,8 @@ import type { AppSettings } from './shared/appSettings';
 import type { PdfSelection } from './openPdf';
 import type { RefreshLibraryEventResult } from './shared/library';
 import type {
-  PdfWorkspaceSaveResult,
+  PdfWorkspaceChangeBatch,
+  PdfWorkspaceChangeSaveResult,
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
 import type {
@@ -51,20 +52,20 @@ const loadPdfWorkspaceState = async (
 ): Promise<PdfWorkspaceSnapshot | null> =>
   ipcRenderer.invoke('persistence:load-pdf-workspace', sourceUrl);
 
-const savePdfWorkspaceState = async (
-  snapshot: PdfWorkspaceSnapshot,
-): Promise<PdfWorkspaceSaveResult> =>
-  ipcRenderer.invoke('persistence:save-pdf-workspace', snapshot);
+const savePdfWorkspaceChanges = async (
+  batch: PdfWorkspaceChangeBatch,
+): Promise<PdfWorkspaceChangeSaveResult> =>
+  ipcRenderer.invoke('persistence:save-pdf-workspace-changes', batch);
 
 const loadDeckWorkspaceState = async (
   deckId: string,
 ): Promise<PdfWorkspaceSnapshot | null> =>
   ipcRenderer.invoke('persistence:load-deck-workspace', deckId);
 
-const saveDeckWorkspaceState = async (
-  snapshot: PdfWorkspaceSnapshot,
-): Promise<PdfWorkspaceSaveResult> =>
-  ipcRenderer.invoke('persistence:save-deck-workspace', snapshot);
+const saveDeckWorkspaceChanges = async (
+  batch: PdfWorkspaceChangeBatch,
+): Promise<PdfWorkspaceChangeSaveResult> =>
+  ipcRenderer.invoke('persistence:save-deck-workspace-changes', batch);
 
 const listLibraryEvents = async (): Promise<LibraryEventSummary[]> =>
   ipcRenderer.invoke('library:list-events');
@@ -180,9 +181,9 @@ contextBridge.exposeInMainWorld('indicoInk', {
   openPdf,
   readPdfBytes,
   loadPdfWorkspaceState,
-  savePdfWorkspaceState,
+  savePdfWorkspaceChanges,
   loadDeckWorkspaceState,
-  saveDeckWorkspaceState,
+  saveDeckWorkspaceChanges,
   listLibraryEvents,
   listAgendaTalks,
   startAgendaDownload,
@@ -220,15 +221,15 @@ export type IndicoInkApi = {
   loadPdfWorkspaceState: (
     sourceUrl: string,
   ) => Promise<PdfWorkspaceSnapshot | null>;
-  savePdfWorkspaceState: (
-    snapshot: PdfWorkspaceSnapshot,
-  ) => Promise<PdfWorkspaceSaveResult>;
+  savePdfWorkspaceChanges: (
+    batch: PdfWorkspaceChangeBatch,
+  ) => Promise<PdfWorkspaceChangeSaveResult>;
   loadDeckWorkspaceState: (
     deckId: string,
   ) => Promise<PdfWorkspaceSnapshot | null>;
-  saveDeckWorkspaceState: (
-    snapshot: PdfWorkspaceSnapshot,
-  ) => Promise<PdfWorkspaceSaveResult>;
+  saveDeckWorkspaceChanges: (
+    batch: PdfWorkspaceChangeBatch,
+  ) => Promise<PdfWorkspaceChangeSaveResult>;
   listLibraryEvents: () => Promise<LibraryEventSummary[]>;
   listAgendaTalks: (conferenceId: string) => Promise<AgendaTalkSummary[]>;
   startAgendaDownload: (

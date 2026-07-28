@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PdfPreview,
   getCoalescedPagePoints,
+  getPredictedPagePoints,
   isLikelyDownloadableUrl,
   PEN_POINTER_MARKER_RADIUS,
 } from './PdfPreview';
@@ -31,9 +32,9 @@ describe('PdfPreview', () => {
       value: {
         readPdfBytes: vi.fn(),
         loadPdfWorkspaceState: vi.fn(),
-        savePdfWorkspaceState: vi.fn(),
         loadDeckWorkspaceState: vi.fn(),
-        saveDeckWorkspaceState: vi.fn(),
+        savePdfWorkspaceChanges: vi.fn(),
+        saveDeckWorkspaceChanges: vi.fn(),
         getAppSettings: vi.fn(),
         setAppSettings: vi.fn(),
       },
@@ -118,6 +119,30 @@ describe('PdfPreview', () => {
       { x: 0.15, y: 0.3, pressure: 0.5, time: 2 },
       { x: 0.2, y: 0.4, pressure: 0.7, time: 3 },
     ]);
+  });
+
+  it('reads predictions separately from real coalesced samples', () => {
+    const event = {
+      nativeEvent: {
+        getPredictedEvents: () => [
+          {
+            clientX: 150,
+            clientY: 110,
+            pressure: 0.8,
+            timeStamp: 4,
+          },
+        ],
+      },
+    } as unknown as React.PointerEvent<HTMLElement>;
+
+    expect(
+      getPredictedPagePoints(event, {
+        left: 100,
+        top: 60,
+        width: 200,
+        height: 100,
+      }),
+    ).toEqual([{ x: 0.25, y: 0.5, pressure: 0.8, time: 4 }]);
   });
 
   it('returns to the first slide from the home control', async () => {

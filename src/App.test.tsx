@@ -87,15 +87,17 @@ describe('App', () => {
       }),
       readPdfBytes: vi.fn().mockResolvedValue(new Uint8Array()),
       loadPdfWorkspaceState: vi.fn().mockResolvedValue(null),
-      savePdfWorkspaceState: vi.fn().mockResolvedValue({
+      savePdfWorkspaceChanges: vi.fn().mockResolvedValue({
         sourceUrl: '',
         pageCount: 0,
+        revision: 1,
         savedAt: Date.now(),
       }),
       loadDeckWorkspaceState: vi.fn().mockResolvedValue(null),
-      saveDeckWorkspaceState: vi.fn().mockResolvedValue({
+      saveDeckWorkspaceChanges: vi.fn().mockResolvedValue({
         sourceUrl: '',
         pageCount: 0,
+        revision: 1,
         savedAt: Date.now(),
       }),
       listLibraryEvents: vi.fn().mockResolvedValue([]),
