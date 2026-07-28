@@ -1097,6 +1097,18 @@ export class PersistenceStore {
     return rows.map((row) => rowToDeck(row));
   }
 
+  async deleteDeck(id: string) {
+    const db = await this.getDb();
+    db.prepare('DELETE FROM view_state WHERE deck_id = ?').run(id);
+    db.prepare('DELETE FROM annotations WHERE deck_id = ?').run(id);
+    db.prepare('DELETE FROM slides WHERE deck_id = ?').run(id);
+    db.prepare('DELETE FROM workspace_history WHERE deck_id = ?').run(id);
+    db.prepare('DELETE FROM workspace_revision WHERE deck_id = ?').run(id);
+    db.prepare('DELETE FROM decks WHERE id = ?').run(id);
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
   async setSelectedDeck(id: string, selected: boolean) {
     const db = await this.getDb();
     db.prepare(

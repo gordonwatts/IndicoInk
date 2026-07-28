@@ -174,6 +174,31 @@ describe('refreshIndicoEvent', () => {
         ?.displayName,
     ).toBe('Extra appendix');
 
+    const removeExtrasEvent = buildRefreshEvent();
+    const refreshedContribution =
+      removeExtrasEvent.results[0]?.contributions[0];
+    if (!refreshedContribution) {
+      throw new Error(
+        'Expected the refresh fixture to contain a contribution.',
+      );
+    }
+    refreshedContribution.material = [refreshedContribution.material[0]!];
+    const removedDeckRefreshResult = await refreshIndicoEvent(store, eventUrl, {
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: vi.fn().mockReturnValue(null) },
+        text: vi.fn().mockResolvedValue(JSON.stringify(removeExtrasEvent)),
+      }),
+    });
+
+    expect(removedDeckRefreshResult).toMatchObject({
+      kind: 'refreshed',
+      newlyAvailableDeckCount: 0,
+    });
+    expect(await store.listDecksByTalk(talkId)).toHaveLength(1);
+
     const talk = await store.getTalk(talkId);
     expect(talk?.title).toBe('Updated talk title');
     expect(talk?.upstreamStatus).toBe('present');
