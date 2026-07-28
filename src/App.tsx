@@ -971,6 +971,7 @@ export function App() {
     null,
   );
   const [agendaTalks, setAgendaTalks] = React.useState<AgendaTalkSummary[]>([]);
+  const [agendaReloadVersion, setAgendaReloadVersion] = React.useState(0);
   const [agendaTalksLoading, setAgendaTalksLoading] = React.useState(false);
   const [agendaTalksError, setAgendaTalksError] = React.useState<string | null>(
     null,
@@ -1916,6 +1917,7 @@ export function App() {
           });
         } else {
           await refreshLibraryEvents();
+          setAgendaReloadVersion((version) => version + 1);
           setRefreshState({
             kind: 'done',
             message: `Refreshed ${refreshedEvent.title}: ${refreshedEvent.changedTalkCount} changed, ${refreshedEvent.removedTalkCount} removed, ${refreshedEvent.newlyAvailableDeckCount} new PDF${refreshedEvent.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
@@ -2502,7 +2504,7 @@ export function App() {
     return () => {
       canceled = true;
     };
-  }, [destination, selectedEventId]);
+  }, [agendaReloadVersion, destination, selectedEventId]);
 
   React.useEffect(() => {
     setAgendaTimeZoneMode('event');
