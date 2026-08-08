@@ -1017,6 +1017,7 @@ export function App() {
     new Map<string, { scrollLeft: number; scrollTop: number }>(),
   );
   const agendaTalksLoadedEventIdRef = React.useRef<string | null>(null);
+  const agendaRefreshCompletionMessageRef = React.useRef<string | null>(null);
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -1219,6 +1220,7 @@ export function App() {
     async (decision?: 'keep' | 'replace') => {
       const event = libraryEvents.find((item) => item.id === selectedEventId);
       if (!event) {
+        agendaRefreshCompletionMessageRef.current = null;
         setRefreshState({
           kind: 'error',
           message: 'Open an event before refreshing it.',
@@ -1247,6 +1249,7 @@ export function App() {
           await window.indicoInk.refreshLibraryEvent(event.sourceUrl, decision);
 
         if (result.kind === 'conflict') {
+          agendaRefreshCompletionMessageRef.current = null;
           setRefreshState({
             kind: 'conflict',
             message: 'The upstream PDF changed for an annotated deck.',
@@ -1256,6 +1259,7 @@ export function App() {
         }
 
         if (result.kind === 'api-key-required') {
+          agendaRefreshCompletionMessageRef.current = null;
           setRefreshState({
             kind: 'error',
             message: result.message,
@@ -1274,11 +1278,18 @@ export function App() {
 
         await refreshLibraryEvents();
         setAgendaReloadVersion((version) => version + 1);
-        setRefreshState({
-          kind: 'done',
-          message: `Refreshed ${result.title}: ${result.changedTalkCount} changed, ${result.removedTalkCount} removed, ${result.newlyAvailableDeckCount} new PDF${result.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
-        });
+        const completionMessage = `Refreshed ${result.title}: ${result.changedTalkCount} changed, ${result.removedTalkCount} removed, ${result.newlyAvailableDeckCount} new PDF${result.newlyAvailableDeckCount === 1 ? '' : 's'}.`;
+        if (destination === 'agenda') {
+          agendaRefreshCompletionMessageRef.current = completionMessage;
+          setRefreshState({
+            kind: 'refreshing',
+            message: 'Updating the agenda…',
+          });
+        } else {
+          setRefreshState({ kind: 'done', message: completionMessage });
+        }
       } catch (error) {
+        agendaRefreshCompletionMessageRef.current = null;
         setRefreshState({
           kind: 'error',
           message:
@@ -1443,16 +1454,8 @@ export function App() {
       ) : exportState.kind === 'empty' || exportState.kind === 'canceled' ? (
         <StatusLabel label={exportState.label} tone="warning" icon="info" />
       ) : undefined
-    ) : destination === 'library' ? undefined : refreshState.kind ===
-        'checking' || refreshState.kind === 'refreshing' ? (
-      <StatusLabel label={refreshState.message} tone="neutral" icon="refresh" />
-    ) : refreshState.kind === 'done' ? (
-      <StatusLabel label={refreshState.message} tone="success" icon="check" />
-    ) : refreshState.kind === 'error' ? (
-      <StatusLabel label={refreshState.message} tone="error" icon="info" />
-    ) : refreshState.kind === 'conflict' ? (
-      <StatusLabel label={refreshState.message} tone="warning" icon="info" />
-    ) : exportState.kind === 'preparing' ||
+    ) : destination === 'library' ? undefined : exportState.kind ===
+        'preparing' ||
       exportState.kind === 'rendering' ||
       exportState.kind === 'writing' ? (
       <StatusLabel label={exportState.label} tone="neutral" icon="info" />
@@ -1544,10 +1547,22 @@ export function App() {
               label="Refresh"
               title="Refresh Event from Indico"
               icon="refresh"
+              className={
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing' ||
+                agendaTalksLoading
+                  ? 'is-spinning'
+                  : undefined
+              }
               onClick={() => {
                 void handleRefreshAction();
               }}
-              disabled={!selectedEventId}
+              disabled={
+                !selectedEventId ||
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing' ||
+                agendaTalksLoading
+              }
             />
             <PrimaryButton
               icon="export"
@@ -1570,10 +1585,22 @@ export function App() {
               label="Refresh"
               title="Refresh Event from Indico"
               icon="refresh"
+              className={
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing' ||
+                agendaTalksLoading
+                  ? 'is-spinning'
+                  : undefined
+              }
               onClick={() => {
                 void handleRefreshAction();
               }}
-              disabled={!selectedEventId}
+              disabled={
+                !selectedEventId ||
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing' ||
+                agendaTalksLoading
+              }
             />
             <PrimaryButton
               icon="export"
@@ -1924,11 +1951,13 @@ export function App() {
           request.decision,
         );
         if (refreshedEvent.kind === 'api-key-required') {
+          agendaRefreshCompletionMessageRef.current = null;
           setApiKeyError(refreshedEvent.message);
           setRefreshState({ kind: 'error', message: refreshedEvent.message });
           return;
         }
         if (refreshedEvent.kind === 'conflict') {
+          agendaRefreshCompletionMessageRef.current = null;
           setRefreshState({
             kind: 'conflict',
             message: 'The upstream PDF changed for an annotated deck.',
@@ -1937,10 +1966,16 @@ export function App() {
         } else {
           await refreshLibraryEvents();
           setAgendaReloadVersion((version) => version + 1);
-          setRefreshState({
-            kind: 'done',
-            message: `Refreshed ${refreshedEvent.title}: ${refreshedEvent.changedTalkCount} changed, ${refreshedEvent.removedTalkCount} removed, ${refreshedEvent.newlyAvailableDeckCount} new PDF${refreshedEvent.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
-          });
+          const completionMessage = `Refreshed ${refreshedEvent.title}: ${refreshedEvent.changedTalkCount} changed, ${refreshedEvent.removedTalkCount} removed, ${refreshedEvent.newlyAvailableDeckCount} new PDF${refreshedEvent.newlyAvailableDeckCount === 1 ? '' : 's'}.`;
+          if (destination === 'agenda') {
+            agendaRefreshCompletionMessageRef.current = completionMessage;
+            setRefreshState({
+              kind: 'refreshing',
+              message: 'Updating the agenda…',
+            });
+          } else {
+            setRefreshState({ kind: 'done', message: completionMessage });
+          }
         }
         setApiKeyDialogRequest(null);
         setApiKeyValue('');
@@ -2581,11 +2616,26 @@ export function App() {
               ? error.message
               : 'Failed to load the agenda list.',
           );
+          if (agendaRefreshCompletionMessageRef.current) {
+            agendaRefreshCompletionMessageRef.current = null;
+            setRefreshState({
+              kind: 'error',
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to update the agenda.',
+            });
+          }
         }
       })
       .finally(() => {
         if (!cancelled) {
           setAgendaTalksLoading(false);
+          const completionMessage = agendaRefreshCompletionMessageRef.current;
+          if (completionMessage) {
+            agendaRefreshCompletionMessageRef.current = null;
+            setRefreshState({ kind: 'done', message: completionMessage });
+          }
         }
       });
 
@@ -3113,7 +3163,9 @@ export function App() {
                       />
                     ) : null}
                   </div>
-                  {openEventFeedback ? (
+                  {openEventFeedback &&
+                  (openEventFeedback.tone !== 'success' ||
+                    destination !== 'agenda') ? (
                     <div
                       className="field-help"
                       aria-live="polite"
@@ -4298,6 +4350,23 @@ export function App() {
                       'Refreshing while keeping the existing deck cache...',
                   });
                   void handleResolveRefreshConflict('keep');
+                }}
+              />
+            </div>
+          ) : null}
+
+          {refreshState.kind === 'error' && !apiKeyDialogRequest ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title="Refresh failed"
+                body={
+                  <div className="dialog-copy">
+                    <p>{refreshState.message}</p>
+                  </div>
+                }
+                primaryLabel="Dismiss"
+                onPrimary={() => {
+                  setRefreshState({ kind: 'idle' });
                 }}
               />
             </div>
