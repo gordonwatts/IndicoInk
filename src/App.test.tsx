@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -762,12 +763,16 @@ describe('App', () => {
     window.indicoInk.listLibraryEvents = vi
       .fn()
       .mockResolvedValue([libraryEvent]);
+    let resolveRefreshedAgenda!: (talks: (typeof refreshedTalk)[]) => void;
+    const refreshedAgendaPromise = new Promise<(typeof refreshedTalk)[]>(
+      (resolve) => {
+        resolveRefreshedAgenda = resolve;
+      },
+    );
     const listAgendaTalksMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(
-        listAgendaTalksMock.mock.calls.length === 1
-          ? [removedTalk]
-          : [refreshedTalk],
-      ),
+      listAgendaTalksMock.mock.calls.length === 1
+        ? Promise.resolve([removedTalk])
+        : refreshedAgendaPromise,
     );
     window.indicoInk.listAgendaTalks = listAgendaTalksMock;
     window.indicoInk.refreshLibraryEvent = vi.fn().mockResolvedValue({
@@ -798,13 +803,25 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
+    await waitFor(() => {
+      expect(window.indicoInk.listAgendaTalks).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText('Talk removed upstream')).toBeTruthy();
+    expect(screen.queryByText('Loading agenda talks')).toBeNull();
+    expect(pageSurface!.scrollTop).toBe(612);
+    expect(pageSurface!.scrollLeft).toBe(44);
+
+    await act(async () => {
+      resolveRefreshedAgenda([refreshedTalk]);
+      await refreshedAgendaPromise;
+    });
+
     expect(
       await screen.findByText('Talk with newly available slides'),
     ).toBeTruthy();
     expect(screen.queryByText('Talk removed upstream')).toBeNull();
     expect(pageSurface!.scrollTop).toBe(612);
     expect(pageSurface!.scrollLeft).toBe(44);
-    expect(window.indicoInk.listAgendaTalks).toHaveBeenCalledTimes(2);
     expect(
       await screen.findByText(/Refreshed Refresh Agenda Event: 0 changed, 1 removed, 1 new PDF/),
     ).toBeTruthy();
