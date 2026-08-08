@@ -54,6 +54,7 @@ import { appendStartupLogEntry } from './startupLog';
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
 import { parseIndicoEventSessionUrl, parseIndicoEventUrl } from './indicoEvent';
+import { getIndicoEventUrlFromArgs } from './launchEventUrl';
 import type {
   OpenLibraryEventResult,
   RefreshLibraryEventResult,
@@ -289,28 +290,6 @@ function getImportFixtureName(argv: string[]) {
   return argv[index + 1]?.trim() || null;
 }
 
-function getStartupIndicoEventUrl(argv: string[]) {
-  const explicitArg = argv.find(
-    (value) => value === '--indico-url' || value.startsWith('--indico-url='),
-  );
-
-  if (explicitArg) {
-    if (explicitArg.includes('=')) {
-      const [, value] = explicitArg.split('=', 2);
-      return value?.trim() || null;
-    }
-
-    const index = argv.indexOf(explicitArg);
-    return argv[index + 1]?.trim() || null;
-  }
-
-  const directUrl = argv.find((value) =>
-    /^https:\/\/[^ ]+\/event\/[^ ]+/.test(value),
-  );
-
-  return directUrl?.trim() || null;
-}
-
 const createWindow = () => {
   const packagedRendererPath = getPackagedRendererPath();
   const hasPackagedRenderer = existsSync(packagedRendererPath);
@@ -333,6 +312,10 @@ const createWindow = () => {
       sandbox: true,
       nodeIntegration: false,
     },
+  });
+
+  mainWindow.webContents.on('did-start-loading', () => {
+    rendererAcceptsLaunchRequests = false;
   });
 
   if (hasPackagedRenderer) {
@@ -432,7 +415,44 @@ logStartupEvent(
     gpuDisabled: shouldDisableGpu(),
   }),
 );
-const startupIndicoEventUrl = getStartupIndicoEventUrl(process.argv);
+let pendingIndicoEventUrl = getIndicoEventUrlFromArgs(process.argv);
+let rendererAcceptsLaunchRequests = false;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    const requestedEventUrl = getIndicoEventUrlFromArgs(commandLine);
+    if (requestedEventUrl) {
+      logStartupEvent('launch:indico-url', {
+        present: true,
+        source: 'second-instance',
+      });
+      pendingIndicoEventUrl = requestedEventUrl;
+      if (
+        rendererAcceptsLaunchRequests &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
+        pendingIndicoEventUrl = null;
+        mainWindow.webContents.send(
+          'app:open-indico-event-url',
+          requestedEventUrl,
+        );
+      }
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+const startupIndicoEventUrl = pendingIndicoEventUrl;
 if (startupIndicoEventUrl) {
   logStartupEvent('launch:indico-url', { present: true });
 }
@@ -475,7 +495,12 @@ ipcMain.handle(
 
 ipcMain.handle(
   'app:get-startup-indico-url',
-  async (): Promise<string | null> => getStartupIndicoEventUrl(process.argv),
+  async (): Promise<string | null> => {
+    rendererAcceptsLaunchRequests = true;
+    const eventUrl = pendingIndicoEventUrl;
+    pendingIndicoEventUrl = null;
+    return eventUrl;
+  },
 );
 
 ipcMain.handle('pdf:open', async () =>

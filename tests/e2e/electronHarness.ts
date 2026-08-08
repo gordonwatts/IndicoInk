@@ -231,11 +231,17 @@ export type ElectronHarness = {
 export type LaunchElectronHarnessOptions = {
   userDataDir?: string;
   extraEnv?: NodeJS.ProcessEnv;
+  launchArgs?: string[];
 };
 
 export type ImportFixtureOptions = {
   userDataDir: string;
   fixtureName: 'small' | 'large' | 'packaged';
+};
+
+export type OpenEventUrlCommandOptions = {
+  userDataDir: string;
+  eventUrl: string;
 };
 
 type LaunchBinaryHarnessOptions = {
@@ -374,7 +380,7 @@ export const launchElectronHarness = async (
 ): Promise<ElectronHarness> => {
   return launchBinaryHarness({
     binaryPath: electronPath,
-    launchArgs: ['.vite/build/main.js'],
+    launchArgs: ['.vite/build/main.js', ...(options.launchArgs ?? [])],
     userDataDir: options.userDataDir,
     extraEnv: options.extraEnv,
   });
@@ -415,6 +421,66 @@ export const runPackagedImportFixtureCommand = async ({
     ],
     userDataDir,
     useElectronDevEnv: true,
+  });
+};
+
+export const runElectronOpenEventUrlCommand = async ({
+  userDataDir,
+  eventUrl,
+}: OpenEventUrlCommandOptions) => {
+  const child = spawn(
+    electronPath,
+    [`--user-data-dir=${userDataDir}`, '.vite/build/main.js', eventUrl],
+    {
+      env: {
+        ...pickEnv([
+          'PATH',
+          'SystemRoot',
+          'WINDIR',
+          'TEMP',
+          'TMP',
+          'APPDATA',
+          'LOCALAPPDATA',
+          'USERPROFILE',
+          'HOME',
+          'HOMEDRIVE',
+          'HOMEPATH',
+          'PROCESSOR_ARCHITECTURE',
+          'ComSpec',
+        ]),
+        INDICOINK_ISOLATED_USER_DATA: '1',
+        INDICOINK_USER_DATA_DIR: userDataDir,
+        INDICOINK_PERSISTENCE_DB_PATH:
+          getIsolatedPersistenceDbPath(userDataDir),
+        INDICOINK_DISABLE_GPU: '1',
+        ELECTRON_CONFIG_CACHE: electronCacheRoot,
+        electron_config_cache: electronCacheRoot,
+        ELECTRON_CACHE: electronCacheRoot,
+        ELECTRON_OVERRIDE_DIST_PATH: electronDistPath,
+      },
+      stdio: 'ignore',
+      windowsHide: true,
+    },
+  );
+
+  await new Promise<void>((resolveExit, rejectExit) => {
+    const timeout = setTimeout(() => {
+      rejectExit(new Error('Event URL launch command timed out.'));
+    }, 15_000);
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      rejectExit(error);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolveExit();
+        return;
+      }
+      rejectExit(
+        new Error(`Event URL launch command exited with code ${code}.`),
+      );
+    });
   });
 };
 

@@ -38,8 +38,21 @@ const getAppSettings = async (): Promise<AppSettings> =>
 const setAppSettings = async (settings: AppSettings): Promise<AppSettings> =>
   ipcRenderer.invoke('app:set-settings', settings);
 
-const getStartupIndicoEventUrl = async (): Promise<string | null> =>
-  ipcRenderer.invoke('app:get-startup-indico-url');
+let startupIndicoEventUrlPromise: Promise<string | null> | null = null;
+const getStartupIndicoEventUrl = (): Promise<string | null> => {
+  startupIndicoEventUrlPromise ??= ipcRenderer.invoke(
+    'app:get-startup-indico-url',
+  );
+  return startupIndicoEventUrlPromise;
+};
+
+const onIndicoEventUrlRequested = (listener: (eventUrl: string) => void) => {
+  const handleRequest = (_event: Electron.IpcRendererEvent, eventUrl: string) =>
+    listener(eventUrl);
+  ipcRenderer.on('app:open-indico-event-url', handleRequest);
+  return () =>
+    ipcRenderer.removeListener('app:open-indico-event-url', handleRequest);
+};
 
 const openPdf = async (): Promise<PdfSelection> =>
   ipcRenderer.invoke('pdf:open');
@@ -178,6 +191,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   getDataFolder,
   getAppSettings,
   getStartupIndicoEventUrl,
+  onIndicoEventUrlRequested,
   openPdf,
   readPdfBytes,
   loadPdfWorkspaceState,
@@ -216,6 +230,9 @@ export type IndicoInkApi = {
   getDataFolder: () => Promise<string>;
   getAppSettings: () => Promise<AppSettings>;
   getStartupIndicoEventUrl: () => Promise<string | null>;
+  onIndicoEventUrlRequested: (
+    listener: (eventUrl: string) => void,
+  ) => () => void;
   openPdf: () => Promise<PdfSelection>;
   readPdfBytes: (filePath: string) => Promise<Uint8Array>;
   loadPdfWorkspaceState: (

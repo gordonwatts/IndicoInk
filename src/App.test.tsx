@@ -82,6 +82,7 @@ describe('App', () => {
         penThickness: 2,
       }),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
+      onIndicoEventUrlRequested: vi.fn().mockReturnValue(() => {}),
       openPdf: vi.fn().mockResolvedValue({
         canceled: true,
         filePath: null,
@@ -343,6 +344,41 @@ describe('App', () => {
     expect(eventUrlInput.value).toBe(openedEvent.sourceUrl);
     expect(eventUrlInput.selectionStart).toBe(0);
     expect(eventUrlInput.selectionEnd).toBe(openedEvent.sourceUrl.length);
+  });
+
+  it('opens an Indico URL sent by a later command-line launch', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(window.indicoInk.onIndicoEventUrlRequested).toHaveBeenCalledOnce();
+    });
+    const listener = vi.mocked(window.indicoInk.onIndicoEventUrlRequested).mock
+      .calls[0]?.[0];
+    expect(listener).toBeDefined();
+
+    await act(async () => {
+      listener?.('https://indico.cern.ch/event/1234');
+    });
+
+    await waitFor(() => {
+      expect(window.indicoInk.openLibraryEvent).toHaveBeenCalledWith(
+        'https://indico.cern.ch/event/1234',
+      );
+    });
+  });
+
+  it('opens an Indico URL supplied by the initial command line', async () => {
+    vi.mocked(window.indicoInk.getStartupIndicoEventUrl).mockResolvedValue(
+      'https://indico.cern.ch/event/5678',
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(window.indicoInk.openLibraryEvent).toHaveBeenCalledWith(
+        'https://indico.cern.ch/event/5678',
+      );
+    });
   });
 
   it('switches agenda labels between event and local time', async () => {
