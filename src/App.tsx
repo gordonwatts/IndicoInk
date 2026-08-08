@@ -1261,6 +1261,7 @@ export function App() {
         }
 
         await refreshLibraryEvents();
+        setAgendaReloadVersion((version) => version + 1);
         setRefreshState({
           kind: 'done',
           message: `Refreshed ${result.title}: ${result.changedTalkCount} changed, ${result.removedTalkCount} removed, ${result.newlyAvailableDeckCount} new PDF${result.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
@@ -2567,7 +2568,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [destination, selectedEventId]);
+  }, [agendaReloadVersion, destination, selectedEventId]);
 
   React.useEffect(() => {
     if (!displayedAgendaTalks.length) {
