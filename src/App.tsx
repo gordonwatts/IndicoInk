@@ -2743,6 +2743,8 @@ export function App() {
       }
     };
   }, [
+    agendaReloadVersion,
+    agendaTalks,
     destination,
     restoreAgendaScrollPosition,
     selectedEventId,

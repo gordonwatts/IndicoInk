@@ -790,12 +790,20 @@ describe('App', () => {
     );
     expect(await screen.findByText('Talk removed upstream')).toBeTruthy();
 
+    const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+    expect(pageSurface).toBeTruthy();
+    pageSurface!.scrollTop = 612;
+    pageSurface!.scrollLeft = 44;
+    fireEvent.scroll(pageSurface!);
+
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
     expect(
       await screen.findByText('Talk with newly available slides'),
     ).toBeTruthy();
     expect(screen.queryByText('Talk removed upstream')).toBeNull();
+    expect(pageSurface!.scrollTop).toBe(612);
+    expect(pageSurface!.scrollLeft).toBe(44);
     expect(window.indicoInk.listAgendaTalks).toHaveBeenCalledTimes(2);
     expect(
       await screen.findByText(/Refreshed Refresh Agenda Event: 0 changed, 1 removed, 1 new PDF/),
