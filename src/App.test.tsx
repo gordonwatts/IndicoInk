@@ -803,10 +803,12 @@ describe('App', () => {
     pageSurface!.scrollLeft = 44;
     fireEvent.scroll(pageSurface!);
 
-    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    const refreshButton = screen.getByRole('button', { name: 'Refresh' });
+    await user.click(refreshButton);
 
     await waitFor(() => {
       expect(window.indicoInk.listAgendaTalks).toHaveBeenCalledTimes(2);
+      expect(refreshButton.className).toContain('is-spinning');
     });
     expect(screen.getByText('Talk removed upstream')).toBeTruthy();
     expect(screen.queryByText('Loading agenda talks')).toBeNull();
@@ -824,6 +826,7 @@ describe('App', () => {
     expect(screen.queryByText('Talk removed upstream')).toBeNull();
     expect(pageSurface!.scrollTop).toBe(612);
     expect(pageSurface!.scrollLeft).toBe(44);
+    expect(refreshButton.className).not.toContain('is-spinning');
     expect(screen.queryByText(/Refreshed Refresh Agenda Event/)).toBeNull();
   });
 

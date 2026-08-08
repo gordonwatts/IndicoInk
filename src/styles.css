@@ -294,7 +294,7 @@ input:focus-visible {
 }
 
 .icon-button.is-spinning .icon {
-  animation: icon-button-spin 800ms linear infinite;
+  animation: icon-button-spin 1200ms linear infinite;
 }
 
 @keyframes icon-button-spin {
