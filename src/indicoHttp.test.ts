@@ -101,6 +101,35 @@ describe('fetchIndicoJson', () => {
     ).rejects.toBeInstanceOf(IndicoTimeoutError);
   });
 
+  it('allows large agenda responses up to the 45-second default deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn(
+        (_input: string, init?: { signal?: AbortSignal }) =>
+          new Promise<IndicoJsonResponse>((_, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(
+                new DOMException('The operation was aborted.', 'AbortError'),
+              );
+            });
+          }),
+      );
+
+      const request = fetchIndicoJson(identity, { fetchImpl });
+      const requestExpectation = expect(request).rejects.toMatchObject({
+        name: 'IndicoTimeoutError',
+        message: expect.stringContaining('45000 ms'),
+      });
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(fetchImpl.mock.calls[0]![1]?.signal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await requestExpectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('throws an HTTP error for non-success statuses', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       makeResponse({
