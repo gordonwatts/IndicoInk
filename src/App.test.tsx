@@ -701,9 +701,9 @@ describe('App', () => {
       libraryEvent.sourceUrl,
       undefined,
     );
-    expect(
-      await screen.findByText(/Refreshed Refresh Auth Event: 0 changed/),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByText(/Refreshed Refresh Auth Event/)).toBeNull();
+    });
     expect(screen.queryByLabelText('API key')).toBeNull();
   });
 
@@ -769,11 +769,13 @@ describe('App', () => {
         resolveRefreshedAgenda = resolve;
       },
     );
-    const listAgendaTalksMock = vi.fn().mockImplementation(() =>
-      listAgendaTalksMock.mock.calls.length === 1
-        ? Promise.resolve([removedTalk])
-        : refreshedAgendaPromise,
-    );
+    const listAgendaTalksMock = vi
+      .fn()
+      .mockImplementation(() =>
+        listAgendaTalksMock.mock.calls.length === 1
+          ? Promise.resolve([removedTalk])
+          : refreshedAgendaPromise,
+      );
     window.indicoInk.listAgendaTalks = listAgendaTalksMock;
     window.indicoInk.refreshLibraryEvent = vi.fn().mockResolvedValue({
       kind: 'refreshed',
@@ -822,9 +824,7 @@ describe('App', () => {
     expect(screen.queryByText('Talk removed upstream')).toBeNull();
     expect(pageSurface!.scrollTop).toBe(612);
     expect(pageSurface!.scrollLeft).toBe(44);
-    expect(
-      await screen.findByText(/Refreshed Refresh Agenda Event: 0 changed, 1 removed, 1 new PDF/),
-    ).toBeTruthy();
+    expect(screen.queryByText(/Refreshed Refresh Agenda Event/)).toBeNull();
   });
 
   it('supports keyboard navigation into the shell destinations', async () => {

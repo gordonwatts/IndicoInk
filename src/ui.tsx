@@ -128,6 +128,7 @@ export function IconButton({
   onPointerDown,
   disabled,
   pressed,
+  className,
 }: {
   label: string;
   icon: IconName;
@@ -136,10 +137,11 @@ export function IconButton({
   onPointerDown?: React.PointerEventHandler<HTMLButtonElement>;
   disabled?: boolean;
   pressed?: boolean;
+  className?: string | undefined;
 }) {
   return (
     <button
-      className={`icon-button${pressed ? ' is-active' : ''}`}
+      className={`icon-button${pressed ? ' is-active' : ''}${className ? ` ${className}` : ''}`}
       type="button"
       aria-label={label}
       title={title ?? label}

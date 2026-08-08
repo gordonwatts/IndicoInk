@@ -1443,16 +1443,8 @@ export function App() {
       ) : exportState.kind === 'empty' || exportState.kind === 'canceled' ? (
         <StatusLabel label={exportState.label} tone="warning" icon="info" />
       ) : undefined
-    ) : destination === 'library' ? undefined : refreshState.kind ===
-        'checking' || refreshState.kind === 'refreshing' ? (
-      <StatusLabel label={refreshState.message} tone="neutral" icon="refresh" />
-    ) : refreshState.kind === 'done' ? (
-      <StatusLabel label={refreshState.message} tone="success" icon="check" />
-    ) : refreshState.kind === 'error' ? (
-      <StatusLabel label={refreshState.message} tone="error" icon="info" />
-    ) : refreshState.kind === 'conflict' ? (
-      <StatusLabel label={refreshState.message} tone="warning" icon="info" />
-    ) : exportState.kind === 'preparing' ||
+    ) : destination === 'library' ? undefined : exportState.kind ===
+        'preparing' ||
       exportState.kind === 'rendering' ||
       exportState.kind === 'writing' ? (
       <StatusLabel label={exportState.label} tone="neutral" icon="info" />
@@ -1544,10 +1536,20 @@ export function App() {
               label="Refresh"
               title="Refresh Event from Indico"
               icon="refresh"
+              className={
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing'
+                  ? 'is-spinning'
+                  : undefined
+              }
               onClick={() => {
                 void handleRefreshAction();
               }}
-              disabled={!selectedEventId}
+              disabled={
+                !selectedEventId ||
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing'
+              }
             />
             <PrimaryButton
               icon="export"
@@ -1570,10 +1572,20 @@ export function App() {
               label="Refresh"
               title="Refresh Event from Indico"
               icon="refresh"
+              className={
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing'
+                  ? 'is-spinning'
+                  : undefined
+              }
               onClick={() => {
                 void handleRefreshAction();
               }}
-              disabled={!selectedEventId}
+              disabled={
+                !selectedEventId ||
+                refreshState.kind === 'checking' ||
+                refreshState.kind === 'refreshing'
+              }
             />
             <PrimaryButton
               icon="export"
@@ -3113,7 +3125,9 @@ export function App() {
                       />
                     ) : null}
                   </div>
-                  {openEventFeedback ? (
+                  {openEventFeedback &&
+                  (openEventFeedback.tone !== 'success' ||
+                    destination !== 'agenda') ? (
                     <div
                       className="field-help"
                       aria-live="polite"
@@ -4298,6 +4312,23 @@ export function App() {
                       'Refreshing while keeping the existing deck cache...',
                   });
                   void handleResolveRefreshConflict('keep');
+                }}
+              />
+            </div>
+          ) : null}
+
+          {refreshState.kind === 'error' && !apiKeyDialogRequest ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title="Refresh failed"
+                body={
+                  <div className="dialog-copy">
+                    <p>{refreshState.message}</p>
+                  </div>
+                }
+                primaryLabel="Dismiss"
+                onPrimary={() => {
+                  setRefreshState({ kind: 'idle' });
                 }}
               />
             </div>
