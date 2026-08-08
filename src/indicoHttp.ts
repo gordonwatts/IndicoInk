@@ -117,7 +117,7 @@ export type FetchIndicoJsonOptions = {
   ) => Promise<IndicoJsonResponse>;
 };
 
-const defaultTimeoutMilliseconds = 15_000;
+const defaultTimeoutMilliseconds = 45_000;
 const defaultMaxBytes = 15_000_000;
 
 const getByteLength = (value: string) => Buffer.byteLength(value, 'utf8');
