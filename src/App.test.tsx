@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -704,6 +705,126 @@ describe('App', () => {
       await screen.findByText(/Refreshed Refresh Auth Event: 0 changed/),
     ).toBeTruthy();
     expect(screen.queryByLabelText('API key')).toBeNull();
+  });
+
+  it('reloads the visible agenda after refresh reconciliation', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-refresh-agenda',
+      sourceUrl: 'https://indico.example.org/event/refresh-agenda',
+      title: 'Refresh Agenda Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const removedTalk = {
+      id: 'talk-removed-upstream',
+      conferenceId: libraryEvent.id,
+      contributionId: 'removed-1',
+      contributionUrl:
+        'https://indico.example.org/event/refresh-agenda/contributions/removed-1/',
+      sortStartsAt: Date.UTC(2026, 5, 12, 9),
+      startsAt: Date.UTC(2026, 5, 12, 9),
+      endsAt: Date.UTC(2026, 5, 12, 9, 30),
+      dayLabel: 'Friday, June 12, 2026',
+      title: 'Talk removed upstream',
+      speaker: 'Ada Lovelace',
+      sessionTitle: 'Session one',
+      timeRangeLabel: '09:00–09:30',
+      room: 'Room 1',
+      bookmarked: false,
+      materialSummary: 'No slides',
+      materials: [],
+      annotatedSlideCount: 0,
+    };
+    const refreshedTalk = {
+      ...removedTalk,
+      id: 'talk-new-pdf',
+      contributionId: 'new-1',
+      contributionUrl:
+        'https://indico.example.org/event/refresh-agenda/contributions/new-1/',
+      title: 'Talk with newly available slides',
+      materialSummary: 'PDF',
+      materials: [
+        {
+          id: 'deck-new-pdf',
+          title: 'New slides',
+          sourceUrl:
+            'https://indico.example.org/event/refresh-agenda/materials/new.pdf',
+          mimeType: 'application/pdf',
+          selected: true,
+          pageCount: null,
+        },
+      ],
+    };
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    let resolveRefreshedAgenda!: (talks: (typeof refreshedTalk)[]) => void;
+    const refreshedAgendaPromise = new Promise<(typeof refreshedTalk)[]>(
+      (resolve) => {
+        resolveRefreshedAgenda = resolve;
+      },
+    );
+    const listAgendaTalksMock = vi.fn().mockImplementation(() =>
+      listAgendaTalksMock.mock.calls.length === 1
+        ? Promise.resolve([removedTalk])
+        : refreshedAgendaPromise,
+    );
+    window.indicoInk.listAgendaTalks = listAgendaTalksMock;
+    window.indicoInk.refreshLibraryEvent = vi.fn().mockResolvedValue({
+      kind: 'refreshed',
+      conferenceId: libraryEvent.id,
+      title: libraryEvent.title,
+      talkCount: 1,
+      deckCount: 1,
+      changedTalkCount: 0,
+      removedTalkCount: 1,
+      newlyAvailableDeckCount: 1,
+    });
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    expect(await screen.findByText('Talk removed upstream')).toBeTruthy();
+
+    const pageSurface = document.querySelector<HTMLElement>('.page-surface');
+    expect(pageSurface).toBeTruthy();
+    pageSurface!.scrollTop = 612;
+    pageSurface!.scrollLeft = 44;
+    fireEvent.scroll(pageSurface!);
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      expect(window.indicoInk.listAgendaTalks).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText('Talk removed upstream')).toBeTruthy();
+    expect(screen.queryByText('Loading agenda talks')).toBeNull();
+    expect(pageSurface!.scrollTop).toBe(612);
+    expect(pageSurface!.scrollLeft).toBe(44);
+
+    await act(async () => {
+      resolveRefreshedAgenda([refreshedTalk]);
+      await refreshedAgendaPromise;
+    });
+
+    expect(
+      await screen.findByText('Talk with newly available slides'),
+    ).toBeTruthy();
+    expect(screen.queryByText('Talk removed upstream')).toBeNull();
+    expect(pageSurface!.scrollTop).toBe(612);
+    expect(pageSurface!.scrollLeft).toBe(44);
+    expect(
+      await screen.findByText(/Refreshed Refresh Agenda Event: 0 changed, 1 removed, 1 new PDF/),
+    ).toBeTruthy();
   });
 
   it('supports keyboard navigation into the shell destinations', async () => {

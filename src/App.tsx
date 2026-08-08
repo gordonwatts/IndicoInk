@@ -1016,6 +1016,7 @@ export function App() {
   const agendaScrollPositionsRef = React.useRef(
     new Map<string, { scrollLeft: number; scrollTop: number }>(),
   );
+  const agendaTalksLoadedEventIdRef = React.useRef<string | null>(null);
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -1225,6 +1226,17 @@ export function App() {
         return;
       }
 
+      const scrollContainer = pageSurfaceRef.current;
+      if (destination === 'agenda' && scrollContainer) {
+        agendaScrollPositionsRef.current.set(
+          `${event.id}::${agendaDayLabel ?? ''}`,
+          {
+            scrollLeft: scrollContainer.scrollLeft,
+            scrollTop: scrollContainer.scrollTop,
+          },
+        );
+      }
+
       setRefreshState({
         kind: 'checking',
         message: `Checking ${event.title} for upstream changes...`,
@@ -1261,6 +1273,7 @@ export function App() {
         }
 
         await refreshLibraryEvents();
+        setAgendaReloadVersion((version) => version + 1);
         setRefreshState({
           kind: 'done',
           message: `Refreshed ${result.title}: ${result.changedTalkCount} changed, ${result.removedTalkCount} removed, ${result.newlyAvailableDeckCount} new PDF${result.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
@@ -1275,7 +1288,13 @@ export function App() {
         });
       }
     },
-    [libraryEvents, refreshLibraryEvents, selectedEventId],
+    [
+      agendaDayLabel,
+      destination,
+      libraryEvents,
+      refreshLibraryEvents,
+      selectedEventId,
+    ],
   );
 
   React.useEffect(() => {
@@ -2523,6 +2542,7 @@ export function App() {
     let cancelled = false;
 
     if (!selectedEventId) {
+      agendaTalksLoadedEventIdRef.current = null;
       setAgendaTalks([]);
       setAgendaTalksLoading(false);
       setAgendaTalksError(null);
@@ -2539,13 +2559,18 @@ export function App() {
       };
     }
 
-    setAgendaTalksLoading(true);
+    const isInitialAgendaLoad =
+      agendaTalksLoadedEventIdRef.current !== selectedEventId;
+    if (isInitialAgendaLoad) {
+      setAgendaTalksLoading(true);
+    }
     setAgendaTalksError(null);
 
     void window.indicoInk
       .listAgendaTalks(selectedEventId)
       .then((talks) => {
         if (!cancelled) {
+          agendaTalksLoadedEventIdRef.current = selectedEventId;
           setAgendaTalks(talks);
         }
       })
@@ -2567,7 +2592,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [destination, selectedEventId]);
+  }, [agendaReloadVersion, destination, selectedEventId]);
 
   React.useEffect(() => {
     if (!displayedAgendaTalks.length) {
@@ -2742,6 +2767,8 @@ export function App() {
       }
     };
   }, [
+    agendaReloadVersion,
+    agendaTalks,
     destination,
     restoreAgendaScrollPosition,
     selectedEventId,
