@@ -28,6 +28,7 @@ import {
   type AgendaTimeZoneMode,
 } from './agendaTime';
 import type { ExportRenderedSlide } from './shared/exportNotes';
+import type { ExportRenderedNotePage } from './shared/exportNotes';
 import type {
   RefreshConflict,
   RefreshLibraryEventResult,
@@ -55,6 +56,7 @@ import {
   buildConferenceNotesMarkdown,
   collectExportRenderJobs,
   renderAnnotatedSlidePng,
+  renderAnnotatedNotePagePng,
 } from './exportNotes';
 import { createExportFileName } from './exportFileName';
 
@@ -455,9 +457,9 @@ function getAgendaTalkPrimaryAction(talk: AgendaTalkSummary) {
   }
 
   return {
-    label: 'Select',
-    ariaLabel: `Select ${talk.title}`,
-    kind: 'select' as const,
+    label: 'Open notes',
+    ariaLabel: `Open notes for ${talk.title}`,
+    kind: 'notes' as const,
   };
 }
 
@@ -520,12 +522,15 @@ type SlideViewerState =
       message: string;
     };
 
+type ViewerMode = 'slides' | 'notes';
+
 function AgendaTimelineCanvas({
   visibleAgendaTalks,
   selectedAgendaTalkId,
   viewportRef,
   onOpenTalk,
   onOpenTalkSlides,
+  onOpenTalkNotes,
   onOpenTalkMaterials,
   onOpenLinkedAgenda,
   onOpenLinkedAgendaInApp,
@@ -537,6 +542,7 @@ function AgendaTimelineCanvas({
   viewportRef: React.RefObject<HTMLDivElement | null>;
   onOpenTalk: (talk: AgendaTalkSummary) => void;
   onOpenTalkSlides: (talk: AgendaTalkSummary) => void;
+  onOpenTalkNotes: (talk: AgendaTalkSummary) => void;
   onOpenTalkMaterials: (talk: AgendaTalkSummary) => void;
   onOpenLinkedAgenda: (talk: AgendaTalkSummary) => void;
   onOpenLinkedAgendaInApp: (talk: AgendaTalkSummary) => void;
@@ -783,6 +789,11 @@ function AgendaTimelineCanvas({
                               return;
                             }
 
+                            if (primaryAction.kind === 'notes') {
+                              onOpenTalkNotes(talk);
+                              return;
+                            }
+
                             if (primaryAction.kind === 'materials') {
                               onOpenTalkMaterials(talk);
                               return;
@@ -799,6 +810,11 @@ function AgendaTimelineCanvas({
                               }
                               if (primaryAction.kind === 'slides') {
                                 onOpenTalkSlides(talk);
+                                return;
+                              }
+
+                              if (primaryAction.kind === 'notes') {
+                                onOpenTalkNotes(talk);
                                 return;
                               }
 
@@ -905,21 +921,31 @@ function AgendaTimelineCanvas({
                               />
                             </div>
                           ) : null}
-                          {showMaterialsAction &&
-                          talk.entryKind !== 'linked-agenda' ? (
+                          {talk.entryKind !== 'linked-agenda' ? (
                             <div className="agenda-talk-card-actions">
-                              <button
-                                className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
-                                type="button"
-                                aria-label={`Materials for ${talk.title}`}
+                              <IconButton
+                                label={`Open notes for ${talk.title}`}
+                                title="Open notes"
+                                icon="pen"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  onOpenTalkMaterials(talk);
+                                  onOpenTalkNotes(talk);
                                 }}
-                              >
-                                <Icon name="dialog" />
-                                <span>Materials</span>
-                              </button>
+                              />
+                              {showMaterialsAction ? (
+                                <button
+                                  className="agenda-talk-card-action-button agenda-talk-card-action-button--secondary"
+                                  type="button"
+                                  aria-label={`Materials for ${talk.title}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onOpenTalkMaterials(talk);
+                                  }}
+                                >
+                                  <Icon name="dialog" />
+                                  <span>Materials</span>
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </article>
@@ -932,6 +958,127 @@ function AgendaTimelineCanvas({
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ResizableNotesWorkspace({
+  reference,
+  children,
+}: {
+  reference: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const workspaceRef = React.useRef<HTMLDivElement | null>(null);
+  const [referenceRatio, setReferenceRatio] = React.useState(0.42);
+  const [isPortrait, setIsPortrait] = React.useState(false);
+  const dragStateRef = React.useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startRatio: number;
+  } | null>(null);
+
+  React.useEffect(() => {
+    const element = workspaceRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const updateOrientation = () => {
+      setIsPortrait(element.clientHeight > element.clientWidth);
+    };
+    updateOrientation();
+    const observer = new ResizeObserver(updateOrientation);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const handlePointerMove = React.useCallback(
+    (event: PointerEvent) => {
+      const drag = dragStateRef.current;
+      const element = workspaceRef.current;
+      if (!drag || !element || event.pointerId !== drag.pointerId) {
+        return;
+      }
+      const bounds = element.getBoundingClientRect();
+      const delta = isPortrait
+        ? (event.clientY - drag.startY) / Math.max(1, bounds.height)
+        : (event.clientX - drag.startX) / Math.max(1, bounds.width);
+      setReferenceRatio(Math.min(0.7, Math.max(0.25, drag.startRatio + delta)));
+    },
+    [isPortrait],
+  );
+
+  const stopDragging = React.useCallback(
+    (event: PointerEvent) => {
+      if (dragStateRef.current?.pointerId !== event.pointerId) {
+        return;
+      }
+      dragStateRef.current = null;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopDragging);
+      window.removeEventListener('pointercancel', stopDragging);
+    },
+    [handlePointerMove],
+  );
+
+  React.useEffect(
+    () => () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopDragging);
+      window.removeEventListener('pointercancel', stopDragging);
+    },
+    [handlePointerMove, stopDragging],
+  );
+
+  const startDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startRatio: referenceRatio,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopDragging);
+    window.addEventListener('pointercancel', stopDragging);
+  };
+
+  const adjustRatio = (delta: number) => {
+    setReferenceRatio((current) =>
+      Math.min(0.7, Math.max(0.25, current + delta)),
+    );
+  };
+
+  return (
+    <div
+      ref={workspaceRef}
+      className={`notes-workspace${isPortrait ? ' is-portrait' : ''}`}
+      style={
+        { '--notes-reference-ratio': referenceRatio } as React.CSSProperties
+      }
+    >
+      <div className="notes-reference-pane">{reference}</div>
+      <div
+        className="notes-workspace-divider"
+        role="separator"
+        aria-label="Resize reference slide and notes"
+        aria-orientation={isPortrait ? 'horizontal' : 'vertical'}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            adjustRatio(-0.05);
+          }
+          if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            adjustRatio(0.05);
+          }
+        }}
+        onPointerDown={startDragging}
+      />
+      <div className="notes-editor-pane">{children}</div>
     </div>
   );
 }
@@ -1008,6 +1155,8 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
+  const [viewerMode, setViewerMode] = React.useState<ViewerMode>('slides');
+  const [notesDeckId, setNotesDeckId] = React.useState<string | null>(null);
   const [, setSlideViewerMetrics] = React.useState<{
     currentSlideNumber: number;
     currentPageCount: number;
@@ -1632,6 +1781,7 @@ export function App() {
     deckId?: string,
   ) => {
     captureAgendaScrollPosition();
+    setViewerMode('slides');
 
     const selectedPdfMaterial =
       talk.materials.find(
@@ -1743,6 +1893,16 @@ export function App() {
       downloadStatus: null,
       message: openResult.message,
     });
+  };
+  const openAgendaTalkNotes = async (talk: AgendaTalkSummary) => {
+    captureAgendaScrollPosition();
+    const notebookDeck = await window.indicoInk.ensureNotebookDeck(talk.id);
+    setNotesDeckId(notebookDeck.id);
+    setSelectedEventId(talk.conferenceId);
+    setAgendaDayLabel(talk.dayLabel);
+    setSelectedAgendaTalkId(talk.id);
+    setViewerMode('notes');
+    setDestination('slides');
   };
   const openAgendaTalkFromIndex = (talk: AgendaTalkSummary) => {
     setSelectedEventId(talk.conferenceId);
@@ -2227,10 +2387,24 @@ export function App() {
         return;
       }
 
+      const renderJobs = snapshot ? collectExportRenderJobs(snapshot) : [];
+      const noteJobs = snapshot
+        ? snapshot.talks.flatMap((talk) =>
+            (talk.notes ?? []).map((note) => ({
+              talkId: talk.id,
+              talkTitle: talk.title,
+              pageNumber: note.pageNumber,
+              referenceSlideNumber: note.referenceSlideNumber,
+              annotations: note.annotations,
+            })),
+          )
+        : [];
+      const totalRenderJobs = renderJobs.length + noteJobs.length;
+
       if (!snapshot || snapshot.talks.length === 0) {
         setExportState({
           kind: 'empty',
-          label: 'No annotated slides are available to export.',
+          label: 'No annotated slides or note pages are available to export.',
         });
         return;
       }
@@ -2266,15 +2440,13 @@ export function App() {
         });
       }
 
-      const renderJobs = collectExportRenderJobs(snapshot);
       const renderedSlides: ExportRenderedSlide[] = [];
+      const renderedNotePages: ExportRenderedNotePage[] = [];
       setExportState({
         kind: 'rendering',
-        label: `Rendering ${renderJobs.length} annotated slide${
-          renderJobs.length === 1 ? '' : 's'
-        }...`,
+        label: `Rendering ${totalRenderJobs} annotated page${totalRenderJobs === 1 ? '' : 's'}...`,
         completed: 0,
-        total: renderJobs.length,
+        total: totalRenderJobs,
       });
 
       for (let index = 0; index < renderJobs.length; index += 1) {
@@ -2312,20 +2484,53 @@ export function App() {
         });
         setExportState({
           kind: 'rendering',
-          label: `Rendering ${index + 1} of ${renderJobs.length} annotated slide${
-            renderJobs.length === 1 ? '' : 's'
-          }...`,
+          label: `Rendering ${index + 1} of ${totalRenderJobs} annotated pages...`,
           completed: index + 1,
-          total: renderJobs.length,
+          total: totalRenderJobs,
         });
       }
 
-      const markdown = buildConferenceNotesMarkdown(snapshot, renderedSlides);
+      for (let index = 0; index < noteJobs.length; index += 1) {
+        const job = noteJobs[index];
+        if (!job) {
+          continue;
+        }
+        if (cancellationState.cancelled) {
+          setExportState({
+            kind: 'canceled',
+            label: 'Export canceled before the file was written.',
+          });
+          return;
+        }
+
+        const renderedNote = await renderAnnotatedNotePagePng({
+          annotations: job.annotations,
+        });
+        renderedNotePages.push({
+          talkId: job.talkId,
+          talkTitle: job.talkTitle,
+          pageNumber: job.pageNumber,
+          referenceSlideNumber: job.referenceSlideNumber,
+          imageDataUrl: renderedNote.imageDataUrl,
+        });
+        setExportState({
+          kind: 'rendering',
+          label: `Rendering ${renderJobs.length + index + 1} of ${totalRenderJobs} annotated pages...`,
+          completed: renderJobs.length + index + 1,
+          total: totalRenderJobs,
+        });
+      }
+
+      const markdown = buildConferenceNotesMarkdown(
+        snapshot,
+        renderedSlides,
+        renderedNotePages,
+      );
       setExportState({
         kind: 'writing',
         label: 'Writing Markdown export...',
-        completed: renderJobs.length,
-        total: renderJobs.length,
+        completed: totalRenderJobs,
+        total: totalRenderJobs,
       });
       await window.indicoInk.writeExportFile(saveResult.filePath, markdown);
 
@@ -3283,6 +3488,9 @@ export function App() {
                               onOpenTalkSlides={(talk) => {
                                 void openAgendaTalkSlides(talk);
                               }}
+                              onOpenTalkNotes={(talk) => {
+                                void openAgendaTalkNotes(talk);
+                              }}
                               onOpenTalkMaterials={handleOpenTalkMaterials}
                               onOpenLinkedAgenda={handleOpenLinkedAgenda}
                               onOpenLinkedAgendaInApp={
@@ -3631,6 +3839,21 @@ export function App() {
                     icon="back"
                     onClick={() => setDestination('agenda')}
                   />
+                  <SegmentedControl
+                    ariaLabel="Talk workspace"
+                    options={[
+                      { label: 'Slides', value: 'slides' as const },
+                      { label: 'Notes', value: 'notes' as const },
+                    ]}
+                    value={viewerMode}
+                    onChange={(mode) => {
+                      if (mode === 'notes' && selectedAgendaTalk) {
+                        void openAgendaTalkNotes(selectedAgendaTalk);
+                        return;
+                      }
+                      setViewerMode(mode);
+                    }}
+                  />
                   <div className="slides-view-link-actions">
                     <PrimaryButton
                       icon="open"
@@ -3785,28 +4008,66 @@ export function App() {
                       />
                     </div>
                   ) : null}
-                  <PdfPreview
-                    filePath={
-                      slideViewerState.kind === 'ready'
-                        ? slideViewerState.filePath
-                        : null
-                    }
-                    title={activeSlideTitle}
-                    conferenceId={activeSlideConferenceId}
-                    talkId={activeSlideTalkId}
-                    onOpenIndicoEvent={openIndicoEventInApp}
-                    onSlideMetricsChange={setSlideViewerMetrics}
-                    workspaceDeckId={activeSlideDeckId}
-                    onRetryLoad={handleRetryPdfLoad}
-                    scrollContainerRef={pageSurfaceRef}
-                    penThickness={
-                      appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
-                    }
-                    onPenThicknessChange={setPenThickness}
-                    onBackToAgenda={() => {
-                      setDestination('agenda');
-                    }}
-                  />
+                  {viewerMode === 'slides' ? (
+                    <PdfPreview
+                      filePath={
+                        slideViewerState.kind === 'ready'
+                          ? slideViewerState.filePath
+                          : null
+                      }
+                      title={activeSlideTitle}
+                      conferenceId={activeSlideConferenceId}
+                      talkId={activeSlideTalkId}
+                      onOpenIndicoEvent={openIndicoEventInApp}
+                      onSlideMetricsChange={setSlideViewerMetrics}
+                      workspaceDeckId={activeSlideDeckId}
+                      onRetryLoad={handleRetryPdfLoad}
+                      scrollContainerRef={pageSurfaceRef}
+                      penThickness={
+                        appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
+                      }
+                      onPenThicknessChange={setPenThickness}
+                      onBackToAgenda={() => {
+                        setDestination('agenda');
+                      }}
+                    />
+                  ) : (
+                    <ResizableNotesWorkspace
+                      reference={
+                        slideViewerState.kind === 'ready' ? (
+                          <PdfPreview
+                            filePath={slideViewerState.filePath}
+                            title={`Reference slides for ${activeSlideTitle}`}
+                            readOnly
+                            onSlideMetricsChange={setSlideViewerMetrics}
+                          />
+                        ) : (
+                          <div className="notes-reference-empty">
+                            <Icon name="info" />
+                            <strong>No slide reference</strong>
+                            <span>Write notes independently of a PDF.</span>
+                          </div>
+                        )
+                      }
+                    >
+                      <PdfPreview
+                        filePath={null}
+                        blankPageMode
+                        workspaceSourceUrl={`notebook:${activeSlideTalkId ?? selectedAgendaTalk?.id ?? ''}`}
+                        title={`Notes for ${selectedAgendaTalk?.title ?? activeSlideTitle}`}
+                        conferenceId={selectedAgendaTalk?.conferenceId ?? null}
+                        talkId={selectedAgendaTalk?.id ?? null}
+                        workspaceDeckId={notesDeckId}
+                        penThickness={
+                          appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
+                        }
+                        onPenThicknessChange={setPenThickness}
+                        onBackToAgenda={() => {
+                          setDestination('agenda');
+                        }}
+                      />
+                    </ResizableNotesWorkspace>
+                  )}
                 </>
               ) : (
                 <div className="empty-state">

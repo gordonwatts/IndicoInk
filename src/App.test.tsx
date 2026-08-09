@@ -96,6 +96,18 @@ describe('App', () => {
         savedAt: Date.now(),
       }),
       loadDeckWorkspaceState: vi.fn().mockResolvedValue(null),
+      ensureNotebookDeck: vi.fn().mockResolvedValue({
+        id: 'notebook-test',
+        conferenceId: 'conference-test',
+        talkId: 'talk-test',
+        sourceUrl: 'indicoink://notebook/talk-test',
+        displayName: 'Talk notes',
+        mimeType: 'application/x-indicoink-notebook',
+        selected: false,
+        kind: 'notebook',
+        createdAt: 0,
+        updatedAt: 0,
+      }),
       saveDeckWorkspaceChanges: vi.fn().mockResolvedValue({
         sourceUrl: '',
         pageCount: 0,

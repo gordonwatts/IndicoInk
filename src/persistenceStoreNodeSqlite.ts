@@ -33,12 +33,13 @@ import type {
 import {
   createConferenceId,
   createDeckId,
+  createNotebookDeckId,
   createSlideId,
   createTalkId,
   createViewStateId,
 } from './persistenceModels';
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 const PRE_NODE_SQLITE_BACKUP_SUFFIX = '.pre-node-sqlite-v7.bak';
 
 const getFileName = (value: string) => {
@@ -513,6 +514,29 @@ const migration7 = (db: SqliteDatabaseAdapter) => {
   `);
 };
 
+const migration8 = (db: SqliteDatabaseAdapter) => {
+  const decksTable = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'decks'",
+    )
+    .get();
+  if (!decksTable) {
+    return;
+  }
+
+  const columns = new Set(
+    (
+      db.pragma('table_info(decks)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!columns.has('kind')) {
+    db.exec("ALTER TABLE decks ADD COLUMN kind TEXT NOT NULL DEFAULT 'pdf';");
+  }
+};
+
 const migrations = [
   migration1,
   migration2,
@@ -521,6 +545,7 @@ const migrations = [
   migration5,
   migration6,
   migration7,
+  migration8,
 ];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
@@ -579,6 +604,7 @@ const rowToDeck = (row: Record<string, unknown>): Deck => ({
   selected: toBoolean(row.selected),
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
+  kind: String(row.kind ?? 'pdf') as 'pdf' | 'notebook',
   upstreamStatus: String(row.upstream_status ?? 'present') as
     | 'present'
     | 'changed'
@@ -1049,10 +1075,10 @@ export class PersistenceStore {
       `
         INSERT INTO decks (
           id, conference_id, talk_id, source_url, display_name, mime_type,
-          selected, upstream_status, created_at, updated_at
+          selected, upstream_status, kind, created_at, updated_at
         ) VALUES (
           @id, @conferenceId, @talkId, @sourceUrl, @displayName, @mimeType,
-          @selected, @upstreamStatus, @createdAt, @updatedAt
+          @selected, @upstreamStatus, @kind, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           conference_id = excluded.conference_id,
@@ -1062,6 +1088,7 @@ export class PersistenceStore {
           mime_type = excluded.mime_type,
           selected = excluded.selected,
           upstream_status = excluded.upstream_status,
+          kind = excluded.kind,
           updated_at = excluded.updated_at
       `,
     ).run({
@@ -1073,6 +1100,7 @@ export class PersistenceStore {
       displayName: deck.displayName,
       mimeType: deck.mimeType,
       upstreamStatus: deck.upstreamStatus ?? 'present',
+      kind: deck.kind ?? 'pdf',
     });
 
     this.markDirty();
@@ -1095,6 +1123,33 @@ export class PersistenceStore {
       .prepare('SELECT * FROM decks WHERE talk_id = ? ORDER BY created_at')
       .all(talkId) as Record<string, unknown>[];
     return rows.map((row) => rowToDeck(row));
+  }
+
+  async ensureNotebookDeck(talkId: string): Promise<Deck> {
+    const talk = await this.getTalk(talkId);
+    if (!talk) {
+      throw new Error('Cannot create notes for an unknown talk.');
+    }
+
+    const deckId = createNotebookDeckId(talkId);
+    const existing = await this.getDeck(deckId);
+    if (existing) {
+      return existing;
+    }
+
+    const now = this.now();
+    return this.upsertDeck({
+      id: deckId,
+      conferenceId: talk.conferenceId,
+      talkId,
+      sourceUrl: `indicoink://notebook/${talkId}`,
+      displayName: 'Talk notes',
+      mimeType: 'application/x-indicoink-notebook',
+      selected: false,
+      kind: 'notebook',
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   async deleteDeck(id: string) {

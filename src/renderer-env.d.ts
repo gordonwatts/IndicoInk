@@ -22,6 +22,7 @@ import type {
 } from './shared/deckCache';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import type { Deck } from './persistenceModels';
 
 declare global {
   interface Window {
@@ -44,6 +45,7 @@ declare global {
       loadDeckWorkspaceState: (
         deckId: string,
       ) => Promise<PdfWorkspaceSnapshot | null>;
+      ensureNotebookDeck: (talkId: string) => Promise<Deck>;
       saveDeckWorkspaceChanges: (
         batch: PdfWorkspaceChangeBatch,
       ) => Promise<PdfWorkspaceChangeSaveResult>;

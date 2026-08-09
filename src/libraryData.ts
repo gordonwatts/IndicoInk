@@ -126,7 +126,10 @@ export const buildLibraryEventSummaries = async (
       const deckCount = (
         await Promise.all(
           talks.map(
-            async (talk) => (await store.listDecksByTalk(talk.id)).length,
+            async (talk) =>
+              (await store.listDecksByTalk(talk.id)).filter(
+                (deck) => deck.kind !== 'notebook',
+              ).length,
           ),
         )
       ).reduce((total, count) => total + count, 0);

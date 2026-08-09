@@ -25,6 +25,7 @@ import type {
 } from './shared/agendaDownload';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import type { Deck } from './persistenceModels';
 
 const getAppInfo = async (): Promise<AppInfo> =>
   ipcRenderer.invoke('app:get-info');
@@ -74,6 +75,9 @@ const loadDeckWorkspaceState = async (
   deckId: string,
 ): Promise<PdfWorkspaceSnapshot | null> =>
   ipcRenderer.invoke('persistence:load-deck-workspace', deckId);
+
+const ensureNotebookDeck = async (talkId: string): Promise<Deck> =>
+  ipcRenderer.invoke('persistence:ensure-notebook-deck', talkId);
 
 const saveDeckWorkspaceChanges = async (
   batch: PdfWorkspaceChangeBatch,
@@ -197,6 +201,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   loadPdfWorkspaceState,
   savePdfWorkspaceChanges,
   loadDeckWorkspaceState,
+  ensureNotebookDeck,
   saveDeckWorkspaceChanges,
   listLibraryEvents,
   listAgendaTalks,
@@ -244,6 +249,7 @@ export type IndicoInkApi = {
   loadDeckWorkspaceState: (
     deckId: string,
   ) => Promise<PdfWorkspaceSnapshot | null>;
+  ensureNotebookDeck: (talkId: string) => Promise<Deck>;
   saveDeckWorkspaceChanges: (
     batch: PdfWorkspaceChangeBatch,
   ) => Promise<PdfWorkspaceChangeSaveResult>;

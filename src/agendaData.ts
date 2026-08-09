@@ -27,8 +27,15 @@ export const buildAgendaTalkSummaries = async (
     talks.map(async (talk) => {
       const decks = await store.listDecksByTalk(talk.id);
       const pdfDecks = decks.filter(
-        (deck) => deck.mimeType === 'application/pdf',
+        (deck) =>
+          deck.kind !== 'notebook' && deck.mimeType === 'application/pdf',
       );
+      const notebookDeck = decks.find((deck) => deck.kind === 'notebook');
+      const annotatedNotePageCount = notebookDeck
+        ? (await store.listSlidesByDeck(notebookDeck.id)).filter(
+            (slide) => slide.annotated,
+          ).length
+        : 0;
 
       const annotatedSlideCount = (
         await Promise.all(
@@ -75,22 +82,25 @@ export const buildAgendaTalkSummaries = async (
           : {}),
         materialSummary: formatMaterialSummary(pdfDecks.length),
         materials: await Promise.all(
-          decks.map(async (deck) => ({
-            id: deck.id,
-            title: deck.displayName,
-            sourceUrl: deck.sourceUrl,
-            mimeType: deck.mimeType,
-            selected: deck.selected,
-            ...(deck.upstreamStatus
-              ? { upstreamStatus: deck.upstreamStatus }
-              : {}),
-            pageCount:
-              deck.mimeType === 'application/pdf'
-                ? (await store.listSlidesByDeck(deck.id)).length
-                : null,
-          })),
+          decks
+            .filter((deck) => deck.kind !== 'notebook')
+            .map(async (deck) => ({
+              id: deck.id,
+              title: deck.displayName,
+              sourceUrl: deck.sourceUrl,
+              mimeType: deck.mimeType,
+              selected: deck.selected,
+              ...(deck.upstreamStatus
+                ? { upstreamStatus: deck.upstreamStatus }
+                : {}),
+              pageCount:
+                deck.mimeType === 'application/pdf'
+                  ? (await store.listSlidesByDeck(deck.id)).length
+                  : null,
+            })),
         ),
         annotatedSlideCount,
+        annotatedNotePageCount,
       } satisfies AgendaTalkSummary;
     }),
   );

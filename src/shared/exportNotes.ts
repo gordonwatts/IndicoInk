@@ -48,6 +48,13 @@ export type ExportDeckSnapshot = {
   slides: ExportSlideSnapshot[];
 };
 
+export type ExportNotePageSnapshot = {
+  id: string;
+  pageNumber: number;
+  referenceSlideNumber: number | null;
+  annotations: ExportSlideAnnotation[];
+};
+
 export type ExportTalkSnapshot = {
   id: string;
   contributionId: string;
@@ -60,6 +67,7 @@ export type ExportTalkSnapshot = {
   room: string;
   bookmarked: boolean;
   decks: ExportDeckSnapshot[];
+  notes?: ExportNotePageSnapshot[];
 };
 
 export type ConferenceExportSnapshot = {
@@ -80,4 +88,12 @@ export type ExportRenderedSlide = {
   slideNumber: number;
   imageDataUrl: string;
   links: ExportRenderedSlideLink[];
+};
+
+export type ExportRenderedNotePage = {
+  talkId: string;
+  talkTitle: string;
+  pageNumber: number;
+  referenceSlideNumber: number | null;
+  imageDataUrl: string;
 };
