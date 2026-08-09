@@ -3854,6 +3854,19 @@ export function App() {
                       setViewerMode(mode);
                     }}
                   />
+                  {viewerMode === 'slides' ? (
+                    <PrimaryButton
+                      icon="pen"
+                      title="Open or create notes for this talk"
+                      onClick={() => {
+                        if (selectedAgendaTalk) {
+                          void openAgendaTalkNotes(selectedAgendaTalk);
+                        }
+                      }}
+                    >
+                      Open notes
+                    </PrimaryButton>
+                  ) : null}
                   <div className="slides-view-link-actions">
                     <PrimaryButton
                       icon="open"

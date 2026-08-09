@@ -1791,6 +1791,24 @@ describe('App', () => {
       }),
     ).toBeTruthy();
     expect(
+      screen.getByRole('button', {
+        name: 'Open notes',
+      }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open notes',
+      }),
+    );
+    expect(window.indicoInk.ensureNotebookDeck).toHaveBeenCalledWith(
+      'talk-chooser',
+    );
+    expect(
+      await screen.findByRole('button', {
+        name: 'Notes',
+      }),
+    ).toBeTruthy();
+    expect(
       (
         screen.getByRole('button', {
           name: 'Link',
