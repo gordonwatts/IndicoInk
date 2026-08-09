@@ -1149,73 +1149,6 @@ export function App() {
     };
   }, [returnToLibrary]);
 
-  React.useEffect(() => {
-    let cancelled = false;
-
-    void window.indicoInk.getStartupIndicoEventUrl().then(async (launchUrl) => {
-      if (cancelled || !launchUrl) {
-        return;
-      }
-
-      setEventUrl(launchUrl);
-      setEventUrlTouched(true);
-      setIsOpeningEvent(true);
-      setOpenEventFeedback({
-        tone: 'neutral',
-        message: 'Opening event from the launch request...',
-      });
-
-      try {
-        const openedEvent = await window.indicoInk.openLibraryEvent(launchUrl);
-        if (cancelled) {
-          return;
-        }
-
-        if (openedEvent.kind === 'api-key-required') {
-          setApiKeyDialogRequest({
-            kind: 'event',
-            origin: openedEvent.origin,
-            message: openedEvent.message,
-            eventUrl: launchUrl,
-          });
-          setApiKeyValue('');
-          setApiKeyError(openedEvent.message);
-          setOpenEventFeedback({
-            tone: 'warning',
-            message: openedEvent.message,
-          });
-          return;
-        }
-
-        await refreshLibraryEvents();
-        setSelectedEventId(openedEvent.result.conferenceId);
-        setDestination('agenda');
-        setOpenEventFeedback({
-          tone: 'success',
-          message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
-        });
-      } catch (error) {
-        if (!cancelled) {
-          setOpenEventFeedback({
-            tone: 'error',
-            message:
-              error instanceof Error
-                ? error.message
-                : 'Failed to open the launch event.',
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setIsOpeningEvent(false);
-        }
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshLibraryEvents]);
-
   const refreshSelectedEvent = React.useCallback(
     async (decision?: 'keep' | 'replace') => {
       const event = libraryEvents.find((item) => item.id === selectedEventId);
@@ -1842,35 +1775,87 @@ export function App() {
   const openSearchResult = (talk: AgendaTalkSummary) => {
     openAgendaTalkFromIndex(talk);
   };
-  const openIndicoEventInApp = async (eventUrl: string) => {
-    const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
-    if (openedEvent.kind === 'api-key-required') {
-      setApiKeyDialogRequest({
-        kind: 'event',
-        origin: openedEvent.origin,
-        message: openedEvent.message,
-        eventUrl,
-      });
-      setApiKeyValue('');
-      setApiKeyError(openedEvent.message);
-      setOpenEventFeedback({
-        tone: 'warning',
-        message: openedEvent.message,
-      });
-      return;
-    }
+  const openIndicoEventInApp = React.useCallback(
+    async (eventUrl: string) => {
+      const openedEvent = await window.indicoInk.openLibraryEvent(eventUrl);
+      if (openedEvent.kind === 'api-key-required') {
+        setApiKeyDialogRequest({
+          kind: 'event',
+          origin: openedEvent.origin,
+          message: openedEvent.message,
+          eventUrl,
+        });
+        setApiKeyValue('');
+        setApiKeyError(openedEvent.message);
+        setOpenEventFeedback({
+          tone: 'warning',
+          message: openedEvent.message,
+        });
+        return;
+      }
 
-    await refreshLibraryEvents();
-    setSelectedEventId(openedEvent.result.conferenceId);
-    setDestination('agenda');
-    setApiKeyDialogRequest(null);
-    setApiKeyValue('');
-    setApiKeyError(null);
-    setOpenEventFeedback({
-      tone: 'success',
-      message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
+      await refreshLibraryEvents();
+      setSelectedEventId(openedEvent.result.conferenceId);
+      setDestination('agenda');
+      setApiKeyDialogRequest(null);
+      setApiKeyValue('');
+      setApiKeyError(null);
+      setOpenEventFeedback({
+        tone: 'success',
+        message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
+      });
+    },
+    [refreshLibraryEvents],
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const openLaunchEvent = async (launchUrl: string) => {
+      if (cancelled) {
+        return;
+      }
+
+      setEventUrl(launchUrl);
+      setEventUrlTouched(true);
+      setIsOpeningEvent(true);
+      setOpenEventFeedback({
+        tone: 'neutral',
+        message: 'Opening event from the launch request...',
+      });
+
+      try {
+        await openIndicoEventInApp(launchUrl);
+      } catch (error) {
+        if (!cancelled) {
+          setOpenEventFeedback({
+            tone: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Failed to open the launch event.',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsOpeningEvent(false);
+        }
+      }
+    };
+
+    const unsubscribe = window.indicoInk.onIndicoEventUrlRequested(
+      (launchUrl) => void openLaunchEvent(launchUrl),
+    );
+    void window.indicoInk.getStartupIndicoEventUrl().then((launchUrl) => {
+      if (launchUrl) {
+        void openLaunchEvent(launchUrl);
+      }
     });
-  };
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [openIndicoEventInApp]);
   const handleOpenEvent = async () => {
     setEventUrlTouched(true);
     const validationError = validateEventUrl(eventUrl);

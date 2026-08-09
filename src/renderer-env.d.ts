@@ -30,6 +30,9 @@ declare global {
       getDataFolder: () => Promise<string>;
       getAppSettings: () => Promise<AppSettings>;
       getStartupIndicoEventUrl: () => Promise<string | null>;
+      onIndicoEventUrlRequested: (
+        listener: (eventUrl: string) => void,
+      ) => () => void;
       openPdf: () => Promise<PdfSelection>;
       readPdfBytes: (filePath: string) => Promise<Uint8Array>;
       loadPdfWorkspaceState: (

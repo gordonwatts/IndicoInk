@@ -14,6 +14,18 @@ npm install --cache .npm-cache
 npm start
 ```
 
+An installed or packaged executable can open an Indico event directly from the
+command line. The URL may be supplied as a positional argument or with
+`--indico-url`:
+
+```powershell
+IndicoInk.exe https://indico.cern.ch/event/1234
+IndicoInk.exe --indico-url https://indico.cern.ch/event/1234
+```
+
+If IndicoInk is already running, the existing window is focused and opens the
+requested event.
+
 ## Open Packaged
 
 ```powershell
