@@ -39,6 +39,16 @@ npm run open:packaged
 npm run build
 ```
 
+## Windows Installer
+
+```powershell
+npm run make
+```
+
+The make command regenerates the branded Squirrel loading panel before
+building the installer. Release CI runs the same command for both x64 and
+arm64 installers.
+
 ## Test
 
 ```powershell
