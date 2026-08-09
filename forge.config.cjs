@@ -4,6 +4,13 @@ const { existsSync, readdirSync } = require('node:fs');
 const { join } = require('node:path');
 
 const electronCacheRoot = join(__dirname, '.electron-cache');
+const installerIcon = join(__dirname, 'assets', 'icons', 'indicoink.ico');
+const installerLoadingGif = join(
+  __dirname,
+  'assets',
+  'installer',
+  'indicoink-install.gif',
+);
 const electronZipDir = existsSync(electronCacheRoot)
   ? readdirSync(electronCacheRoot, {
       withFileTypes: true,
@@ -14,14 +21,21 @@ const electronZipDir = existsSync(electronCacheRoot)
 module.exports = {
   packagerConfig: {
     asar: true,
-    icon: join(__dirname, 'assets', 'icons', 'indicoink.ico'),
+    icon: installerIcon,
     electronZipDir: electronZipDir
       ? join(electronCacheRoot, electronZipDir)
       : undefined,
   },
   rebuildConfig: {},
   makers: [
-    { name: '@electron-forge/maker-squirrel', config: { noMsi: true } },
+    {
+      name: '@electron-forge/maker-squirrel',
+      config: {
+        loadingGif: installerLoadingGif,
+        noMsi: true,
+        setupIcon: installerIcon,
+      },
+    },
     { name: '@electron-forge/maker-zip', platforms: ['darwin'] },
     { name: '@electron-forge/maker-deb', config: {} },
     { name: '@electron-forge/maker-rpm', config: {} },
