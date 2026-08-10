@@ -1792,12 +1792,12 @@ describe('App', () => {
     ).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Open notes',
+        name: 'Notes',
       }),
     ).toBeTruthy();
     await user.click(
       screen.getByRole('button', {
-        name: 'Open notes',
+        name: 'Notes',
       }),
     );
     expect(window.indicoInk.ensureNotebookDeck).toHaveBeenCalledWith(

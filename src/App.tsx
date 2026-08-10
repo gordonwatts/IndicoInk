@@ -1904,6 +1904,13 @@ export function App() {
     setViewerMode('notes');
     setDestination('slides');
   };
+  const handleViewerModeChange = (mode: ViewerMode) => {
+    if (mode === 'notes' && selectedAgendaTalk) {
+      void openAgendaTalkNotes(selectedAgendaTalk);
+      return;
+    }
+    setViewerMode(mode);
+  };
   const openAgendaTalkFromIndex = (talk: AgendaTalkSummary) => {
     setSelectedEventId(talk.conferenceId);
     setAgendaDayLabel(talk.dayLabel);
@@ -3839,34 +3846,6 @@ export function App() {
                     icon="back"
                     onClick={() => setDestination('agenda')}
                   />
-                  <SegmentedControl
-                    ariaLabel="Talk workspace"
-                    options={[
-                      { label: 'Slides', value: 'slides' as const },
-                      { label: 'Notes', value: 'notes' as const },
-                    ]}
-                    value={viewerMode}
-                    onChange={(mode) => {
-                      if (mode === 'notes' && selectedAgendaTalk) {
-                        void openAgendaTalkNotes(selectedAgendaTalk);
-                        return;
-                      }
-                      setViewerMode(mode);
-                    }}
-                  />
-                  {viewerMode === 'slides' ? (
-                    <PrimaryButton
-                      icon="pen"
-                      title="Open or create notes for this talk"
-                      onClick={() => {
-                        if (selectedAgendaTalk) {
-                          void openAgendaTalkNotes(selectedAgendaTalk);
-                        }
-                      }}
-                    >
-                      Open notes
-                    </PrimaryButton>
-                  ) : null}
                   <div className="slides-view-link-actions">
                     <PrimaryButton
                       icon="open"
@@ -4031,6 +4010,8 @@ export function App() {
                       title={activeSlideTitle}
                       conferenceId={activeSlideConferenceId}
                       talkId={activeSlideTalkId}
+                      workspaceMode={viewerMode}
+                      onWorkspaceModeChange={handleViewerModeChange}
                       onOpenIndicoEvent={openIndicoEventInApp}
                       onSlideMetricsChange={setSlideViewerMetrics}
                       workspaceDeckId={activeSlideDeckId}
@@ -4051,7 +4032,15 @@ export function App() {
                           <PdfPreview
                             filePath={slideViewerState.filePath}
                             title={`Reference slides for ${activeSlideTitle}`}
-                            readOnly
+                            conferenceId={activeSlideConferenceId}
+                            talkId={activeSlideTalkId}
+                            workspaceDeckId={activeSlideDeckId}
+                            workspaceMode={viewerMode}
+                            onWorkspaceModeChange={handleViewerModeChange}
+                            penThickness={
+                              appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
+                            }
+                            onPenThicknessChange={setPenThickness}
                             onSlideMetricsChange={setSlideViewerMetrics}
                           />
                         ) : (
@@ -4071,6 +4060,12 @@ export function App() {
                         conferenceId={selectedAgendaTalk?.conferenceId ?? null}
                         talkId={selectedAgendaTalk?.id ?? null}
                         workspaceDeckId={notesDeckId}
+                        {...(slideViewerState.kind !== 'ready'
+                          ? {
+                              workspaceMode: viewerMode,
+                              onWorkspaceModeChange: handleViewerModeChange,
+                            }
+                          : {})}
                         penThickness={
                           appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
                         }

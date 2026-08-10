@@ -595,6 +595,8 @@ type PdfPreviewProps = {
   blankPageMode?: boolean;
   workspaceSourceUrl?: string;
   readOnly?: boolean;
+  workspaceMode?: 'slides' | 'notes';
+  onWorkspaceModeChange?: (mode: 'slides' | 'notes') => void;
   title?: string;
   conferenceId?: string | null;
   talkId?: string | null;
@@ -618,6 +620,8 @@ export function PdfPreview({
   blankPageMode = false,
   workspaceSourceUrl,
   readOnly = false,
+  workspaceMode,
+  onWorkspaceModeChange,
   title,
   conferenceId = null,
   talkId = null,
@@ -645,6 +649,9 @@ export function PdfPreview({
   const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
   const [selectedPenThickness, setSelectedPenThickness] =
     React.useState(penThickness);
+  React.useEffect(() => {
+    setSelectedPenThickness(penThickness);
+  }, [penThickness]);
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -3620,6 +3627,17 @@ export function PdfPreview({
               <output>{selectedPenThickness}px</output>
             </label>
           </div>
+          {workspaceMode && onWorkspaceModeChange ? (
+            <SegmentedControl
+              ariaLabel="Talk workspace"
+              options={[
+                { label: 'Slides', value: 'slides' as const },
+                { label: 'Notes', value: 'notes' as const },
+              ]}
+              value={workspaceMode}
+              onChange={onWorkspaceModeChange}
+            />
+          ) : null}
           <SegmentedControl
             options={mouseModeOptions}
             value={mouseMode}
