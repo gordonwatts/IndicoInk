@@ -17,6 +17,7 @@ export type AgendaTalkSummary = {
   materialSummary: string;
   materials: AgendaTalkMaterialSummary[];
   annotatedSlideCount: number;
+  annotatedNotePageCount?: number;
   upstreamStatus?: 'present' | 'changed' | 'missing';
   upstreamSummary?: string;
   entryKind?: 'talk' | 'linked-agenda';

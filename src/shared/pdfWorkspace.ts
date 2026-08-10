@@ -58,6 +58,10 @@ export type PdfWorkspaceSnapshot = {
   zoom: number;
 };
 
+export type NotebookWorkspaceSnapshot = PdfWorkspaceSnapshot & {
+  kind: 'notebook';
+};
+
 export type PdfWorkspaceSaveResult = {
   sourceUrl: string;
   pageCount: number;

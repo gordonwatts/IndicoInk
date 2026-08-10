@@ -13,6 +13,9 @@ export const createTalkId = (conferenceId: string, contributionId: string) =>
 export const createDeckId = (talkId: string, sourceUrl: string) =>
   createStableId('deck', `${talkId}:${sourceUrl}`);
 
+export const createNotebookDeckId = (talkId: string) =>
+  createStableId('notebook', talkId);
+
 export const createSlideId = (deckId: string, slideNumber: number) =>
   createStableId('slide', `${deckId}:${slideNumber}`);
 
@@ -63,6 +66,7 @@ export type Deck = {
   selected: boolean;
   createdAt: number;
   updatedAt: number;
+  kind?: 'pdf' | 'notebook';
   upstreamStatus?: 'present' | 'changed' | 'missing';
 };
 

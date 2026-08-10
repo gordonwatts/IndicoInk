@@ -505,6 +505,12 @@ input:focus-visible {
   min-width: 0;
 }
 
+.page-stack--slides.is-notes-mode {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .page-stack--slides .pdf-preview,
 .page-stack--slides .pdf-preview-stage,
 .page-stack--slides .pdf-preview-pages {
@@ -922,6 +928,91 @@ input:focus-visible {
 .pdf-preview {
   display: grid;
   gap: 6px;
+}
+
+.notes-workspace {
+  display: grid;
+  --notes-reference-ratio: 0.42;
+  grid-template-columns: minmax(
+      280px,
+      calc(var(--notes-reference-ratio) * 100%)
+    ) 8px minmax(360px, 1fr);
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-page);
+}
+
+.notes-reference-pane,
+.notes-editor-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.notes-workspace-divider {
+  position: relative;
+  z-index: 1;
+  cursor: col-resize;
+  background: var(--border-subtle);
+  touch-action: none;
+}
+
+.notes-workspace-divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.notes-workspace-divider::after {
+  content: '';
+  position: absolute;
+  inset: 0 -18px;
+}
+
+.notes-reference-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.notes-reference-pane {
+  padding: 12px;
+  background: var(--surface-panel);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.notes-editor-pane {
+  padding-inline: 12px;
+}
+
+@media (orientation: portrait) {
+  .notes-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(
+        220px,
+        calc(var(--notes-reference-ratio) * 100%)
+      ) 8px minmax(360px, 1fr);
+  }
+
+  .notes-workspace-divider {
+    cursor: row-resize;
+  }
+
+  .notes-reference-pane {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
+.pdf-preview--read-only .pdf-preview-toolbar,
+.pdf-preview--read-only .pdf-preview-navigator {
+  display: none;
 }
 
 .pdf-preview-toolbar {

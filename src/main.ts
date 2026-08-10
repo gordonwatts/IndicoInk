@@ -37,6 +37,7 @@ import type {
   ExportDeckSnapshot,
   ExportSlideSnapshot,
   ExportTalkSnapshot,
+  ExportNotePageSnapshot,
 } from './shared/exportNotes';
 import { DeckCacheManager } from './deckCache';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
@@ -181,7 +182,9 @@ const buildConferenceExportSnapshot = async (
     [];
 
   for (const talk of talks) {
-    const decks = await store.listDecksByTalk(talk.id);
+    const decks = (await store.listDecksByTalk(talk.id)).filter(
+      (deck) => deck.kind !== 'notebook',
+    );
     const exportDecks: ExportDeckSnapshot[] = [];
 
     for (const deck of decks) {
@@ -240,7 +243,32 @@ const buildConferenceExportSnapshot = async (
       }
     }
 
-    if (exportDecks.length > 0) {
+    const notebookDeck = (await store.listDecksByTalk(talk.id)).find(
+      (deck) => deck.kind === 'notebook',
+    );
+    const exportNotes: ExportNotePageSnapshot[] = [];
+    if (notebookDeck) {
+      const noteSlides = await store.listSlidesByDeck(notebookDeck.id);
+      for (const noteSlide of noteSlides) {
+        if (!noteSlide.annotated) {
+          continue;
+        }
+        const annotations = await store.listAnnotationsBySlide(noteSlide.id);
+        if (!annotations.length) {
+          continue;
+        }
+        exportNotes.push({
+          id: noteSlide.id,
+          pageNumber: noteSlide.slideNumber,
+          referenceSlideNumber: null,
+          annotations: annotations.map((annotation) =>
+            toExportAnnotation(annotation),
+          ),
+        });
+      }
+    }
+
+    if (exportDecks.length > 0 || exportNotes.length > 0) {
       exportTalks.push({
         id: talk.id,
         contributionId: talk.contributionId,
@@ -253,6 +281,7 @@ const buildConferenceExportSnapshot = async (
         room: talk.room,
         bookmarked: talk.bookmarked,
         decks: exportDecks,
+        ...(exportNotes.length ? { notes: exportNotes } : {}),
       });
     }
   }
@@ -698,6 +727,12 @@ ipcMain.handle(
   'persistence:load-deck-workspace',
   async (_event, deckId: string) =>
     getPersistenceStore().loadDeckPdfWorkspace(deckId),
+);
+
+ipcMain.handle(
+  'persistence:ensure-notebook-deck',
+  async (_event, talkId: string) =>
+    getPersistenceStore().ensureNotebookDeck(talkId),
 );
 
 ipcMain.handle(

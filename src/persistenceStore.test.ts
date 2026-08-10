@@ -164,7 +164,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(7);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(8);
     versionDb.close();
     expect(existsSync(`${dbPath}.pre-node-sqlite-v7.bak`)).toBe(true);
     const backupDb = new SQL.Database(
@@ -752,6 +752,62 @@ describe('persistence store', () => {
       { id: 'conference-old', lastOpenedAt: 1_700_000_200_000 },
       { id: 'conference-new' },
     ]);
+    await store.close();
+  });
+
+  it('creates one talk-owned notebook deck and restores its workspace', async () => {
+    const dbPath = createTempDbPath('notebook');
+    const store = new PersistenceStore(dbPath, () => 1_700_000_000_000);
+    await store.upsertConference({
+      id: 'conference-notebook',
+      sourceUrl: 'https://example.org/event/notebook',
+      title: 'Notebook Event',
+      dates: 'June 1, 2026',
+      host: 'example.org',
+      lastOpenedAt: null,
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+    });
+    await store.upsertTalk({
+      id: 'talk-notebook',
+      conferenceId: 'conference-notebook',
+      contributionId: 'notebook-talk',
+      contributionUrl:
+        'https://example.org/event/notebook/contributions/notebook-talk',
+      title: 'Notebook talk',
+      speaker: 'Speaker',
+      sessionTitle: 'Session',
+      startsAt: null,
+      endsAt: null,
+      room: 'Room',
+      bookmarked: false,
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+    });
+
+    const first = await store.ensureNotebookDeck('talk-notebook');
+    const second = await store.ensureNotebookDeck('talk-notebook');
+    expect(first.id).toBe(second.id);
+    expect(first.kind).toBe('notebook');
+
+    await store.saveDeckPdfWorkspaceChanges({
+      sourceUrl: first.sourceUrl,
+      conferenceId: first.conferenceId,
+      talkId: first.talkId,
+      deckId: first.id,
+      pageCount: 1,
+      revision: 1,
+      changes: [],
+      history: createWorkspaceHistory(),
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+
+    await expect(store.loadDeckPdfWorkspace(first.id)).resolves.toEqual(
+      expect.objectContaining({ pageCount: 1, deckId: first.id }),
+    );
     await store.close();
   });
 });

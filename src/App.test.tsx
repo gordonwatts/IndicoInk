@@ -96,6 +96,18 @@ describe('App', () => {
         savedAt: Date.now(),
       }),
       loadDeckWorkspaceState: vi.fn().mockResolvedValue(null),
+      ensureNotebookDeck: vi.fn().mockResolvedValue({
+        id: 'notebook-test',
+        conferenceId: 'conference-test',
+        talkId: 'talk-test',
+        sourceUrl: 'indicoink://notebook/talk-test',
+        displayName: 'Talk notes',
+        mimeType: 'application/x-indicoink-notebook',
+        selected: false,
+        kind: 'notebook',
+        createdAt: 0,
+        updatedAt: 0,
+      }),
       saveDeckWorkspaceChanges: vi.fn().mockResolvedValue({
         sourceUrl: '',
         pageCount: 0,
@@ -1776,6 +1788,27 @@ describe('App', () => {
     expect(
       await screen.findByRole('button', {
         name: 'Home',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Notes',
+      }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Notes',
+      }),
+    );
+    expect(window.indicoInk.ensureNotebookDeck).toHaveBeenCalledWith(
+      'talk-chooser',
+    );
+    expect(
+      document.querySelector('.page-stack--slides.is-notes-mode'),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole('button', {
+        name: 'Notes',
       }),
     ).toBeTruthy();
     expect(

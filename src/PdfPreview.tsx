@@ -592,6 +592,11 @@ const MemoizedPdfPageFrame = React.memo(
 
 type PdfPreviewProps = {
   filePath: string | null;
+  blankPageMode?: boolean;
+  workspaceSourceUrl?: string;
+  readOnly?: boolean;
+  workspaceMode?: 'slides' | 'notes';
+  onWorkspaceModeChange?: (mode: 'slides' | 'notes') => void;
   title?: string;
   conferenceId?: string | null;
   talkId?: string | null;
@@ -612,6 +617,11 @@ export const PEN_POINTER_MARKER_RADIUS = 2.5;
 
 export function PdfPreview({
   filePath,
+  blankPageMode = false,
+  workspaceSourceUrl,
+  readOnly = false,
+  workspaceMode,
+  onWorkspaceModeChange,
   title,
   conferenceId = null,
   talkId = null,
@@ -639,6 +649,9 @@ export function PdfPreview({
   const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
   const [selectedPenThickness, setSelectedPenThickness] =
     React.useState(penThickness);
+  React.useEffect(() => {
+    setSelectedPenThickness(penThickness);
+  }, [penThickness]);
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -1061,8 +1074,9 @@ export function PdfPreview({
             ? 'erase'
             : 'draw';
 
-      const interactionMode =
-        toolState.renderedTool === 'touch'
+      const interactionMode = readOnly
+        ? 'pan'
+        : toolState.renderedTool === 'touch'
           ? 'pan'
           : manualTool === 'text'
             ? 'text'
@@ -1085,7 +1099,7 @@ export function PdfPreview({
         ),
       };
     },
-    [manualTool, mouseMode],
+    [manualTool, mouseMode, readOnly],
   );
 
   const flushPointerDiagnostics = React.useCallback(() => {
@@ -1305,6 +1319,58 @@ export function PdfPreview({
     state.kind === 'loading' || state.kind === 'ready' || state.kind === 'error'
       ? state.pageCount
       : 0;
+  const persistedPageCount = blankPageMode
+    ? Math.max(
+        0,
+        currentPageCount -
+          (strokesByPage[currentPageCount - 1]?.length ||
+          textNotesByPage[currentPageCount - 1]?.length
+            ? 0
+            : 1),
+      )
+    : currentPageCount;
+
+  React.useEffect(() => {
+    if (!blankPageMode || state.kind !== 'ready' || currentPageCount === 0) {
+      return;
+    }
+
+    const lastPageIndex = currentPageCount - 1;
+    const lastPageHasContent =
+      (strokesByPage[lastPageIndex]?.length ?? 0) > 0 ||
+      (textNotesByPage[lastPageIndex]?.length ?? 0) > 0;
+    if (!lastPageHasContent) {
+      return;
+    }
+
+    const nextPageCount = currentPageCount + 1;
+    const nextStrokes = [...strokesByPageRef.current, [] as InkStroke[]];
+    const nextTextNotes = [...textNotesByPageRef.current, [] as TextNote[]];
+    strokesByPageRef.current = nextStrokes;
+    textNotesByPageRef.current = nextTextNotes;
+    setStrokesByPage(nextStrokes);
+    setTextNotesByPage(nextTextNotes);
+    setState((currentState) => {
+      if (
+        currentState.kind !== 'ready' ||
+        currentState.pageCount !== currentPageCount
+      ) {
+        return currentState;
+      }
+      return {
+        ...currentState,
+        pageCount: nextPageCount,
+        pageSizes: [...currentState.pageSizes, { width: 800, height: 1100 }],
+        pageStatuses: [...currentState.pageStatuses, 'ready'],
+      };
+    });
+  }, [
+    blankPageMode,
+    currentPageCount,
+    state.kind,
+    strokesByPage,
+    textNotesByPage,
+  ]);
   const readyPageStatuses =
     state.kind === 'ready' ? state.pageStatuses : undefined;
   const isRefreshingRenderedPages =
@@ -2015,7 +2081,9 @@ export function PdfPreview({
 
   const flushPersistenceSave = React.useCallback(async () => {
     if (
-      !filePath ||
+      (!filePath && !blankPageMode) ||
+      (blankPageMode && !workspaceDeckId) ||
+      readOnly ||
       state.kind !== 'ready' ||
       !persistenceHydratedRef.current
     ) {
@@ -2037,21 +2105,24 @@ export function PdfPreview({
     }
 
     const capturedPages: WorkspacePages = {
-      strokesByPage: strokesByPageRef.current,
-      textNotesByPage: textNotesByPageRef.current,
+      strokesByPage: strokesByPageRef.current.slice(0, persistedPageCount),
+      textNotesByPage: textNotesByPageRef.current.slice(0, persistedPageCount),
     };
     const revision = persistenceRevisionRef.current + 1;
     persistenceRevisionRef.current = revision;
     const batch = {
-      sourceUrl: filePath,
-      pageCount: currentPageCount,
+      sourceUrl: workspaceSourceUrl ?? filePath ?? '',
+      pageCount: persistedPageCount,
       revision,
       changes: diffWorkspaceAnnotations(
         persistedWorkspacePagesRef.current,
         capturedPages,
       ),
       history: historyRef.current,
-      currentSlideNumber: currentSlideNumberRef.current,
+      currentSlideNumber: Math.min(
+        currentSlideNumberRef.current,
+        persistedPageCount,
+      ),
       scrollLeft: getScrollViewportElement(scrollContainerRef).scrollLeft,
       scrollTop: getScrollViewportElement(scrollContainerRef).scrollTop,
       zoom: zoomLevel,
@@ -2088,10 +2159,14 @@ export function PdfPreview({
     conferenceId,
     currentPageCount,
     filePath,
+    blankPageMode,
+    persistedPageCount,
+    readOnly,
     scrollContainerRef,
     state.kind,
     talkId,
     workspaceDeckId,
+    workspaceSourceUrl,
     zoomLevel,
   ]);
   flushPersistenceSaveRef.current = flushPersistenceSave;
@@ -2111,7 +2186,9 @@ export function PdfPreview({
 
   const schedulePersistenceSave = React.useCallback(() => {
     if (
-      !filePath ||
+      (!filePath && !blankPageMode) ||
+      (blankPageMode && !workspaceDeckId) ||
+      readOnly ||
       state.kind !== 'ready' ||
       !persistenceHydratedRef.current
     ) {
@@ -2129,11 +2206,13 @@ export function PdfPreview({
         void flushPersistenceSaveRef.current();
       }, 2_000);
     }
-  }, [filePath, state.kind]);
+  }, [blankPageMode, filePath, readOnly, state.kind, workspaceDeckId]);
 
   React.useEffect(() => {
     if (
-      !filePath ||
+      (!filePath && !blankPageMode) ||
+      (blankPageMode && !workspaceDeckId) ||
+      readOnly ||
       state.kind !== 'ready' ||
       !persistenceHydratedRef.current
     ) {
@@ -2142,8 +2221,10 @@ export function PdfPreview({
 
     schedulePersistenceSave();
   }, [
+    blankPageMode,
     filePath,
     schedulePersistenceSave,
+    readOnly,
     state.kind,
     strokesByPage,
     textNotesByPage,
@@ -2765,7 +2846,7 @@ export function PdfPreview({
 
     const handleScroll = () => {
       if (
-        !filePath ||
+        (!filePath && !blankPageMode) ||
         state.kind !== 'ready' ||
         !persistenceHydratedRef.current
       ) {
@@ -2782,13 +2863,19 @@ export function PdfPreview({
     return () => {
       scrollContainer.removeEventListener('scroll', handleScroll);
     };
-  }, [filePath, schedulePersistenceSave, scrollContainerRef, state.kind]);
+  }, [
+    blankPageMode,
+    filePath,
+    schedulePersistenceSave,
+    scrollContainerRef,
+    state.kind,
+  ]);
 
   React.useEffect(() => {
     let cancelled = false;
     let loadingTask: PDFDocumentLoadingTask | null = null;
 
-    if (!filePath) {
+    if (!filePath && !blankPageMode) {
       pageCanvasRefs.current = [];
       setState({ kind: 'idle' });
       setStrokesByPage([]);
@@ -2825,6 +2912,101 @@ export function PdfPreview({
           window.clearTimeout(persistenceSaveTimerRef.current);
         }
         void loadingTask?.destroy?.();
+      };
+    }
+
+    if (blankPageMode) {
+      const loadBlankWorkspace = async () => {
+        const sourceKey = `notebook:${workspaceDeckId ?? workspaceSourceUrl ?? 'local'}`;
+        const shouldHydrateWorkspace =
+          workspaceSourceKeyRef.current !== sourceKey ||
+          !persistenceHydratedRef.current;
+        workspaceSourceKeyRef.current = sourceKey;
+        persistenceHydratedRef.current = false;
+        setPersistenceError(null);
+
+        const savedWorkspace = workspaceDeckId
+          ? await window.indicoInk.loadDeckWorkspaceState(workspaceDeckId)
+          : null;
+        if (cancelled) {
+          return;
+        }
+
+        const savedPageCount = savedWorkspace?.pageCount ?? 0;
+        const loadedStrokes = savedWorkspace?.strokesByPage ?? [];
+        const loadedNotes = savedWorkspace?.textNotesByPage ?? [];
+        const pageCount = savedPageCount + 1;
+        const strokes = [
+          ...loadedStrokes.slice(0, savedPageCount),
+          [] as InkStroke[],
+        ];
+        const notes = [
+          ...loadedNotes.slice(0, savedPageCount),
+          [] as TextNote[],
+        ];
+        const history = savedWorkspace?.history ?? createWorkspaceHistory();
+        strokesByPageRef.current = strokes;
+        textNotesByPageRef.current = notes;
+        persistedWorkspacePagesRef.current = {
+          strokesByPage: loadedStrokes.slice(0, savedPageCount),
+          textNotesByPage: loadedNotes.slice(0, savedPageCount),
+        };
+        historyRef.current = history;
+        persistenceRevisionRef.current = savedWorkspace?.revision ?? 0;
+        currentSlideNumberRef.current = savedWorkspace?.currentSlideNumber ?? 1;
+        setCurrentSlideNumber(currentSlideNumberRef.current);
+        setStrokesByPage(strokes);
+        setTextNotesByPage(notes);
+        setHistory(history);
+        setPointerMarker(null);
+        setTextNoteDraft(null);
+        setTextNoteDragState(null);
+        pendingWorkspaceRestoreRef.current = shouldHydrateWorkspace
+          ? {
+              sourceUrl: workspaceSourceUrl ?? '',
+              ...(conferenceId ? { conferenceId } : {}),
+              ...(talkId ? { talkId } : {}),
+              ...(workspaceDeckId ? { deckId: workspaceDeckId } : {}),
+              pageCount: savedPageCount,
+              ...(savedWorkspace?.revision !== undefined
+                ? { revision: savedWorkspace.revision }
+                : {}),
+              strokesByPage: loadedStrokes,
+              textNotesByPage: loadedNotes,
+              history,
+              currentSlideNumber: savedWorkspace?.currentSlideNumber ?? 1,
+              scrollLeft: savedWorkspace?.scrollLeft ?? 0,
+              scrollTop: savedWorkspace?.scrollTop ?? 0,
+              zoom: savedWorkspace?.zoom ?? 1,
+            }
+          : null;
+        setState({
+          kind: 'ready',
+          label: 'Notes ready.',
+          pageCount,
+          pageSizes: Array.from({ length: pageCount }, () => ({
+            width: 800,
+            height: 1100,
+          })),
+          pageStatuses: Array.from(
+            { length: pageCount },
+            () => 'ready' as const,
+          ),
+        });
+      };
+
+      void loadBlankWorkspace().catch((error) => {
+        if (!cancelled) {
+          setState(
+            createErrorPreviewState(
+              error instanceof Error ? error.message : 'Notes preview failed.',
+            ),
+          );
+        }
+      });
+
+      return () => {
+        cancelled = true;
       };
     }
 
@@ -2895,8 +3077,9 @@ export function PdfPreview({
         ? `deck:${workspaceDeckId}`
         : `pdf:${filePath}`;
       const shouldHydrateWorkspace =
-        workspaceSourceKeyRef.current !== workspaceSourceKey ||
-        !persistenceHydratedRef.current;
+        !readOnly &&
+        (workspaceSourceKeyRef.current !== workspaceSourceKey ||
+          !persistenceHydratedRef.current);
       workspaceSourceKeyRef.current = workspaceSourceKey;
       if (state.kind === 'ready' || state.kind === 'loading') {
         if (pendingViewportRestoreRef.current?.mode === 'focal') {
@@ -3219,10 +3402,20 @@ export function PdfPreview({
       }
       void loadingTask?.destroy?.();
     };
-  }, [filePath, previewViewportWidth, workspaceDeckId, zoomLevel]);
+  }, [
+    blankPageMode,
+    conferenceId,
+    filePath,
+    previewViewportWidth,
+    readOnly,
+    talkId,
+    workspaceDeckId,
+    workspaceSourceUrl,
+    zoomLevel,
+  ]);
 
   React.useEffect(() => {
-    if (state.kind !== 'ready' || !filePath) {
+    if (state.kind !== 'ready' || (!filePath && !blankPageMode)) {
       return;
     }
 
@@ -3289,7 +3482,13 @@ export function PdfPreview({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [filePath, readyPageStatuses, scrollContainerRef, state.kind]);
+  }, [
+    blankPageMode,
+    filePath,
+    readyPageStatuses,
+    scrollContainerRef,
+    state.kind,
+  ]);
 
   React.useLayoutEffect(() => {
     const viewportRestore = pendingViewportRestoreRef.current;
@@ -3367,7 +3566,7 @@ export function PdfPreview({
   }, [currentPageCount, currentSlideNumber, onSlideMetricsChange]);
   return (
     <section
-      className="pdf-preview"
+      className={`pdf-preview${readOnly ? ' pdf-preview--read-only' : ''}`}
       aria-label={title ? `PDF preview for ${title}` : 'PDF preview'}
     >
       <div className="pdf-preview-toolbar" aria-label="Annotation toolbar">
@@ -3428,6 +3627,17 @@ export function PdfPreview({
               <output>{selectedPenThickness}px</output>
             </label>
           </div>
+          {workspaceMode && onWorkspaceModeChange ? (
+            <SegmentedControl
+              ariaLabel="Talk workspace"
+              options={[
+                { label: 'Slides', value: 'slides' as const },
+                { label: 'Notes', value: 'notes' as const },
+              ]}
+              value={workspaceMode}
+              onChange={onWorkspaceModeChange}
+            />
+          ) : null}
           <SegmentedControl
             options={mouseModeOptions}
             value={mouseMode}

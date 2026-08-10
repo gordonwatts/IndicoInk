@@ -2,6 +2,7 @@ import { getStrokeWidth } from './strokeTools';
 import type {
   ConferenceExportSnapshot,
   ExportRenderedSlide,
+  ExportRenderedNotePage,
   ExportRenderedSlideLink,
   ExportSlideAnnotation,
   ExportTalkSnapshot,
@@ -387,6 +388,39 @@ export const renderAnnotatedSlidePng = async ({
   }
 };
 
+export const renderAnnotatedNotePagePng = async ({
+  annotations,
+  createCanvas,
+  width = 1600,
+  height = 2200,
+}: {
+  annotations: ExportSlideAnnotation[];
+  createCanvas?: () => HTMLCanvasElement;
+  width?: number;
+  height?: number;
+}): Promise<{ imageDataUrl: string }> => {
+  const canvas =
+    createCanvas?.() ?? globalThis.document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Canvas rendering is unavailable for note export.');
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  for (const annotation of annotations) {
+    if (annotation.kind === 'stroke') {
+      renderStroke(context, width, height, annotation);
+    } else {
+      renderTextNote(context, width, height, annotation);
+    }
+  }
+
+  return { imageDataUrl: canvas.toDataURL('image/png') };
+};
+
 const formatTalkDateRange = (talk: ExportTalkSnapshot) => {
   if (talk.startsAt != null && talk.endsAt != null) {
     const durationMinutes = Math.max(
@@ -413,6 +447,7 @@ const formatSlideImage = (slideNumber: number, imageDataUrl: string) =>
 export const buildConferenceNotesMarkdown = (
   snapshot: ConferenceExportSnapshot,
   renderedSlides: ExportRenderedSlide[],
+  renderedNotePages: ExportRenderedNotePage[] = [],
 ) => {
   const renderedBySlide = new Map(
     renderedSlides.map(
@@ -422,6 +457,12 @@ export const buildConferenceNotesMarkdown = (
           slide,
         ] as const,
     ),
+  );
+  const renderedNotesByTalk = new Map(
+    renderedNotePages.map((page) => [
+      `${page.talkId}:${page.pageNumber}`,
+      page,
+    ]),
   );
 
   const lines: string[] = [];
@@ -473,6 +514,24 @@ export const buildConferenceNotesMarkdown = (
         }
         lines.push('');
       }
+    }
+
+    for (const note of talk.notes ?? []) {
+      const rendered = renderedNotesByTalk.get(`${talk.id}:${note.pageNumber}`);
+      if (!rendered) {
+        continue;
+      }
+
+      lines.push(`### Note page ${note.pageNumber}`);
+      lines.push('');
+      if (note.referenceSlideNumber !== null) {
+        lines.push(`- Reference slide: ${note.referenceSlideNumber}`);
+        lines.push('');
+      }
+      lines.push(
+        `- ![Note page ${note.pageNumber}](<${rendered.imageDataUrl.replaceAll('>', '%3E')}>)`,
+      );
+      lines.push('');
     }
   }
 
