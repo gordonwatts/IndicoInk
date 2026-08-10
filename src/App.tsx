@@ -3838,7 +3838,11 @@ export function App() {
           )}
 
           {destination === 'slides' && (
-            <section className="page-stack page-stack--slides">
+            <section
+              className={`page-stack page-stack--slides${
+                viewerMode === 'notes' ? ' is-notes-mode' : ''
+              }`}
+            >
               <div className="slides-view-controls">
                 <div className="slides-view-controls-row">
                   <IconButton

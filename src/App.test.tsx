@@ -1804,6 +1804,9 @@ describe('App', () => {
       'talk-chooser',
     );
     expect(
+      document.querySelector('.page-stack--slides.is-notes-mode'),
+    ).toBeTruthy();
+    expect(
       await screen.findByRole('button', {
         name: 'Notes',
       }),
