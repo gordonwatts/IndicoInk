@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import type { OpenAiConfigurationSummary } from './shared/openAi';
 
 type SafeStorageLike = {
   isEncryptionAvailable(): boolean;
@@ -17,12 +18,13 @@ type StoredApiKey =
     };
 
 type StoredCredentialFile = {
-  version: 1;
+  version: 1 | 2;
   apiKeys: Record<string, StoredApiKey>;
+  openAiApiKey?: StoredApiKey;
 };
 
 const emptyFile = (): StoredCredentialFile => ({
-  version: 1,
+  version: 2,
   apiKeys: {},
 });
 
@@ -46,8 +48,9 @@ export class IndicoCredentialStore {
     const raw = await readFile(this.filePath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<StoredCredentialFile>;
     return {
-      version: 1,
+      version: 2,
       apiKeys: parsed.apiKeys ?? {},
+      ...(parsed.openAiApiKey ? { openAiApiKey: parsed.openAiApiKey } : {}),
     };
   }
 
@@ -111,5 +114,57 @@ export class IndicoCredentialStore {
 
   async deleteApiKey(origin: string): Promise<void> {
     await this.clearApiKey(origin);
+  }
+
+  async getOpenAiApiKey(): Promise<string | null> {
+    this.assertEncryptionAvailable();
+    const state = await this.readState();
+    if (!state.openAiApiKey) {
+      return null;
+    }
+
+    return this.safeStorage.decryptString(
+      Buffer.from(this.getEncryptedApiKey(state.openAiApiKey), 'base64'),
+    );
+  }
+
+  async saveOpenAiApiKey(apiKey: string): Promise<void> {
+    this.assertEncryptionAvailable();
+    const state = await this.readState();
+    state.openAiApiKey = {
+      encryptedApiKey: this.safeStorage
+        .encryptString(apiKey)
+        .toString('base64'),
+      updatedAt: Date.now(),
+    };
+    await this.writeState(state);
+  }
+
+  async getOpenAiConfigurationSummary(
+    configuration: Omit<
+      OpenAiConfigurationSummary,
+      'hasApiKey' | 'apiKeyUpdatedAt'
+    >,
+  ): Promise<OpenAiConfigurationSummary> {
+    this.assertEncryptionAvailable();
+    const state = await this.readState();
+    const storedApiKey = state.openAiApiKey;
+    return {
+      ...configuration,
+      hasApiKey: Boolean(storedApiKey),
+      apiKeyUpdatedAt:
+        storedApiKey && typeof storedApiKey !== 'string'
+          ? storedApiKey.updatedAt
+          : storedApiKey
+            ? 0
+            : null,
+    };
+  }
+
+  async deleteOpenAiApiKey(): Promise<void> {
+    this.assertEncryptionAvailable();
+    const state = await this.readState();
+    delete state.openAiApiKey;
+    await this.writeState(state);
   }
 }

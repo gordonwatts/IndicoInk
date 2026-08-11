@@ -4,9 +4,16 @@ export type LibraryEventSummary = {
   title: string;
   dates: string;
   host: string;
+  sourceKind: 'indico' | 'web';
   lastOpened: string;
   annotationSummary: string;
   cacheStatus: string;
+};
+
+export type LlmConfigurationRequired = {
+  kind: 'llm-configuration-required';
+  reason: 'missing' | 'authentication-failed';
+  message: string;
 };
 
 export type ImportedConferenceResult = {
@@ -30,7 +37,8 @@ export type OpenLibraryEventApiKeyRequired = {
 
 export type OpenLibraryEventResult =
   | OpenLibraryEventSuccess
-  | OpenLibraryEventApiKeyRequired;
+  | OpenLibraryEventApiKeyRequired
+  | LlmConfigurationRequired;
 
 export type RefreshConflict = {
   talkId: string;
@@ -63,4 +71,5 @@ export type RefreshLibraryEventResult =
       conferenceId: string;
       title: string;
       conflicts: RefreshConflict[];
-    };
+    }
+  | (LlmConfigurationRequired & { conferenceId: string });

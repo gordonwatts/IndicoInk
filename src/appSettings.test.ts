@@ -17,13 +17,22 @@ describe('appSettings', () => {
     expect(loadAppSettings(userDataDir)).toEqual({
       recordLogging: false,
       penThickness: 2,
+      openAiBaseUrl: 'https://api.openai.com/v1',
+      openAiModel: 'gpt-5.6-sol',
+      openAiReasoningEffort: 'medium',
     });
   });
 
   it('round-trips the logging setting through disk', () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'indicoink-settings-'));
 
-    saveAppSettings(userDataDir, { recordLogging: true, penThickness: 6 });
+    saveAppSettings(userDataDir, {
+      recordLogging: true,
+      penThickness: 6,
+      openAiBaseUrl: 'https://example.test/v1/',
+      openAiModel: 'test-model',
+      openAiReasoningEffort: 'high',
+    });
 
     expect(
       readFileSync(join(userDataDir, 'indicoink-settings.json'), 'utf8'),
@@ -31,6 +40,9 @@ describe('appSettings', () => {
     expect(loadAppSettings(userDataDir)).toEqual({
       recordLogging: true,
       penThickness: 6,
+      openAiBaseUrl: 'https://example.test/v1',
+      openAiModel: 'test-model',
+      openAiReasoningEffort: 'high',
     });
   });
 
@@ -40,10 +52,16 @@ describe('appSettings', () => {
     ).toEqual({
       recordLogging: false,
       penThickness: 8,
+      openAiBaseUrl: 'https://api.openai.com/v1',
+      openAiModel: 'gpt-5.6-sol',
+      openAiReasoningEffort: 'medium',
     });
     expect(coerceAppSettings(null)).toEqual({
       recordLogging: false,
       penThickness: 2,
+      openAiBaseUrl: 'https://api.openai.com/v1',
+      openAiModel: 'gpt-5.6-sol',
+      openAiReasoningEffort: 'medium',
     });
   });
 });

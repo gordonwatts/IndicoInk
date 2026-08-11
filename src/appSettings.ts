@@ -3,6 +3,12 @@ import { join } from 'node:path';
 
 import type { AppSettings } from './shared/appSettings';
 import {
+  OPENAI_DEFAULT_BASE_URL,
+  OPENAI_DEFAULT_MODEL,
+  OPENAI_REASONING_EFFORTS,
+  type OpenAiReasoningEffort,
+} from './shared/openAi';
+import {
   DEFAULT_PEN_THICKNESS,
   MAX_PEN_THICKNESS,
   MIN_PEN_THICKNESS,
@@ -13,7 +19,24 @@ const appSettingsFileName = 'indicoink-settings.json';
 export const defaultAppSettings: AppSettings = {
   recordLogging: false,
   penThickness: DEFAULT_PEN_THICKNESS,
+  openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
+  openAiModel: OPENAI_DEFAULT_MODEL,
+  openAiReasoningEffort: 'medium',
 };
+
+const normalizeNonEmptyString = (value: unknown, fallback: string) =>
+  typeof value === 'string' && value.trim() ? value.trim() : fallback;
+
+const normalizeOpenAiBaseUrl = (value: unknown) =>
+  normalizeNonEmptyString(value, OPENAI_DEFAULT_BASE_URL).replace(/\/+$/, '');
+
+const normalizeOpenAiReasoningEffort = (
+  value: unknown,
+): OpenAiReasoningEffort =>
+  typeof value === 'string' &&
+  OPENAI_REASONING_EFFORTS.includes(value as OpenAiReasoningEffort)
+    ? (value as OpenAiReasoningEffort)
+    : 'medium';
 
 const normalizePenThickness = (value: unknown) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -28,14 +51,28 @@ const normalizeAppSettings = (value: unknown): AppSettings => {
     return defaultAppSettings;
   }
 
-  const { recordLogging, penThickness } = value as {
+  const {
+    recordLogging,
+    penThickness,
+    openAiBaseUrl,
+    openAiModel,
+    openAiReasoningEffort,
+  } = value as {
     recordLogging?: unknown;
     penThickness?: unknown;
+    openAiBaseUrl?: unknown;
+    openAiModel?: unknown;
+    openAiReasoningEffort?: unknown;
   };
 
   return {
     recordLogging: recordLogging === true,
     penThickness: normalizePenThickness(penThickness),
+    openAiBaseUrl: normalizeOpenAiBaseUrl(openAiBaseUrl),
+    openAiModel: normalizeNonEmptyString(openAiModel, OPENAI_DEFAULT_MODEL),
+    openAiReasoningEffort: normalizeOpenAiReasoningEffort(
+      openAiReasoningEffort,
+    ),
   };
 };
 
@@ -69,6 +106,9 @@ export const saveAppSettings = (
       {
         recordLogging: settings.recordLogging,
         penThickness: settings.penThickness,
+        openAiBaseUrl: settings.openAiBaseUrl,
+        openAiModel: settings.openAiModel,
+        openAiReasoningEffort: settings.openAiReasoningEffort,
       },
       null,
       2,

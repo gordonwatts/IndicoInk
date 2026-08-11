@@ -80,7 +80,26 @@ describe('App', () => {
       getAppSettings: vi.fn().mockResolvedValue({
         recordLogging: false,
         penThickness: 2,
+        openAiBaseUrl: 'https://api.openai.com/v1',
+        openAiModel: 'gpt-5.6-sol',
+        openAiReasoningEffort: 'medium',
       }),
+      getOpenAiConfiguration: vi.fn().mockResolvedValue({
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'medium',
+        hasApiKey: false,
+        apiKeyUpdatedAt: null,
+      }),
+      saveOpenAiConfiguration: vi.fn().mockResolvedValue({
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'medium',
+        hasApiKey: true,
+        apiKeyUpdatedAt: 1,
+      }),
+      deleteOpenAiApiKey: vi.fn().mockResolvedValue(undefined),
+      onWebAgendaProgress: vi.fn().mockReturnValue(() => {}),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       onIndicoEventUrlRequested: vi.fn().mockReturnValue(() => {}),
       openPdf: vi.fn().mockResolvedValue({
@@ -171,6 +190,9 @@ describe('App', () => {
       setAppSettings: vi.fn().mockResolvedValue({
         recordLogging: false,
         penThickness: 2,
+        openAiBaseUrl: 'https://api.openai.com/v1',
+        openAiModel: 'gpt-5.6-sol',
+        openAiReasoningEffort: 'medium',
       }),
       showExportSaveDialog: vi.fn().mockResolvedValue({
         canceled: true,
@@ -309,7 +331,11 @@ describe('App', () => {
       'http://example.com/not-an-indico-event',
     );
 
-    expect(screen.getByText('Use an https:// Indico event URL.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Use https://. http:// is allowed only for local testing.',
+      ),
+    ).toBeTruthy();
 
     await user.clear(
       screen.getByRole('textbox', {
@@ -323,7 +349,11 @@ describe('App', () => {
       'https://indico.example.org/event/example-2026',
     );
 
-    expect(screen.queryByText('Use an https:// Indico event URL.')).toBeNull();
+    expect(
+      screen.queryByText(
+        'Use https://. http:// is allowed only for local testing.',
+      ),
+    ).toBeNull();
 
     await user.click(
       screen.getByRole('button', {
@@ -530,6 +560,105 @@ describe('App', () => {
     expect(screen.getByText('Online only')).toBeTruthy();
   });
 
+  it('configures OpenAI on first generic webpage import and retries immediately', async () => {
+    const user = userEvent.setup();
+    const webEvent = {
+      id: 'conference-web-opened',
+      sourceUrl: 'https://events.example.org/workshop',
+      sourceKind: 'web' as const,
+      title: 'Web Workshop',
+      dates: 'August 3-5, 2026',
+      host: 'events.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([webEvent]);
+    window.indicoInk.openLibraryEvent = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: 'llm-configuration-required',
+        reason: 'missing-configuration',
+        message: 'Configure OpenAI agenda extraction to open this webpage.',
+      })
+      .mockResolvedValueOnce({
+        kind: 'opened',
+        result: {
+          conferenceId: webEvent.id,
+          title: webEvent.title,
+          talkCount: 12,
+          deckCount: 3,
+          savedAt: Date.now(),
+        },
+      });
+
+    render(<App />);
+    await user.type(
+      screen.getByRole('textbox', { name: 'Event URL' }),
+      webEvent.sourceUrl,
+    );
+    await user.click(screen.getByRole('button', { name: 'Open event' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Configure OpenAI agenda extraction',
+      }),
+    ).toBeTruthy();
+    expect(
+      (screen.getByLabelText('OpenAI endpoint URL') as HTMLInputElement).value,
+    ).toBe('https://api.openai.com/v1');
+    expect(
+      (screen.getByLabelText('OpenAI model') as HTMLInputElement).value,
+    ).toBe('gpt-5.6-sol');
+    await user.type(
+      screen.getByLabelText('OpenAI API key'),
+      'secret-openai-key',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    expect(window.indicoInk.saveOpenAiConfiguration).toHaveBeenCalledWith({
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5.6-sol',
+      reasoningEffort: 'medium',
+      apiKey: 'secret-openai-key',
+    });
+    expect(window.indicoInk.openLibraryEvent).toHaveBeenLastCalledWith(
+      webEvent.sourceUrl,
+    );
+    expect(
+      await screen.findByRole('heading', { name: webEvent.title, level: 1 }),
+    ).toBeTruthy();
+  });
+
+  it('shows source-aware webpage extraction progress', async () => {
+    let progressListener:
+      | ((progress: {
+          operation: 'open' | 'refresh';
+          stage: 'fetching-webpage' | 'extracting-agenda';
+        }) => void)
+      | undefined;
+    window.indicoInk.onWebAgendaProgress = vi.fn((listener) => {
+      progressListener = listener;
+      return () => {};
+    });
+
+    render(<App />);
+    await waitFor(() => expect(progressListener).toBeTruthy());
+
+    act(() =>
+      progressListener?.({ operation: 'open', stage: 'fetching-webpage' }),
+    );
+    expect(screen.getByText('Fetching webpage...')).toBeTruthy();
+
+    act(() =>
+      progressListener?.({ operation: 'open', stage: 'extracting-agenda' }),
+    );
+    expect(screen.getByText('Extracting agenda...')).toBeTruthy();
+  });
+
   it('lists and deletes saved Indico API keys from Settings', async () => {
     const user = userEvent.setup();
     window.indicoInk.listIndicoApiKeys = vi
@@ -567,6 +696,41 @@ describe('App', () => {
     expect(window.indicoInk.deleteIndicoApiKey).toHaveBeenCalledWith(
       'https://indico.cern.ch',
     );
+  });
+
+  it('shows and deletes the OpenAI extraction key from Settings', async () => {
+    const user = userEvent.setup();
+    window.indicoInk.getOpenAiConfiguration = vi
+      .fn()
+      .mockResolvedValueOnce({
+        baseUrl: 'https://api.example.org/v1',
+        model: 'agenda-model',
+        reasoningEffort: 'high',
+        hasApiKey: true,
+        apiKeyUpdatedAt: Date.UTC(2026, 7, 10, 10, 30, 0, 0),
+      })
+      .mockResolvedValueOnce({
+        baseUrl: 'https://api.example.org/v1',
+        model: 'agenda-model',
+        reasoningEffort: 'high',
+        hasApiKey: false,
+        apiKeyUpdatedAt: null,
+      });
+
+    render(<App />);
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Settings',
+      }),
+    );
+
+    expect(await screen.findByText('OpenAI agenda extraction')).toBeTruthy();
+    expect(screen.getByText('https://api.example.org/v1')).toBeTruthy();
+    expect(screen.getByText(/agenda-model.*high reasoning/)).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', { name: 'Delete OpenAI API key' }),
+    );
+    expect(window.indicoInk.deleteOpenAiApiKey).toHaveBeenCalledTimes(1);
   });
 
   it('prompts for an API key when a slide download requires private access', async () => {

@@ -11,3 +11,4 @@ coverage/
 audit/
 .indicoink-dev-data/
 indicoink-cern-api-key.txt
+.env.local

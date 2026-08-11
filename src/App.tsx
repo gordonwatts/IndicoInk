@@ -34,6 +34,13 @@ import type {
   RefreshLibraryEventResult,
 } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import {
+  OPENAI_DEFAULT_BASE_URL,
+  OPENAI_DEFAULT_MODEL,
+  OPENAI_REASONING_EFFORTS,
+  type OpenAiConfigurationSummary,
+  type OpenAiReasoningEffort,
+} from './shared/openAi';
 import { copyTextToClipboard } from './clipboard';
 import {
   parseIndicoEventLinkUrl,
@@ -94,6 +101,14 @@ type ApiKeyDialogRequest =
       decision?: 'keep' | 'replace';
     };
 
+type OpenAiDialogRequest = {
+  operation: 'event' | 'refresh' | 'settings';
+  reason: 'missing' | 'authentication-failed' | 'settings';
+  message: string;
+  eventUrl?: string;
+  decision?: 'keep' | 'replace';
+};
+
 const destinations: Array<{
   id: Destination;
   label: string;
@@ -118,6 +133,7 @@ const defaultEvent: EventSummary = {
   title: 'IndicoInk Design Summit 2026',
   dates: 'June 12-14, 2026',
   host: 'indico.example.org',
+  sourceKind: 'indico',
   lastOpened: 'Opened 8 minutes ago',
   annotationSummary: '12 annotated slides',
   cacheStatus: 'Cached for offline use',
@@ -238,22 +254,19 @@ const validateEventUrl = (value: string) => {
   const trimmed = value.trim();
 
   if (!trimmed) {
-    return 'Paste an Indico event URL.';
+    return 'Paste an event or agenda webpage URL.';
   }
 
   let url: URL;
   try {
     url = new URL(trimmed);
   } catch {
-    return 'Enter a valid URL that starts with https://.';
+    return 'Enter a valid http or https URL.';
   }
 
-  if (url.protocol !== 'https:') {
-    return 'Use an https:// Indico event URL.';
-  }
-
-  if (!/\/event\/[^/?#]+/.test(url.pathname)) {
-    return 'Use an Indico event URL that points to an event.';
+  const isLoopback = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback)) {
+    return 'Use https://. http:// is allowed only for local testing.';
   }
 
   return null;
@@ -1097,6 +1110,19 @@ export function App() {
   const [apiKeyValue, setApiKeyValue] = React.useState('');
   const [apiKeyError, setApiKeyError] = React.useState<string | null>(null);
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false);
+  const [openAiDialogRequest, setOpenAiDialogRequest] =
+    React.useState<OpenAiDialogRequest | null>(null);
+  const [openAiConfiguration, setOpenAiConfiguration] =
+    React.useState<OpenAiConfigurationSummary | null>(null);
+  const [openAiBaseUrl, setOpenAiBaseUrl] = React.useState(
+    OPENAI_DEFAULT_BASE_URL,
+  );
+  const [openAiModel, setOpenAiModel] = React.useState(OPENAI_DEFAULT_MODEL);
+  const [openAiReasoningEffort, setOpenAiReasoningEffort] =
+    React.useState<OpenAiReasoningEffort>('medium');
+  const [openAiApiKey, setOpenAiApiKey] = React.useState('');
+  const [openAiError, setOpenAiError] = React.useState<string | null>(null);
+  const [isSavingOpenAi, setIsSavingOpenAi] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
   const appVersionText = info ? info.appVersion : 'Loading...';
   const electronVersionText = info ? info.electronVersion : 'Loading...';
@@ -1198,6 +1224,26 @@ export function App() {
   }, []);
 
   React.useEffect(
+    () =>
+      window.indicoInk.onWebAgendaProgress(({ operation, stage }) => {
+        const message =
+          stage === 'fetching-webpage'
+            ? operation === 'refresh'
+              ? 'Refreshing from webpage: fetching webpage...'
+              : 'Fetching webpage...'
+            : operation === 'refresh'
+              ? 'Refreshing from webpage: extracting agenda...'
+              : 'Extracting agenda...';
+        if (operation === 'refresh') {
+          setRefreshState({ kind: 'checking', message });
+        } else {
+          setOpenEventFeedback({ tone: 'neutral', message });
+        }
+      }),
+    [],
+  );
+
+  React.useEffect(
     () => () => {
       if (copyTooltipTimerRef.current !== null) {
         window.clearTimeout(copyTooltipTimerRef.current);
@@ -1216,14 +1262,41 @@ export function App() {
     setApiKeySummaries(apiKeys);
   }, []);
 
+  const refreshOpenAiConfiguration = React.useCallback(async () => {
+    const configuration = await window.indicoInk.getOpenAiConfiguration();
+    setOpenAiConfiguration(configuration);
+    return configuration;
+  }, []);
+
+  const showOpenAiConfigurationDialog = React.useCallback(
+    async (request: OpenAiDialogRequest) => {
+      const configuration = await refreshOpenAiConfiguration();
+      setOpenAiBaseUrl(configuration.baseUrl);
+      setOpenAiModel(configuration.model);
+      setOpenAiReasoningEffort(configuration.reasoningEffort);
+      setOpenAiApiKey('');
+      setOpenAiError(
+        request.reason === 'authentication-failed' ? request.message : null,
+      );
+      setOpenAiDialogRequest(request);
+    },
+    [refreshOpenAiConfiguration],
+  );
+
   const setRecordLoggingEnabled = React.useCallback(
     async (enabled: boolean) => {
       setIsSavingAppSettings(true);
       setAppSettingsError(null);
       try {
         const updatedSettings = await window.indicoInk.setAppSettings({
+          ...(appSettings ?? {
+            recordLogging: false,
+            penThickness: DEFAULT_PEN_THICKNESS,
+            openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
+            openAiModel: OPENAI_DEFAULT_MODEL,
+            openAiReasoningEffort: 'medium' as const,
+          }),
           recordLogging: enabled,
-          penThickness: appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS,
         });
         setAppSettings(updatedSettings);
       } catch (error) {
@@ -1236,7 +1309,7 @@ export function App() {
         setIsSavingAppSettings(false);
       }
     },
-    [appSettings?.penThickness],
+    [appSettings],
   );
 
   const setPenThickness = React.useCallback(
@@ -1244,7 +1317,13 @@ export function App() {
       setAppSettingsError(null);
       try {
         const updatedSettings = await window.indicoInk.setAppSettings({
-          recordLogging: appSettings?.recordLogging ?? false,
+          ...(appSettings ?? {
+            recordLogging: false,
+            penThickness: DEFAULT_PEN_THICKNESS,
+            openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
+            openAiModel: OPENAI_DEFAULT_MODEL,
+            openAiReasoningEffort: 'medium' as const,
+          }),
           penThickness,
         });
         setAppSettings(updatedSettings);
@@ -1256,7 +1335,7 @@ export function App() {
         );
       }
     },
-    [appSettings?.recordLogging],
+    [appSettings],
   );
 
   const returnToLibrary = React.useCallback(async () => {
@@ -1358,6 +1437,19 @@ export function App() {
           return;
         }
 
+        if (result.kind === 'llm-configuration-required') {
+          agendaRefreshCompletionMessageRef.current = null;
+          setRefreshState({ kind: 'error', message: result.message });
+          await showOpenAiConfigurationDialog({
+            operation: 'refresh',
+            reason: result.reason,
+            message: result.message,
+            eventUrl: event.sourceUrl,
+            ...(decision ? { decision } : {}),
+          });
+          return;
+        }
+
         await refreshLibraryEvents();
         setAgendaReloadVersion((version) => version + 1);
         const completionMessage = `Refreshed ${result.title}: ${result.changedTalkCount} changed, ${result.removedTalkCount} removed, ${result.newlyAvailableDeckCount} new PDF${result.newlyAvailableDeckCount === 1 ? '' : 's'}.`;
@@ -1387,6 +1479,7 @@ export function App() {
       libraryEvents,
       refreshLibraryEvents,
       selectedEventId,
+      showOpenAiConfigurationDialog,
     ],
   );
 
@@ -1397,6 +1490,10 @@ export function App() {
   React.useEffect(() => {
     void refreshIndicoApiKeys();
   }, [refreshIndicoApiKeys]);
+
+  React.useEffect(() => {
+    void refreshOpenAiConfiguration();
+  }, [refreshOpenAiConfiguration]);
 
   const activeSlideDownloadStatus =
     slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
@@ -1627,7 +1724,7 @@ export function App() {
             </PrimaryButton>
             <IconButton
               label="Refresh"
-              title="Refresh Event from Indico"
+              title="Refresh event from source"
               icon="refresh"
               className={
                 refreshState.kind === 'checking' ||
@@ -1665,7 +1762,7 @@ export function App() {
           <>
             <IconButton
               label="Refresh"
-              title="Refresh Event from Indico"
+              title="Refresh event from source"
               icon="refresh"
               className={
                 refreshState.kind === 'checking' ||
@@ -1961,6 +2058,20 @@ export function App() {
         return;
       }
 
+      if (openedEvent.kind === 'llm-configuration-required') {
+        setOpenEventFeedback({
+          tone: 'warning',
+          message: openedEvent.message,
+        });
+        await showOpenAiConfigurationDialog({
+          operation: 'event',
+          reason: openedEvent.reason,
+          message: openedEvent.message,
+          eventUrl,
+        });
+        return;
+      }
+
       await refreshLibraryEvents();
       setSelectedEventId(openedEvent.result.conferenceId);
       setDestination('agenda');
@@ -1972,7 +2083,7 @@ export function App() {
         message: `Opened ${openedEvent.result.title} with ${openedEvent.result.talkCount} talks.`,
       });
     },
-    [refreshLibraryEvents],
+    [refreshLibraryEvents, showOpenAiConfigurationDialog],
   );
 
   React.useEffect(() => {
@@ -2037,7 +2148,7 @@ export function App() {
     setIsOpeningEvent(true);
     setOpenEventFeedback({
       tone: 'neutral',
-      message: 'Opening event and saving the agenda locally...',
+      message: 'Fetching the event source and saving the agenda locally...',
     });
 
     try {
@@ -2084,6 +2195,10 @@ export function App() {
           });
           return;
         }
+        if (reopenedEvent.kind === 'llm-configuration-required') {
+          setApiKeyError(reopenedEvent.message);
+          return;
+        }
 
         await refreshLibraryEvents();
         setSelectedEventId(reopenedEvent.result.conferenceId);
@@ -2106,6 +2221,18 @@ export function App() {
           agendaRefreshCompletionMessageRef.current = null;
           setApiKeyError(refreshedEvent.message);
           setRefreshState({ kind: 'error', message: refreshedEvent.message });
+          return;
+        }
+        if (refreshedEvent.kind === 'llm-configuration-required') {
+          setApiKeyDialogRequest(null);
+          setApiKeyValue('');
+          await showOpenAiConfigurationDialog({
+            operation: 'refresh',
+            reason: refreshedEvent.reason,
+            message: refreshedEvent.message,
+            eventUrl: request.eventUrl,
+            ...(request.decision ? { decision: request.decision } : {}),
+          });
           return;
         }
         if (refreshedEvent.kind === 'conflict') {
@@ -2153,6 +2280,91 @@ export function App() {
       );
     } finally {
       setIsSavingApiKey(false);
+    }
+  };
+  const handleSaveOpenAiConfiguration = async () => {
+    const request = openAiDialogRequest;
+    if (!request) {
+      return;
+    }
+    if (!openAiBaseUrl.trim() || !openAiModel.trim() || !openAiApiKey.trim()) {
+      setOpenAiError('Endpoint, model, and API key are required.');
+      return;
+    }
+
+    setIsSavingOpenAi(true);
+    setOpenAiError(null);
+    try {
+      const configuration = await window.indicoInk.saveOpenAiConfiguration({
+        baseUrl: openAiBaseUrl.trim(),
+        model: openAiModel.trim(),
+        reasoningEffort: openAiReasoningEffort,
+        apiKey: openAiApiKey.trim(),
+      });
+      setOpenAiConfiguration(configuration);
+      setAppSettings(await window.indicoInk.getAppSettings());
+
+      if (request.operation === 'settings' || !request.eventUrl) {
+        setOpenAiDialogRequest(null);
+        setOpenAiApiKey('');
+        return;
+      }
+
+      if (request.operation === 'event') {
+        const reopenedEvent = await window.indicoInk.openLibraryEvent(
+          request.eventUrl,
+        );
+        if (reopenedEvent.kind !== 'opened') {
+          setOpenAiError(reopenedEvent.message);
+          return;
+        }
+        await refreshLibraryEvents();
+        setSelectedEventId(reopenedEvent.result.conferenceId);
+        setDestination('agenda');
+        setOpenEventFeedback({
+          tone: 'success',
+          message: `Opened ${reopenedEvent.result.title} with ${reopenedEvent.result.talkCount} talks.`,
+        });
+      } else {
+        const refreshedEvent = await window.indicoInk.refreshLibraryEvent(
+          request.eventUrl,
+          request.decision,
+        );
+        if (refreshedEvent.kind === 'llm-configuration-required') {
+          setOpenAiError(refreshedEvent.message);
+          return;
+        }
+        if (refreshedEvent.kind === 'api-key-required') {
+          setOpenAiError(refreshedEvent.message);
+          return;
+        }
+        if (refreshedEvent.kind === 'conflict') {
+          setRefreshState({
+            kind: 'conflict',
+            message: 'The upstream PDF changed for an annotated deck.',
+            conflicts: refreshedEvent.conflicts,
+          });
+        } else {
+          await refreshLibraryEvents();
+          setAgendaReloadVersion((version) => version + 1);
+          setRefreshState({
+            kind: 'done',
+            message: `Refreshed ${refreshedEvent.title}: ${refreshedEvent.changedTalkCount} changed, ${refreshedEvent.removedTalkCount} removed, ${refreshedEvent.newlyAvailableDeckCount} new PDF${refreshedEvent.newlyAvailableDeckCount === 1 ? '' : 's'}.`,
+          });
+        }
+      }
+
+      setOpenAiDialogRequest(null);
+      setOpenAiApiKey('');
+      setOpenAiError(null);
+    } catch (error) {
+      setOpenAiError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to save the OpenAI configuration.',
+      );
+    } finally {
+      setIsSavingOpenAi(false);
     }
   };
   const handleOpenSelectedTalkDeck = async () => {
@@ -2384,11 +2596,10 @@ export function App() {
     exportCancellationRef.current = cancellationState;
 
     try {
-      const snapshot =
-        await window.indicoInk.getConferenceExportSnapshot(
-          selectedEventId,
-          destination === 'slides' ? activeSlideTalkId : null,
-        );
+      const snapshot = await window.indicoInk.getConferenceExportSnapshot(
+        selectedEventId,
+        destination === 'slides' ? activeSlideTalkId : null,
+      );
       if (cancellationState.cancelled) {
         setExportState({
           kind: 'canceled',
@@ -2624,6 +2835,10 @@ export function App() {
     await window.indicoInk.deleteIndicoApiKey(apiKeyDeleteTarget.origin);
     setApiKeyDeleteTarget(null);
     await refreshIndicoApiKeys();
+  };
+  const deleteOpenAiApiKey = async () => {
+    await window.indicoInk.deleteOpenAiApiKey();
+    await refreshOpenAiConfiguration();
   };
 
   React.useEffect(() => {
@@ -3198,7 +3413,8 @@ export function App() {
                 <div className="hero-copy">
                   <h2>Open an event</h2>
                   <p className="lede">
-                    Paste an Indico event URL, or reopen a recent event below.
+                    Paste an Indico event URL or another agenda webpage, or
+                    reopen a recent event below.
                   </p>
                 </div>
                 <div className="hero-actions">
@@ -3219,7 +3435,7 @@ export function App() {
                       type="url"
                       inputMode="url"
                       autoComplete="off"
-                      placeholder="https://indico.example.org/event/..."
+                      placeholder="https://example.org/event-or-agenda"
                       aria-invalid={eventUrlError ? 'true' : undefined}
                       aria-describedby={
                         eventUrlError
@@ -3229,8 +3445,7 @@ export function App() {
                     />
                   </label>
                   <div className="field-help" id="event-url-help">
-                    <span>Use a full Indico event URL, for example:</span>
-                    <code>https://indico.example.org/event/...</code>
+                    <span>Use a full HTTPS event or agenda webpage URL.</span>
                   </div>
                   {eventUrlError ? (
                     <div className="field-error" id="event-url-error">
@@ -3649,11 +3864,11 @@ export function App() {
                                                   label={
                                                     material.upstreamStatus ===
                                                     'missing'
-                                                      ? 'Removed from Indico'
+                                                      ? 'Removed upstream'
                                                       : material.upstreamStatus ===
                                                           'changed'
-                                                        ? 'Updated on Indico'
-                                                        : 'Still on Indico'
+                                                        ? 'Updated upstream'
+                                                        : 'Still available upstream'
                                                   }
                                                   tone={
                                                     material.upstreamStatus ===
@@ -4458,6 +4673,52 @@ export function App() {
                         )}
                       </div>
                     </div>
+                    <div className="settings-row settings-row-column">
+                      <span>OpenAI agenda extraction</span>
+                      <div className="settings-row-stack settings-row-stack-wide">
+                        <div className="settings-api-key-text">
+                          <strong>
+                            {openAiConfiguration?.baseUrl ??
+                              OPENAI_DEFAULT_BASE_URL}
+                          </strong>
+                          <span>
+                            {openAiConfiguration?.model ?? OPENAI_DEFAULT_MODEL}
+                            {' · '}
+                            {openAiConfiguration?.reasoningEffort ?? 'medium'}
+                            {' reasoning'}
+                          </span>
+                          <span>
+                            {openAiConfiguration?.hasApiKey
+                              ? openAiConfiguration.apiKeyUpdatedAt
+                                ? `Key ${formatApiKeyUpdatedAt(openAiConfiguration.apiKeyUpdatedAt)}`
+                                : 'Key saved'
+                              : 'No saved API key'}
+                          </span>
+                        </div>
+                        <div className="settings-row-actions">
+                          <PrimaryButton
+                            icon="settings"
+                            onClick={() => {
+                              void showOpenAiConfigurationDialog({
+                                operation: 'settings',
+                                reason: 'settings',
+                                message: 'Configure OpenAI agenda extraction.',
+                              });
+                            }}
+                          >
+                            Configure
+                          </PrimaryButton>
+                          <IconButton
+                            label="Delete OpenAI API key"
+                            icon="trash"
+                            disabled={!openAiConfiguration?.hasApiKey}
+                            onClick={() => {
+                              void deleteOpenAiApiKey();
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </DetailsSurface>
               </div>
@@ -4569,6 +4830,115 @@ export function App() {
                   setApiKeyDialogRequest(null);
                   setApiKeyValue('');
                   setApiKeyError(null);
+                }}
+              />
+            </div>
+          ) : null}
+
+          {openAiDialogRequest ? (
+            <div className="dialog-backdrop" role="presentation">
+              <DialogSurface
+                title={
+                  openAiDialogRequest.reason === 'authentication-failed'
+                    ? 'OpenAI authentication required'
+                    : 'Configure OpenAI agenda extraction'
+                }
+                body={
+                  <div className="dialog-copy">
+                    <p>{openAiDialogRequest.message}</p>
+                    <label className="field">
+                      <span>Endpoint URL</span>
+                      <input
+                        autoFocus
+                        value={openAiBaseUrl}
+                        onChange={(event) => {
+                          setOpenAiBaseUrl(event.target.value);
+                          setOpenAiError(null);
+                        }}
+                        type="url"
+                        autoComplete="off"
+                        aria-label="OpenAI endpoint URL"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Model</span>
+                      <input
+                        value={openAiModel}
+                        onChange={(event) => {
+                          setOpenAiModel(event.target.value);
+                          setOpenAiError(null);
+                        }}
+                        autoComplete="off"
+                        aria-label="OpenAI model"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Reasoning effort</span>
+                      <select
+                        value={openAiReasoningEffort}
+                        onChange={(event) => {
+                          setOpenAiReasoningEffort(
+                            event.target.value as OpenAiReasoningEffort,
+                          );
+                          setOpenAiError(null);
+                        }}
+                        aria-label="OpenAI reasoning effort"
+                      >
+                        {OPENAI_REASONING_EFFORTS.map((effort) => (
+                          <option key={effort} value={effort}>
+                            {effort}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>API key</span>
+                      <input
+                        value={openAiApiKey}
+                        onChange={(event) => {
+                          setOpenAiApiKey(event.target.value);
+                          setOpenAiError(null);
+                        }}
+                        type="password"
+                        autoComplete="off"
+                        placeholder={
+                          openAiConfiguration?.hasApiKey
+                            ? 'Enter a replacement API key'
+                            : 'Paste API key'
+                        }
+                        aria-label="OpenAI API key"
+                        aria-invalid={openAiError ? 'true' : undefined}
+                      />
+                    </label>
+                    {openAiError ? (
+                      <div className="field-error">
+                        <StatusLabel
+                          label={openAiError}
+                          tone="error"
+                          icon="info"
+                        />
+                      </div>
+                    ) : (
+                      <div className="field-help">
+                        The API key is saved locally using Electron safeStorage
+                        and is never exposed to the renderer after saving.
+                      </div>
+                    )}
+                  </div>
+                }
+                primaryLabel={
+                  isSavingOpenAi
+                    ? 'Saving...'
+                    : openAiDialogRequest.operation === 'settings'
+                      ? 'Save configuration'
+                      : 'Save and continue'
+                }
+                secondaryLabel="Cancel"
+                onPrimary={() => void handleSaveOpenAiConfiguration()}
+                onSecondary={() => {
+                  setOpenAiDialogRequest(null);
+                  setOpenAiApiKey('');
+                  setOpenAiError(null);
                 }}
               />
             </div>

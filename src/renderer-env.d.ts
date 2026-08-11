@@ -23,6 +23,10 @@ import type {
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import type { Deck } from './persistenceModels';
+import type {
+  OpenAiConfigurationInput,
+  OpenAiConfigurationSummary,
+} from './shared/openAi';
 
 declare global {
   interface Window {
@@ -74,6 +78,17 @@ declare global {
       saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
       listIndicoApiKeys: () => Promise<IndicoApiKeySummary[]>;
       deleteIndicoApiKey: (origin: string) => Promise<void>;
+      getOpenAiConfiguration: () => Promise<OpenAiConfigurationSummary>;
+      saveOpenAiConfiguration: (
+        input: OpenAiConfigurationInput,
+      ) => Promise<OpenAiConfigurationSummary>;
+      deleteOpenAiApiKey: () => Promise<void>;
+      onWebAgendaProgress: (
+        listener: (progress: {
+          operation: 'open' | 'refresh';
+          stage: 'fetching-webpage' | 'extracting-agenda';
+        }) => void,
+      ) => () => void;
       setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
       setSelectedDeck: (talkId: string, deckId: string) => Promise<void>;
       openTalkDeck: (

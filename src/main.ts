@@ -31,6 +31,7 @@ import { IndicoHttpError } from './indicoHttp';
 import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
+import { createConferenceId } from './persistenceModels';
 import type { PdfWorkspaceChangeBatch } from './shared/pdfWorkspace';
 import type {
   ConferenceExportSnapshot,
@@ -61,6 +62,16 @@ import type {
   RefreshLibraryEventResult,
 } from './shared/library';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
+import type {
+  OpenAiConfigurationInput,
+  OpenAiConfigurationSummary,
+} from './shared/openAi';
+import {
+  WebAgendaAuthenticationError,
+  normalizeOpenAiBaseUrl,
+  normalizeWebAgendaUrl,
+} from './webAgenda';
+import { importWebAgenda, refreshWebAgenda } from './webAgendaImport';
 import {
   coerceAppSettings,
   loadAppSettings,
@@ -101,6 +112,26 @@ const getUserDataPath = () => app.getPath('userData');
 
 const ensureAppSettings = () =>
   appSettings ?? (appSettings = loadAppSettings(getUserDataPath()));
+
+const getOpenAiConfiguration = () => {
+  const settings = ensureAppSettings();
+  return {
+    baseUrl: settings.openAiBaseUrl,
+    model: settings.openAiModel,
+    reasoningEffort: settings.openAiReasoningEffort,
+  };
+};
+
+const getLlmConfigurationRequiredResult = (
+  reason: 'missing' | 'authentication-failed',
+) => ({
+  kind: 'llm-configuration-required' as const,
+  reason,
+  message:
+    reason === 'authentication-failed'
+      ? 'OpenAI authentication failed. Review the endpoint and model, then provide a replacement API key.'
+      : 'Configure OpenAI before importing an event webpage.',
+});
 
 const shouldRecordStartupLogs = () =>
   process.env.INDICOINK_RECORD_LOGGING === '1' ||
@@ -625,25 +656,75 @@ ipcMain.handle(
     eventUrl: string,
     decision?: 'keep' | 'replace',
   ): Promise<RefreshLibraryEventResult> => {
-    const identity = parseIndicoEventUrl(eventUrl);
-    if (!identity) {
-      throw new Error('The provided URL is not a valid Indico event.');
+    const requestedIndicoIdentity = parseIndicoEventUrl(eventUrl);
+    const fetchImpl = session.defaultSession.fetch.bind(session.defaultSession);
+    const normalizedUrl = requestedIndicoIdentity
+      ? requestedIndicoIdentity.canonicalEventUrl
+      : normalizeWebAgendaUrl(eventUrl);
+    const conferenceId = requestedIndicoIdentity
+      ? requestedIndicoIdentity.conferenceId
+      : createConferenceId(normalizedUrl);
+    const conference = await getPersistenceStore().getConference(conferenceId);
+    if (!conference) {
+      throw new Error('The requested event does not exist locally.');
     }
 
-    const apiKey = await getCredentialStore().getApiKey(identity.origin);
+    if (conference.sourceKind !== 'web') {
+      const identity = parseIndicoEventUrl(conference.sourceUrl);
+      if (!identity) {
+        throw new Error('The saved Indico event URL is invalid.');
+      }
+      const apiKey = await getCredentialStore().getApiKey(identity.origin);
+      try {
+        return await refreshIndicoEvent(
+          getPersistenceStore(),
+          conference.sourceUrl,
+          {
+            fetchImpl,
+            ...(apiKey ? { apiKey } : {}),
+            ...(decision ? { decision } : {}),
+          },
+        );
+      } catch (error) {
+        const refreshError = classifyRefreshError(error, identity);
+        if (refreshError) {
+          return refreshError;
+        }
+        throw error;
+      }
+    }
+
+    const openAiApiKey = await getCredentialStore().getOpenAiApiKey();
+    if (!openAiApiKey) {
+      return {
+        ...getLlmConfigurationRequiredResult('missing'),
+        conferenceId,
+      };
+    }
 
     try {
-      return await refreshIndicoEvent(getPersistenceStore(), eventUrl, {
-        fetchImpl: session.defaultSession.fetch.bind(session.defaultSession),
-        ...(apiKey ? { apiKey } : {}),
-        ...(decision ? { decision } : {}),
-      });
+      return await refreshWebAgenda(
+        getPersistenceStore(),
+        conference.sourceUrl,
+        {
+          configuration: getOpenAiConfiguration(),
+          apiKey: openAiApiKey,
+          fetchImpl,
+          onProgress: (stage) =>
+            _event.sender.send('web-agenda:progress', {
+              operation: 'refresh',
+              stage,
+            }),
+          ...(decision ? { decision } : {}),
+        },
+      );
     } catch (error) {
-      const refreshError = classifyRefreshError(error, identity);
-      if (refreshError) {
-        return refreshError;
+      if (error instanceof WebAgendaAuthenticationError) {
+        return {
+          ...getLlmConfigurationRequiredResult('authentication-failed'),
+          conferenceId,
+        };
       }
-
       throw error;
     }
   },
@@ -657,41 +738,69 @@ ipcMain.handle(
     apiKey?: string,
   ): Promise<OpenLibraryEventResult> => {
     const identity = parseIndicoEventUrl(eventUrl);
-    if (!identity) {
-      throw new Error('The provided URL is not a valid Indico event.');
+    const fetchImpl = session.defaultSession.fetch.bind(session.defaultSession);
+    if (identity) {
+      const storedApiKey =
+        apiKey ?? (await getCredentialStore().getApiKey(identity.origin));
+      try {
+        const fetchOptions = storedApiKey
+          ? { apiKey: storedApiKey }
+          : undefined;
+        const result = await importIndicoEvent(
+          getPersistenceStore(),
+          eventUrl,
+          {
+            fetchImpl,
+            ...(fetchOptions ?? {}),
+          },
+        );
+        return {
+          kind: 'opened',
+          result,
+        };
+      } catch (error) {
+        if (
+          error instanceof IndicoHttpError &&
+          isLikelyIndicoApiKeyError(error.statusCode, error.responseBody)
+        ) {
+          return {
+            kind: 'api-key-required',
+            origin: identity.origin,
+            message: getIndicoApiKeyPromptMessage(
+              error.statusCode,
+              error.responseBody,
+            ),
+          };
+        }
+        throw error;
+      }
     }
 
-    const storedApiKey =
-      apiKey ?? (await getCredentialStore().getApiKey(identity.origin));
-
+    const normalizedUrl = normalizeWebAgendaUrl(eventUrl);
+    const openAiApiKey = await getCredentialStore().getOpenAiApiKey();
+    if (!openAiApiKey) {
+      return getLlmConfigurationRequiredResult('missing');
+    }
     try {
-      const fetchImpl = session.defaultSession.fetch.bind(
-        session.defaultSession,
+      const result = await importWebAgenda(
+        getPersistenceStore(),
+        normalizedUrl,
+        {
+          configuration: getOpenAiConfiguration(),
+          apiKey: openAiApiKey,
+          fetchImpl,
+          onProgress: (stage) =>
+            _event.sender.send('web-agenda:progress', {
+              operation: 'open',
+              stage,
+            }),
+        },
       );
-      const fetchOptions = storedApiKey ? { apiKey: storedApiKey } : undefined;
-      const result = await importIndicoEvent(getPersistenceStore(), eventUrl, {
-        fetchImpl,
-        ...(fetchOptions ?? {}),
-      });
-      return {
-        kind: 'opened',
-        result,
-      };
+      return { kind: 'opened', result };
     } catch (error) {
-      if (
-        error instanceof IndicoHttpError &&
-        isLikelyIndicoApiKeyError(error.statusCode, error.responseBody)
-      ) {
-        return {
-          kind: 'api-key-required',
-          origin: identity.origin,
-          message: getIndicoApiKeyPromptMessage(
-            error.statusCode,
-            error.responseBody,
-          ),
-        };
+      if (error instanceof WebAgendaAuthenticationError) {
+        return getLlmConfigurationRequiredResult('authentication-failed');
       }
-
       throw error;
     }
   },
@@ -712,6 +821,45 @@ ipcMain.handle(
 
 ipcMain.handle('indico:delete-api-key', async (_event, origin: string) => {
   await getCredentialStore().deleteApiKey(origin);
+});
+
+ipcMain.handle(
+  'openai:get-configuration',
+  async (): Promise<OpenAiConfigurationSummary> =>
+    getCredentialStore().getOpenAiConfigurationSummary(
+      getOpenAiConfiguration(),
+    ),
+);
+
+ipcMain.handle(
+  'openai:save-configuration',
+  async (
+    _event,
+    input: OpenAiConfigurationInput,
+  ): Promise<OpenAiConfigurationSummary> => {
+    const apiKey = input.apiKey.trim();
+    const model = input.model.trim();
+    if (!apiKey || !model) {
+      throw new Error('OpenAI model and API key are required.');
+    }
+    const baseUrl = normalizeOpenAiBaseUrl(input.baseUrl);
+    const current = ensureAppSettings();
+    appSettings = coerceAppSettings({
+      ...current,
+      openAiBaseUrl: baseUrl,
+      openAiModel: model,
+      openAiReasoningEffort: input.reasoningEffort,
+    });
+    saveAppSettings(getUserDataPath(), appSettings);
+    await getCredentialStore().saveOpenAiApiKey(apiKey);
+    return getCredentialStore().getOpenAiConfigurationSummary(
+      getOpenAiConfiguration(),
+    );
+  },
+);
+
+ipcMain.handle('openai:delete-api-key', async (): Promise<void> => {
+  await getCredentialStore().deleteOpenAiApiKey();
 });
 
 ipcMain.handle(

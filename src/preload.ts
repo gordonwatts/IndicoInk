@@ -26,6 +26,10 @@ import type {
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
 import type { IndicoApiKeySummary } from './shared/indicoCredentials';
 import type { Deck } from './persistenceModels';
+import type {
+  OpenAiConfigurationInput,
+  OpenAiConfigurationSummary,
+} from './shared/openAi';
 
 const getAppInfo = async (): Promise<AppInfo> =>
   ipcRenderer.invoke('app:get-info');
@@ -141,6 +145,35 @@ const listIndicoApiKeys = async (): Promise<IndicoApiKeySummary[]> =>
 const deleteIndicoApiKey = async (origin: string): Promise<void> =>
   ipcRenderer.invoke('indico:delete-api-key', origin);
 
+const getOpenAiConfiguration = async (): Promise<OpenAiConfigurationSummary> =>
+  ipcRenderer.invoke('openai:get-configuration');
+
+const saveOpenAiConfiguration = async (
+  input: OpenAiConfigurationInput,
+): Promise<OpenAiConfigurationSummary> =>
+  ipcRenderer.invoke('openai:save-configuration', input);
+
+const deleteOpenAiApiKey = async (): Promise<void> =>
+  ipcRenderer.invoke('openai:delete-api-key');
+
+const onWebAgendaProgress = (
+  listener: (progress: {
+    operation: 'open' | 'refresh';
+    stage: 'fetching-webpage' | 'extracting-agenda';
+  }) => void,
+) => {
+  const handleProgress = (
+    _event: Electron.IpcRendererEvent,
+    progress: {
+      operation: 'open' | 'refresh';
+      stage: 'fetching-webpage' | 'extracting-agenda';
+    },
+  ) => listener(progress);
+  ipcRenderer.on('web-agenda:progress', handleProgress);
+  return () =>
+    ipcRenderer.removeListener('web-agenda:progress', handleProgress);
+};
+
 const setTalkBookmarked = async (
   talkId: string,
   bookmarked: boolean,
@@ -217,6 +250,10 @@ contextBridge.exposeInMainWorld('indicoInk', {
   saveIndicoApiKey,
   listIndicoApiKeys,
   deleteIndicoApiKey,
+  getOpenAiConfiguration,
+  saveOpenAiConfiguration,
+  deleteOpenAiApiKey,
+  onWebAgendaProgress,
   setTalkBookmarked,
   setSelectedDeck,
   openTalkDeck,
@@ -279,6 +316,17 @@ export type IndicoInkApi = {
   saveIndicoApiKey: (origin: string, apiKey: string) => Promise<void>;
   listIndicoApiKeys: () => Promise<IndicoApiKeySummary[]>;
   deleteIndicoApiKey: (origin: string) => Promise<void>;
+  getOpenAiConfiguration: () => Promise<OpenAiConfigurationSummary>;
+  saveOpenAiConfiguration: (
+    input: OpenAiConfigurationInput,
+  ) => Promise<OpenAiConfigurationSummary>;
+  deleteOpenAiApiKey: () => Promise<void>;
+  onWebAgendaProgress: (
+    listener: (progress: {
+      operation: 'open' | 'refresh';
+      stage: 'fetching-webpage' | 'extracting-agenda';
+    }) => void,
+  ) => () => void;
   setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;
   setSelectedDeck: (talkId: string, deckId: string) => Promise<void>;
   openTalkDeck: (

@@ -39,7 +39,7 @@ import {
   createViewStateId,
 } from './persistenceModels';
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 const PRE_NODE_SQLITE_BACKUP_SUFFIX = '.pre-node-sqlite-v7.bak';
 
 const getFileName = (value: string) => {
@@ -287,6 +287,7 @@ const migration1 = (db: SqliteDatabaseAdapter) => {
       title TEXT NOT NULL,
       dates TEXT NOT NULL,
       host TEXT NOT NULL,
+      source_kind TEXT NOT NULL DEFAULT 'indico',
       time_zone TEXT,
       last_opened_at INTEGER,
       created_at INTEGER NOT NULL,
@@ -537,6 +538,22 @@ const migration8 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
+const migration9 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(conferences)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+
+  if (!columns.has('source_kind')) {
+    db.exec(
+      "ALTER TABLE conferences ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'indico';",
+    );
+  }
+};
+
 const migrations = [
   migration1,
   migration2,
@@ -546,6 +563,7 @@ const migrations = [
   migration6,
   migration7,
   migration8,
+  migration9,
 ];
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
@@ -554,6 +572,7 @@ const rowToConference = (row: Record<string, unknown>): Conference => ({
   title: String(row.title),
   dates: String(row.dates),
   host: String(row.host),
+  sourceKind: row.source_kind === 'web' ? 'web' : 'indico',
   timeZone:
     row.time_zone === null || row.time_zone === undefined
       ? null
@@ -918,15 +937,16 @@ export class PersistenceStore {
     db.prepare(
       `
         INSERT INTO conferences (
-          id, source_url, title, dates, host, time_zone, last_opened_at, created_at, updated_at
+          id, source_url, title, dates, host, source_kind, time_zone, last_opened_at, created_at, updated_at
         ) VALUES (
-          @id, @sourceUrl, @title, @dates, @host, @timeZone, @lastOpenedAt, @createdAt, @updatedAt
+          @id, @sourceUrl, @title, @dates, @host, @sourceKind, @timeZone, @lastOpenedAt, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           source_url = excluded.source_url,
           title = excluded.title,
           dates = excluded.dates,
           host = excluded.host,
+          source_kind = excluded.source_kind,
           time_zone = excluded.time_zone,
           last_opened_at = excluded.last_opened_at,
           updated_at = excluded.updated_at
@@ -934,6 +954,7 @@ export class PersistenceStore {
     ).run({
       ...conference,
       sourceUrl: conference.sourceUrl,
+      sourceKind: conference.sourceKind ?? 'indico',
       timeZone: conference.timeZone ?? null,
       lastOpenedAt: conference.lastOpenedAt,
     });
