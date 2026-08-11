@@ -169,6 +169,7 @@ const toExportAnnotation = (annotation: {
 
 const buildConferenceExportSnapshot = async (
   conferenceId: string,
+  talkId?: string | null,
 ): Promise<ConferenceExportSnapshot | null> => {
   const store = getPersistenceStore();
   const conference = await store.getConference(conferenceId);
@@ -176,7 +177,9 @@ const buildConferenceExportSnapshot = async (
     return null;
   }
 
-  const talks = await store.listTalksByConference(conferenceId);
+  const talks = (await store.listTalksByConference(conferenceId)).filter(
+    (talk) => !talkId || talk.id === talkId,
+  );
   const exportTalks: ExportTalkSnapshot[] = [];
   const restoredDecks: Array<{ talkTitle: string; deckDisplayName: string }> =
     [];
@@ -776,8 +779,8 @@ ipcMain.handle('deck:cancel-download', async (_event, operationId: string) => {
 
 ipcMain.handle(
   'export:get-conference-snapshot',
-  async (_event, conferenceId: string) =>
-    buildConferenceExportSnapshot(conferenceId),
+  async (_event, conferenceId: string, talkId?: string | null) =>
+    buildConferenceExportSnapshot(conferenceId, talkId),
 );
 
 ipcMain.handle(

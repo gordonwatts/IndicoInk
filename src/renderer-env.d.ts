@@ -89,6 +89,7 @@ declare global {
       openDataFolder: () => Promise<void>;
       getConferenceExportSnapshot: (
         conferenceId: string,
+        talkId?: string | null,
       ) => Promise<ConferenceExportSnapshot | null>;
       setAppSettings: (settings: AppSettings) => Promise<AppSettings>;
       showExportSaveDialog: (options: {

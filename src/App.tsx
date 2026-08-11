@@ -2385,7 +2385,10 @@ export function App() {
 
     try {
       const snapshot =
-        await window.indicoInk.getConferenceExportSnapshot(selectedEventId);
+        await window.indicoInk.getConferenceExportSnapshot(
+          selectedEventId,
+          destination === 'slides' ? activeSlideTalkId : null,
+        );
       if (cancellationState.cancelled) {
         setExportState({
           kind: 'canceled',
@@ -2418,7 +2421,10 @@ export function App() {
 
       const saveResult = await window.indicoInk.showExportSaveDialog({
         title: `Export notes for ${snapshot.conference.title}`,
-        defaultPath: createExportFileName(snapshot.conference),
+        defaultPath: createExportFileName(
+          snapshot.conference,
+          activeSlideTalkId ? snapshot.talks[0]?.title : null,
+        ),
       });
 
       if (cancellationState.cancelled) {

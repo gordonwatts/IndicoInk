@@ -64,8 +64,13 @@ const formatStartDate = (dates: string) => {
 
 export const createExportFileName = (
   conference: Pick<ConferenceExportSnapshot['conference'], 'title' | 'dates'>,
+  talkTitle?: string | null,
 ) => {
   const datePrefix = formatStartDate(conference.dates);
-  const baseName = sanitizeFileName(conference.title) || 'indico-notes';
+  const conferenceName = sanitizeFileName(conference.title) || 'indico-notes';
+  const talkName = talkTitle ? sanitizeFileName(talkTitle) : '';
+  const baseName = talkName
+    ? `${conferenceName} - ${talkName}`
+    : conferenceName;
   return `${datePrefix ? `${datePrefix} - ` : ''}${baseName} notes.md`;
 };
