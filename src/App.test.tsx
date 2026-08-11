@@ -1398,6 +1398,10 @@ describe('App', () => {
     await waitFor(() => {
       expect(window.indicoInk.showExportSaveDialog).toHaveBeenCalled();
     });
+    expect(window.indicoInk.getConferenceExportSnapshot).toHaveBeenCalledWith(
+      libraryEvent.id,
+      null,
+    );
     expect(screen.queryByRole('dialog', { name: 'Export notes' })).toBeNull();
 
     resolveSaveDialog({ canceled: true, filePath: null });
@@ -1790,6 +1794,13 @@ describe('App', () => {
         name: 'Home',
       }),
     ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Export notes' }));
+    await waitFor(() => {
+      expect(window.indicoInk.getConferenceExportSnapshot).toHaveBeenCalledWith(
+        libraryEvent.id,
+        'talk-chooser',
+      );
+    });
     expect(
       screen.getByRole('button', {
         name: 'Notes',

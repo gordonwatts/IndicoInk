@@ -20,4 +20,16 @@ describe('createExportFileName', () => {
       }),
     ).toBe('Local Notes notes.md');
   });
+
+  it('includes the talk title for a talk-scoped export', () => {
+    expect(
+      createExportFileName(
+        {
+          dates: 'June 12, 2026 - June 14, 2026',
+          title: 'IndicoInk Summit',
+        },
+        'Opening / results: overview',
+      ),
+    ).toBe('2026-06-12 - IndicoInk Summit - Opening results overview notes.md');
+  });
 });

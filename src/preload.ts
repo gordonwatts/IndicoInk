@@ -173,8 +173,9 @@ const openDataFolder = async (): Promise<void> =>
 
 const getConferenceExportSnapshot = async (
   conferenceId: string,
+  talkId?: string | null,
 ): Promise<ConferenceExportSnapshot | null> =>
-  ipcRenderer.invoke('export:get-conference-snapshot', conferenceId);
+  ipcRenderer.invoke('export:get-conference-snapshot', conferenceId, talkId);
 
 const showExportSaveDialog = async (options: {
   defaultPath: string;
@@ -293,6 +294,7 @@ export type IndicoInkApi = {
   openDataFolder: () => Promise<void>;
   getConferenceExportSnapshot: (
     conferenceId: string,
+    talkId?: string | null,
   ) => Promise<ConferenceExportSnapshot | null>;
   setAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   showExportSaveDialog: (options: {
