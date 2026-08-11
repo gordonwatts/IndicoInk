@@ -386,6 +386,7 @@ export function DialogSurface({
   body,
   primaryLabel,
   secondaryLabel,
+  primaryDisabled = false,
   onPrimary,
   onSecondary,
 }: {
@@ -393,6 +394,7 @@ export function DialogSurface({
   body: React.ReactNode;
   primaryLabel: string;
   secondaryLabel?: string;
+  primaryDisabled?: boolean;
   onPrimary?: () => void;
   onSecondary?: () => void;
 }) {
@@ -426,7 +428,12 @@ export function DialogSurface({
             {secondaryLabel}
           </button>
         ) : null}
-        <button className="primary-button" type="button" onClick={onPrimary}>
+        <button
+          className="primary-button"
+          type="button"
+          onClick={onPrimary}
+          disabled={primaryDisabled}
+        >
           {primaryLabel}
         </button>
       </div>

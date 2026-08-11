@@ -1,4 +1,11 @@
-import type { Conference, Talk } from './persistenceModels';
+import type {
+  AgendaHierarchyDay,
+  AgendaMaterialEntity,
+  AgendaSpeakerEntity,
+  AgendaTalkEntity,
+  AgendaImportData,
+} from './agendaImportModel';
+import type { Conference } from './persistenceModels';
 import type { IndicoEventIdentity } from './indicoEvent';
 import { sha1Hex } from './stableHash';
 import { parseWallClockTimeInZone } from './agendaTime';
@@ -101,52 +108,11 @@ type IndicoContributionSource = {
   linkedAgenda?: IndicoSessionValue;
 };
 
-export type IndicoHierarchySession = {
-  title: string;
-  room: string;
-  startAt: number | null;
-  endAt: number | null;
-  contributionIds: string[];
-};
-
-export type IndicoHierarchyDay = {
-  key: string;
-  label: string;
-  sessions: IndicoHierarchySession[];
-};
-
-export type IndicoSpeakerEntity = {
-  contributionId: string;
-  name: string;
-  affiliation: string;
-};
-
-export type IndicoMaterialEntity = {
-  id: string;
-  contributionId: string;
-  title: string;
-  url: string;
-  mimeType: string;
-  selected: boolean;
-  kind: 'pdf' | 'other';
-};
-
-export type IndicoTalkEntity = Omit<
-  Talk,
-  'id' | 'conferenceId' | 'createdAt' | 'updatedAt'
-> & {
-  contributionUrl: string;
-  speakers: IndicoSpeakerEntity[];
-  materials: IndicoMaterialEntity[];
-};
-
-export type IndicoImportData = {
-  conference: Conference;
-  hierarchy: IndicoHierarchyDay[];
-  talks: IndicoTalkEntity[];
-  speakers: IndicoSpeakerEntity[];
-  materials: IndicoMaterialEntity[];
-};
+export type IndicoHierarchyDay = AgendaHierarchyDay;
+export type IndicoSpeakerEntity = AgendaSpeakerEntity;
+export type IndicoMaterialEntity = AgendaMaterialEntity;
+export type IndicoTalkEntity = AgendaTalkEntity;
+export type IndicoImportData = AgendaImportData;
 
 type RawEnvelope = {
   count?: unknown;
@@ -657,6 +623,7 @@ export const mapIndicoExportEnvelope = (
     title: eventTitle,
     dates: formatDateRange(event?.startDate, event?.endDate),
     host: identity.origin.replace(/^https?:\/\//, ''),
+    sourceKind: 'indico',
     timeZone: eventTimeZone,
     lastOpenedAt: null,
     createdAt: 0,

@@ -31,6 +31,7 @@ export type Conference = {
   title: string;
   dates: string;
   host: string;
+  sourceKind?: 'indico' | 'web';
   timeZone?: string | null;
   lastOpenedAt: number | null;
   createdAt: number;

@@ -140,6 +140,7 @@ export const buildLibraryEventSummaries = async (
         title: conference.title,
         dates: conference.dates,
         host: conference.host,
+        sourceKind: conference.sourceKind ?? 'indico',
         lastOpened: formatLastOpened(conference.lastOpenedAt, now),
         annotationSummary: `${annotationCount} annotated slide${
           annotationCount === 1 ? '' : 's'
@@ -179,6 +180,7 @@ export const importConferenceFixture = async (
       title: fixture.title,
       dates: fixture.dates,
       host: fixture.host,
+      sourceKind: 'indico',
       timeZone: 'UTC',
       lastOpenedAt: fixture.lastOpenedAt,
       createdAt: now,

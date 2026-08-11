@@ -70,6 +70,7 @@ describe('persistence store', () => {
     await expect(store.getConference('conference-1')).resolves.toMatchObject({
       title: 'Conference One',
       timeZone: 'Europe/Paris',
+      sourceKind: 'indico',
     });
     await expect(store.getTalk('talk-1')).resolves.toMatchObject({
       bookmarked: true,
@@ -164,7 +165,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(8);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(9);
     versionDb.close();
     expect(existsSync(`${dbPath}.pre-node-sqlite-v7.bak`)).toBe(true);
     const backupDb = new SQL.Database(
@@ -381,6 +382,7 @@ describe('persistence store', () => {
       store.getConference('legacy-conference'),
     ).resolves.toMatchObject({
       timeZone: null,
+      sourceKind: 'indico',
     });
     await store.close();
   });

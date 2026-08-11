@@ -1,4 +1,5 @@
 import type { PersistenceStore } from './persistenceStore';
+import type { AgendaImportData } from './agendaImportModel';
 import {
   createDeckId,
   createTalkId,
@@ -137,13 +138,12 @@ export const resolveLinkedAgendaUrl = async (
   );
 };
 
-export const refreshIndicoEvent = async (
+export const reconcileMappedAgenda = async (
   store: PersistenceStore,
-  eventUrl: string,
-  options: FetchIndicoJsonOptions & { decision?: RefreshDecision } = {},
+  mapped: AgendaImportData,
+  options: { decision?: RefreshDecision } = {},
 ): Promise<RefreshLibraryEventResult> => {
-  const { identity, mapped } = await fetchMappedIndicoEvent(eventUrl, options);
-  const conferenceId = identity.conferenceId;
+  const conferenceId = mapped.conference.id;
   const currentConference = await store.getConference(conferenceId);
   if (!currentConference) {
     throw new Error('The requested conference does not exist locally.');
@@ -418,4 +418,13 @@ export const refreshIndicoEvent = async (
     removedTalkCount,
     newlyAvailableDeckCount,
   };
+};
+
+export const refreshIndicoEvent = async (
+  store: PersistenceStore,
+  eventUrl: string,
+  options: FetchIndicoJsonOptions & { decision?: RefreshDecision } = {},
+): Promise<RefreshLibraryEventResult> => {
+  const { mapped } = await fetchMappedIndicoEvent(eventUrl, options);
+  return reconcileMappedAgenda(store, mapped, options);
 };

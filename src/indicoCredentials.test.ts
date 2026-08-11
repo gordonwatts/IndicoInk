@@ -1,5 +1,5 @@
 import { mkdtempSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -73,6 +73,51 @@ describe('IndicoCredentialStore', () => {
     ).resolves.toBeNull();
     await expect(store.getApiKey('https://two.example.org')).resolves.toBe(
       'secret-two',
+    );
+  });
+
+  it('adds an encrypted OpenAI key without exposing it or losing v1 Indico keys', async () => {
+    const store = makeStore();
+    const encryptedIndicoKey =
+      Buffer.from('enc:indico-secret').toString('base64');
+    await writeFile(
+      store.filePath,
+      JSON.stringify({
+        version: 1,
+        apiKeys: { 'https://indico.example.org': encryptedIndicoKey },
+      }),
+      'utf8',
+    );
+
+    await store.saveOpenAiApiKey('openai-secret');
+
+    await expect(store.getApiKey('https://indico.example.org')).resolves.toBe(
+      'indico-secret',
+    );
+    await expect(store.getOpenAiApiKey()).resolves.toBe('openai-secret');
+    await expect(
+      store.getOpenAiConfigurationSummary({
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'medium',
+      }),
+    ).resolves.toMatchObject({ hasApiKey: true });
+    const rawFile = await readFile(store.filePath, 'utf8');
+    expect(rawFile).toContain('"version": 2');
+    expect(rawFile).not.toContain('openai-secret');
+    expect(rawFile).not.toContain('indico-secret');
+  });
+
+  it('deletes only the OpenAI key', async () => {
+    const store = makeStore();
+    await store.saveApiKey('https://indico.example.org', 'indico-secret');
+    await store.saveOpenAiApiKey('openai-secret');
+
+    await store.deleteOpenAiApiKey();
+
+    await expect(store.getOpenAiApiKey()).resolves.toBeNull();
+    await expect(store.getApiKey('https://indico.example.org')).resolves.toBe(
+      'indico-secret',
     );
   });
 });
