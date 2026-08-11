@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
+import type { OpenAiConfigurationSummary } from './shared/openAi';
 
 let clipboardWriteTextMock: ReturnType<typeof vi.fn>;
 
@@ -562,6 +563,13 @@ describe('App', () => {
 
   it('configures OpenAI on first generic webpage import and retries immediately', async () => {
     const user = userEvent.setup();
+    let resolveConfigurationSave!: (value: OpenAiConfigurationSummary) => void;
+    window.indicoInk.saveOpenAiConfiguration = vi.fn(
+      () =>
+        new Promise<OpenAiConfigurationSummary>((resolve) => {
+          resolveConfigurationSave = resolve;
+        }),
+    );
     const webEvent = {
       id: 'conference-web-opened',
       sourceUrl: 'https://events.example.org/workshop',
@@ -618,6 +626,23 @@ describe('App', () => {
       'secret-openai-key',
     );
     await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    const verifyingButton = await screen.findByRole('button', {
+      name: 'Verifying...',
+    });
+    expect((verifyingButton as HTMLButtonElement).disabled).toBe(true);
+    await user.click(verifyingButton);
+    expect(window.indicoInk.saveOpenAiConfiguration).toHaveBeenCalledTimes(1);
+
+    act(() =>
+      resolveConfigurationSave({
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'medium',
+        hasApiKey: true,
+        apiKeyUpdatedAt: 1,
+      }),
+    );
 
     expect(window.indicoInk.saveOpenAiConfiguration).toHaveBeenCalledWith({
       baseUrl: 'https://api.openai.com/v1',

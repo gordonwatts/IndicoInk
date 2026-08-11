@@ -132,7 +132,7 @@ describe('web agenda extraction boundary', () => {
           priorId: null,
           title: 'Dense contributed talk',
           authors: ['B. Author', 'C. Author'],
-          sessionTitle: 'Contributed talks',
+          sessionTitle: null,
           date: '2026-08-03',
           startTime: '10:15',
           endTime: null,
@@ -151,6 +151,7 @@ describe('web agenda extraction boundary', () => {
     expect(mapped.talks[0]?.materials).toHaveLength(1);
     expect(mapped.talks[1]?.materials).toEqual([]);
     expect(mapped.talks[1]?.contributionUrl).toBe(sourceUrl);
+    expect(mapped.talks[1]?.sessionTitle).toBe('Talks');
   });
 
   it('reuses only known prior IDs and rejects duplicates or foreign IDs', () => {

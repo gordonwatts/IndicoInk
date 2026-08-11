@@ -440,7 +440,7 @@ export const mapExtractedWebAgenda = (
         name: author.trim(),
         affiliation: '',
       })),
-      sessionTitle: talk.sessionTitle?.trim() || 'Unscheduled',
+      sessionTitle: talk.sessionTitle?.trim() || 'Talks',
       startsAt: parseTalkTime(talk.date, talk.startTime, timeZone),
       endsAt: parseTalkTime(talk.date, talk.endTime, timeZone),
       room: talk.room?.trim() || 'Room unavailable',

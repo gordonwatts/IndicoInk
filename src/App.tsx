@@ -2284,7 +2284,7 @@ export function App() {
   };
   const handleSaveOpenAiConfiguration = async () => {
     const request = openAiDialogRequest;
-    if (!request) {
+    if (!request || isSavingOpenAi) {
       return;
     }
     if (!openAiBaseUrl.trim() || !openAiModel.trim() || !openAiApiKey.trim()) {
@@ -4928,11 +4928,12 @@ export function App() {
                 }
                 primaryLabel={
                   isSavingOpenAi
-                    ? 'Saving...'
+                    ? 'Verifying...'
                     : openAiDialogRequest.operation === 'settings'
                       ? 'Save configuration'
                       : 'Save and continue'
                 }
+                primaryDisabled={isSavingOpenAi}
                 secondaryLabel="Cancel"
                 onPrimary={() => void handleSaveOpenAiConfiguration()}
                 onSecondary={() => {
