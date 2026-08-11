@@ -2423,7 +2423,9 @@ export function App() {
         title: `Export notes for ${snapshot.conference.title}`,
         defaultPath: createExportFileName(
           snapshot.conference,
-          activeSlideTalkId ? snapshot.talks[0]?.title : null,
+          destination === 'slides' && activeSlideTalkId
+            ? snapshot.talks[0]?.title
+            : null,
         ),
       });
 
