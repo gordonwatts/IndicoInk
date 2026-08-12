@@ -9,6 +9,8 @@ export type InkStroke = {
   pageNumber: number;
   /** The stroke width in the PDF page's native coordinate system. */
   baseWidth?: number;
+  /** CSS color used to render this stroke. */
+  color?: string;
   points: NormalizedPagePoint[];
 };
 

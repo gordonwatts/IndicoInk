@@ -13,6 +13,7 @@ export type ExportSlideAnnotationStroke = {
   id: string;
   kind: 'stroke';
   points: NormalizedPagePoint[];
+  color?: string;
 };
 
 export type ExportSlideAnnotationText = {

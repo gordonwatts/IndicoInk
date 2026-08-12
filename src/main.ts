@@ -183,12 +183,14 @@ const toExportAnnotation = (annotation: {
   x?: number;
   y?: number;
   text?: string;
+  color?: string;
 }) =>
   annotation.points
     ? {
         id: annotation.id,
         kind: 'stroke' as const,
         points: annotation.points,
+        ...(annotation.color ? { color: annotation.color } : {}),
       }
     : {
         id: annotation.id,

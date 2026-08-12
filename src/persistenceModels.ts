@@ -89,6 +89,7 @@ export type PenStroke = {
   deckId: string;
   slideId: string;
   baseWidth?: number;
+  color?: string;
   points: NormalizedPagePoint[];
   createdAt: number;
   updatedAt: number;

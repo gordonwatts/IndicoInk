@@ -89,6 +89,8 @@ export const drawInkStroke = (
 ) => {
   const points = Array.isArray(stroke.points) ? stroke.points : [];
   const baseWidth = stroke.baseWidth ?? DEFAULT_PEN_THICKNESS;
+  context.strokeStyle = stroke.color ?? '#111111';
+  context.fillStyle = stroke.color ?? '#111111';
   if (points.length === 1) {
     const point = points[0]!;
     context.beginPath();
@@ -132,6 +134,7 @@ export const drawInkPoints = (
   baseWidth: number,
   metrics: InkCanvasMetrics,
   clear = false,
+  color?: string,
 ) => {
   if (!canvas || !points.length) {
     return;
@@ -146,6 +149,7 @@ export const drawInkPoints = (
       id: 'active',
       pageNumber: 0,
       baseWidth,
+      ...(color ? { color } : {}),
       points,
     },
     metrics.pageSize,

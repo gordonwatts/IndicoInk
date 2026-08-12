@@ -947,7 +947,8 @@ input:focus-visible {
 .notes-editor-pane {
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
@@ -1095,6 +1096,33 @@ input:focus-visible {
 .pdf-preview-thickness-control output {
   min-width: 3ch;
   text-align: right;
+}
+
+/* Notes panes already provide their own padding and scroll viewport. Do not
+   extend the slide stage by the outer page-surface gutter inside them. */
+.notes-editor-pane .page-stack--slides .pdf-preview-stage {
+  width: 100%;
+  margin-inline: 0;
+}
+
+.pdf-preview-color-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pdf-preview-color-control input {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .pdf-preview-navigator {

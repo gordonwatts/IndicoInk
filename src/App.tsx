@@ -900,6 +900,13 @@ function AgendaTimelineCanvas({
                                   icon="annotated"
                                 />
                               ) : null}
+                              {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                                <StatusLabel
+                                  label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                  tone="warning"
+                                  icon="annotated"
+                                />
+                              ) : null}
                             </div>
                           ) : null}
                           {talk.entryKind === 'linked-agenda' &&
@@ -1826,7 +1833,8 @@ export function App() {
         : agendaFilter === 'bookmarked'
           ? talk.bookmarked
           : agendaFilter === 'annotated'
-            ? talk.annotatedSlideCount > 0
+            ? talk.annotatedSlideCount > 0 ||
+              (talk.annotatedNotePageCount ?? 0) > 0
             : talk.materialSummary !== 'No slides';
 
     return matchesDay && matchesFilter;
@@ -1835,7 +1843,8 @@ export function App() {
     (talk) => talk.bookmarked,
   );
   const annotatedAgendaTalks = displayedAgendaTalks.filter(
-    (talk) => talk.annotatedSlideCount > 0,
+    (talk) =>
+      talk.annotatedSlideCount > 0 || (talk.annotatedNotePageCount ?? 0) > 0,
   );
   const normalizedAgendaSearchQuery = agendaSearchQuery.trim().toLowerCase();
   const searchAgendaTalks = displayedAgendaTalks.filter((talk) =>
@@ -4010,11 +4019,20 @@ export function App() {
                               tone="neutral"
                               icon="open"
                             />
-                            <StatusLabel
-                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                              tone="warning"
-                              icon="annotated"
-                            />
+                            {talk.annotatedSlideCount > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
+                            {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
                             {talk.upstreamSummary ? (
                               <StatusLabel
                                 label={talk.upstreamSummary}
@@ -4350,11 +4368,20 @@ export function App() {
                               tone="neutral"
                               icon="open"
                             />
-                            <StatusLabel
-                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                              tone="warning"
-                              icon="annotated"
-                            />
+                            {talk.annotatedSlideCount > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
+                            {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
                             {talk.upstreamSummary ? (
                               <StatusLabel
                                 label={talk.upstreamSummary}
@@ -4497,11 +4524,20 @@ export function App() {
                                   tone="neutral"
                                   icon="open"
                                 />
-                                <StatusLabel
-                                  label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                                  tone="warning"
-                                  icon="annotated"
-                                />
+                                {talk.annotatedSlideCount > 0 ? (
+                                  <StatusLabel
+                                    label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                    tone="warning"
+                                    icon="annotated"
+                                  />
+                                ) : null}
+                                {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                                  <StatusLabel
+                                    label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                    tone="warning"
+                                    icon="annotated"
+                                  />
+                                ) : null}
                                 {talk.upstreamSummary ? (
                                   <StatusLabel
                                     label={talk.upstreamSummary}
