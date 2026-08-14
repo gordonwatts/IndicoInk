@@ -61,6 +61,9 @@ describe('PdfPreview', () => {
         .getByRole('slider', { name: 'Pen thickness' })
         .getAttribute('value'),
     ).toBe('2');
+    const colorChoices = screen.getByRole('combobox', { name: 'Pen color' });
+    expect(colorChoices.querySelectorAll('option')).toHaveLength(6);
+    expect(screen.getByRole('option', { name: 'White' })).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: 'Cancel download' }),
     ).toBeNull();

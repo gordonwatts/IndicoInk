@@ -1116,7 +1116,39 @@ input:focus-visible {
   font-weight: var(--font-weight-semibold);
 }
 
-.pdf-preview-color-control input {
+.pdf-preview-color-control select {
+  min-width: 92px;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-pen-colors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.settings-pen-color {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-panel-muted);
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+}
+
+.settings-pen-color input {
   width: 32px;
   height: 28px;
   padding: 0;

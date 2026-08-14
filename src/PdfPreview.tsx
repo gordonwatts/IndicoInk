@@ -44,6 +44,10 @@ import type {
   PdfWorkspaceHistory,
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
+import {
+  DEFAULT_PEN_COLOR_NAMES,
+  DEFAULT_PEN_COLORS,
+} from './shared/appSettings';
 import { IconButton, SegmentedControl } from './ui';
 import {
   createConferenceId,
@@ -622,6 +626,7 @@ type PdfPreviewProps = {
   scrollContainerRef?: React.RefObject<HTMLElement | null>;
   penThickness?: number;
   onPenThicknessChange?: (value: number) => void | Promise<void>;
+  penColors?: string[];
 };
 
 export const PEN_POINTER_MARKER_RADIUS = 2.5;
@@ -644,6 +649,7 @@ export function PdfPreview({
   scrollContainerRef,
   penThickness = DEFAULT_PEN_THICKNESS,
   onPenThicknessChange,
+  penColors = [...DEFAULT_PEN_COLORS],
 }: PdfPreviewProps) {
   const renderCountRef = React.useRef(0);
   renderCountRef.current += 1;
@@ -657,12 +663,21 @@ export function PdfPreview({
   }
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
   const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
-  const [selectedPenColor, setSelectedPenColor] = React.useState('#111111');
+  const [selectedPenColor, setSelectedPenColor] = React.useState(
+    penColors[0] ?? DEFAULT_PEN_COLORS[0],
+  );
   const [selectedPenThickness, setSelectedPenThickness] =
     React.useState(penThickness);
   React.useEffect(() => {
     setSelectedPenThickness(penThickness);
   }, [penThickness]);
+  React.useEffect(() => {
+    setSelectedPenColor((current) =>
+      penColors.includes(current)
+        ? current
+        : (penColors[0] ?? DEFAULT_PEN_COLORS[0]),
+    );
+  }, [penColors]);
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -3681,12 +3696,17 @@ export function PdfPreview({
             </label>
             <label className="pdf-preview-color-control">
               <span>Color</span>
-              <input
+              <select
                 aria-label="Pen color"
-                type="color"
                 value={selectedPenColor}
                 onChange={(event) => setSelectedPenColor(event.target.value)}
-              />
+              >
+                {penColors.map((color, index) => (
+                  <option key={`${color}-${index}`} value={color}>
+                    {DEFAULT_PEN_COLOR_NAMES[index] ?? `Color ${index + 1}`}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
           {workspaceMode && onWorkspaceModeChange ? (

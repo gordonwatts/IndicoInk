@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
+import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 import type { OpenAiConfigurationSummary } from './shared/openAi';
 
 let clipboardWriteTextMock: ReturnType<typeof vi.fn>;
@@ -81,6 +82,7 @@ describe('App', () => {
       getAppSettings: vi.fn().mockResolvedValue({
         recordLogging: false,
         penThickness: 2,
+        penColors: [...DEFAULT_PEN_COLORS],
         openAiBaseUrl: 'https://api.openai.com/v1',
         openAiModel: 'gpt-5.6-sol',
         openAiReasoningEffort: 'medium',
@@ -191,6 +193,7 @@ describe('App', () => {
       setAppSettings: vi.fn().mockResolvedValue({
         recordLogging: false,
         penThickness: 2,
+        penColors: [...DEFAULT_PEN_COLORS],
         openAiBaseUrl: 'https://api.openai.com/v1',
         openAiModel: 'gpt-5.6-sol',
         openAiReasoningEffort: 'medium',
@@ -311,6 +314,9 @@ describe('App', () => {
     expect(screen.getByText('0.1.0')).toBeTruthy();
     expect(screen.getByText('Electron version')).toBeTruthy();
     expect(screen.getByText('42.3.2')).toBeTruthy();
+    expect(document.querySelectorAll('.settings-pen-color input')).toHaveLength(
+      6,
+    );
 
     await user.click(
       screen.getByRole('button', {

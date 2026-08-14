@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { AppSettings } from './shared/appSettings';
+import { DEFAULT_PEN_COLORS, PEN_COLOR_COUNT } from './shared/appSettings';
 import {
   OPENAI_DEFAULT_BASE_URL,
   OPENAI_DEFAULT_MODEL,
@@ -19,6 +20,7 @@ const appSettingsFileName = 'indicoink-settings.json';
 export const defaultAppSettings: AppSettings = {
   recordLogging: false,
   penThickness: DEFAULT_PEN_THICKNESS,
+  penColors: [...DEFAULT_PEN_COLORS],
   openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
   openAiModel: OPENAI_DEFAULT_MODEL,
   openAiReasoningEffort: 'medium',
@@ -46,6 +48,18 @@ const normalizePenThickness = (value: unknown) => {
   return Math.max(MIN_PEN_THICKNESS, Math.min(MAX_PEN_THICKNESS, value));
 };
 
+const normalizePenColor = (value: unknown, fallback: string) =>
+  typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+    ? value.toLowerCase()
+    : fallback;
+
+const normalizePenColors = (value: unknown) => {
+  const values = Array.isArray(value) ? value : [];
+  return Array.from({ length: PEN_COLOR_COUNT }, (_, index) =>
+    normalizePenColor(values[index], DEFAULT_PEN_COLORS[index]!),
+  );
+};
+
 const normalizeAppSettings = (value: unknown): AppSettings => {
   if (!value || typeof value !== 'object') {
     return defaultAppSettings;
@@ -54,12 +68,14 @@ const normalizeAppSettings = (value: unknown): AppSettings => {
   const {
     recordLogging,
     penThickness,
+    penColors,
     openAiBaseUrl,
     openAiModel,
     openAiReasoningEffort,
   } = value as {
     recordLogging?: unknown;
     penThickness?: unknown;
+    penColors?: unknown;
     openAiBaseUrl?: unknown;
     openAiModel?: unknown;
     openAiReasoningEffort?: unknown;
@@ -68,6 +84,7 @@ const normalizeAppSettings = (value: unknown): AppSettings => {
   return {
     recordLogging: recordLogging === true,
     penThickness: normalizePenThickness(penThickness),
+    penColors: normalizePenColors(penColors),
     openAiBaseUrl: normalizeOpenAiBaseUrl(openAiBaseUrl),
     openAiModel: normalizeNonEmptyString(openAiModel, OPENAI_DEFAULT_MODEL),
     openAiReasoningEffort: normalizeOpenAiReasoningEffort(
@@ -106,6 +123,7 @@ export const saveAppSettings = (
       {
         recordLogging: settings.recordLogging,
         penThickness: settings.penThickness,
+        penColors: settings.penColors ?? [...DEFAULT_PEN_COLORS],
         openAiBaseUrl: settings.openAiBaseUrl,
         openAiModel: settings.openAiModel,
         openAiReasoningEffort: settings.openAiReasoningEffort,
