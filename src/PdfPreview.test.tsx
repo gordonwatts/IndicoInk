@@ -1,5 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -42,7 +48,7 @@ describe('PdfPreview', () => {
     });
   });
 
-  it('shows the compact slide-note controls without jump or download chrome', () => {
+  it('shows the compact slide-note controls without jump or download chrome', async () => {
     const onSlideMetricsChange = vi.fn();
 
     render(
@@ -61,8 +67,8 @@ describe('PdfPreview', () => {
         .getByRole('slider', { name: 'Pen thickness' })
         .getAttribute('value'),
     ).toBe('2');
-    const colorChoices = screen.getByRole('combobox', { name: 'Pen color' });
-    expect(colorChoices.querySelectorAll('option')).toHaveLength(6);
+    await userEvent.click(screen.getByRole('button', { name: 'Pen color' }));
+    expect(screen.getAllByRole('option')).toHaveLength(6);
     expect(screen.getByRole('option', { name: 'White' })).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: 'Cancel download' }),
@@ -99,6 +105,103 @@ describe('PdfPreview', () => {
       currentPageCount: 1,
     });
     expect(window.indicoInk.saveDeckWorkspaceChanges).not.toHaveBeenCalled();
+  });
+
+  it('uses the selected pen color when committing a stroke', async () => {
+    const context = {
+      arc: vi.fn(),
+      beginPath: vi.fn(),
+      clearRect: vi.fn(),
+      fill: vi.fn(),
+      lineTo: vi.fn(),
+      moveTo: vi.fn(),
+      setTransform: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '#111111',
+      fillStyle: '#111111',
+    } as unknown as CanvasRenderingContext2D;
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+      value: vi.fn(() => context),
+      configurable: true,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+      value: vi.fn(),
+      configurable: true,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', {
+      value: vi.fn(),
+      configurable: true,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
+      value: vi.fn(() => false),
+      configurable: true,
+    });
+
+    const user = userEvent.setup();
+    render(
+      <PdfPreview
+        filePath={null}
+        blankPageMode
+        workspaceDeckId="color-test"
+        workspaceSourceUrl="indicoink://notebook/color-test"
+        conferenceId="conference-test"
+        talkId="talk-test"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('.pdf-preview-sheet')).toBeTruthy();
+    });
+    await user.click(screen.getByRole('button', { name: 'Pen color' }));
+    await user.click(screen.getByRole('option', { name: 'Red' }));
+
+    const sheet = document.querySelector<HTMLElement>('.pdf-preview-sheet');
+    if (!sheet) {
+      throw new Error('Expected a rendered PDF page sheet.');
+    }
+    Object.defineProperty(sheet, 'getBoundingClientRect', {
+      value: () => ({
+        bottom: 1100,
+        height: 1100,
+        left: 0,
+        right: 800,
+        top: 0,
+        width: 800,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+      configurable: true,
+    });
+
+    const pointerDown = createEvent.pointerDown(sheet, {
+      buttons: 1,
+      button: 0,
+      clientX: 80,
+      clientY: 110,
+      pointerId: 1,
+      pressure: 0.5,
+    });
+    Object.defineProperty(pointerDown, 'pointerType', { value: 'pen' });
+    fireEvent(sheet, pointerDown);
+    const pointerUp = createEvent.pointerUp(sheet, {
+      buttons: 0,
+      button: 0,
+      clientX: 80,
+      clientY: 110,
+      pointerId: 1,
+      pressure: 0,
+    });
+    Object.defineProperty(pointerUp, 'pointerType', { value: 'pen' });
+    fireEvent(sheet, pointerUp);
+
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(window.indicoInk.saveDeckWorkspaceChanges)
+          .mock.calls.some((call) => JSON.stringify(call).includes('#d13438')),
+      ).toBe(true);
+    });
   });
 
   it('keeps the pen pointer overlay point-like', () => {

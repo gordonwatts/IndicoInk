@@ -666,6 +666,8 @@ export function PdfPreview({
   const [selectedPenColor, setSelectedPenColor] = React.useState(
     penColors[0] ?? DEFAULT_PEN_COLORS[0],
   );
+  const [isPenColorMenuOpen, setIsPenColorMenuOpen] = React.useState(false);
+  const penColorPickerRef = React.useRef<HTMLDivElement>(null);
   const [selectedPenThickness, setSelectedPenThickness] =
     React.useState(penThickness);
   React.useEffect(() => {
@@ -678,6 +680,27 @@ export function PdfPreview({
         : (penColors[0] ?? DEFAULT_PEN_COLORS[0]),
     );
   }, [penColors]);
+  React.useEffect(() => {
+    if (!isPenColorMenuOpen) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!penColorPickerRef.current?.contains(event.target as Node)) {
+        setIsPenColorMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsPenColorMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isPenColorMenuOpen]);
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -2389,7 +2412,7 @@ export function PdfPreview({
       (event: React.PointerEvent<HTMLDivElement>) => {
         if (
           textNoteResizeState?.pointerId === event.pointerId &&
-          textNoteResizeState.pageIndex === pageIndex
+          textNoteResizeState?.pageIndex === pageIndex
         ) {
           if (eventKind === 'pointermove') {
             const pageWidth = event.currentTarget.getBoundingClientRect().width;
@@ -2827,7 +2850,8 @@ export function PdfPreview({
             );
           }
           if (
-            activeInkAction?.pointerId === event.pointerId &&
+            activeInkAction &&
+            activeInkAction.pointerId === event.pointerId &&
             (activeInkAction.kind === 'pan' ||
               activeInkAction.kind === 'text' ||
               activeInkAction.pageIndex === pageIndex)
@@ -2854,7 +2878,7 @@ export function PdfPreview({
           }
           if (
             textNoteDragState?.pointerId === event.pointerId &&
-            textNoteDragState.pageIndex === pageIndex
+            textNoteDragState?.pageIndex === pageIndex
           ) {
             const beforeTextNotesByPage = [...textNotesByPageRef.current];
             beforeTextNotesByPage[pageIndex] = (
@@ -2894,6 +2918,7 @@ export function PdfPreview({
       finishActiveDraw,
       previewViewportWidth,
       selectedPenThickness,
+      selectedPenColor,
       textNoteDragState,
       textNoteDraft,
       textNoteResizeState,
@@ -3694,20 +3719,57 @@ export function PdfPreview({
               />
               <output>{selectedPenThickness}px</output>
             </label>
-            <label className="pdf-preview-color-control">
+            <div className="pdf-preview-color-control">
               <span>Color</span>
-              <select
-                aria-label="Pen color"
-                value={selectedPenColor}
-                onChange={(event) => setSelectedPenColor(event.target.value)}
-              >
-                {penColors.map((color, index) => (
-                  <option key={`${color}-${index}`} value={color}>
-                    {DEFAULT_PEN_COLOR_NAMES[index] ?? `Color ${index + 1}`}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <div className="pdf-preview-color-picker" ref={penColorPickerRef}>
+                <button
+                  type="button"
+                  className="pdf-preview-color-trigger"
+                  aria-label="Pen color"
+                  aria-haspopup="listbox"
+                  aria-expanded={isPenColorMenuOpen}
+                  onClick={() => setIsPenColorMenuOpen((open) => !open)}
+                >
+                  <span
+                    className="pdf-preview-color-swatch"
+                    style={{ backgroundColor: selectedPenColor }}
+                    aria-hidden="true"
+                  />
+                </button>
+                {isPenColorMenuOpen ? (
+                  <div
+                    className="pdf-preview-color-menu"
+                    role="listbox"
+                    aria-label="Pen color choices"
+                  >
+                    {penColors.map((color, index) => (
+                      <button
+                        key={`${color}-${index}`}
+                        type="button"
+                        role="option"
+                        aria-label={
+                          DEFAULT_PEN_COLOR_NAMES[index] ?? `Color ${index + 1}`
+                        }
+                        aria-selected={selectedPenColor === color}
+                        className={`pdf-preview-color-option${
+                          selectedPenColor === color ? ' is-selected' : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedPenColor(color);
+                          setIsPenColorMenuOpen(false);
+                        }}
+                      >
+                        <span
+                          className="pdf-preview-color-swatch"
+                          style={{ backgroundColor: color }}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
           {workspaceMode && onWorkspaceModeChange ? (
             <SegmentedControl

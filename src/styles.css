@@ -1116,16 +1116,61 @@ input:focus-visible {
   font-weight: var(--font-weight-semibold);
 }
 
-.pdf-preview-color-control select {
-  min-width: 92px;
-  min-height: 32px;
-  padding: 0 6px;
+.pdf-preview-color-picker {
+  position: relative;
+}
+
+.pdf-preview-color-trigger,
+.pdf-preview-color-option {
+  display: inline-grid;
+  place-items: center;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
   background: var(--surface-panel);
-  color: var(--text-primary);
-  font: inherit;
   cursor: pointer;
+}
+
+.pdf-preview-color-trigger {
+  width: 38px;
+  min-height: 32px;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.pdf-preview-color-menu {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-panel);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+}
+
+.pdf-preview-color-option {
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  border-radius: 7px;
+}
+
+.pdf-preview-color-option:hover,
+.pdf-preview-color-option:focus-visible,
+.pdf-preview-color-option.is-selected {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.pdf-preview-color-swatch {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgb(0 0 0 / 28%);
+  border-radius: 4px;
 }
 
 .settings-pen-colors {
