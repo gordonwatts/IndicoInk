@@ -2059,6 +2059,117 @@ describe('App', () => {
     );
   }, 10_000);
 
+  it('clears stale slide references and scopes note exports to a slide-less talk', async () => {
+    const user = userEvent.setup();
+    const libraryEvent = {
+      id: 'conference-talk-context',
+      sourceUrl: 'https://indico.example.org/event/talk-context',
+      title: 'Talk Context Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Cached for offline use',
+    };
+    const agendaTalks = [
+      {
+        id: 'talk-with-slides',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-with-slides',
+        contributionUrl: `${libraryEvent.sourceUrl}/contributions/with-slides/`,
+        sortStartsAt: Date.UTC(2026, 5, 12, 9, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Talk with slides',
+        speaker: 'Ada Lovelace',
+        sessionTitle: 'Morning session',
+        timeRangeLabel: '09:00 - 09:30',
+        room: 'Room A',
+        bookmarked: false,
+        materialSummary: 'PDF',
+        materials: [
+          {
+            id: 'deck-with-slides',
+            title: 'Slides',
+            sourceUrl: `${libraryEvent.sourceUrl}/materials/slides.pdf`,
+            mimeType: 'application/pdf',
+            selected: true,
+            pageCount: 2,
+          },
+        ],
+        annotatedSlideCount: 0,
+      },
+      {
+        id: 'talk-without-slides',
+        conferenceId: libraryEvent.id,
+        contributionId: 'contribution-without-slides',
+        contributionUrl: `${libraryEvent.sourceUrl}/contributions/without-slides/`,
+        sortStartsAt: Date.UTC(2026, 5, 12, 10, 0),
+        dayLabel: 'Friday, June 12, 2026',
+        title: 'Talk without slides',
+        speaker: 'Grace Hopper',
+        sessionTitle: 'Morning session',
+        timeRangeLabel: '10:00 - 10:30',
+        room: 'Room A',
+        bookmarked: false,
+        materialSummary: 'No slides',
+        materials: [],
+        annotatedSlideCount: 0,
+        annotatedNotePageCount: 1,
+      },
+    ];
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue(agendaTalks);
+    window.indicoInk.openTalkDeck = vi.fn().mockResolvedValue({
+      kind: 'ready',
+      conferenceId: libraryEvent.id,
+      talkId: 'talk-with-slides',
+      deckId: 'deck-with-slides',
+      sourceUrl: `${libraryEvent.sourceUrl}/materials/slides.pdf`,
+      displayName: 'Slides',
+      filePath: 'C:/temp/talk-with-slides.pdf',
+      pageCount: 2,
+    });
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Open talk for Talk with slides' }),
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Back to agenda' }),
+    );
+
+    const talkWithoutSlidesCard = document.querySelector<HTMLElement>(
+      '[data-talk-id="talk-without-slides"]',
+    );
+    if (!talkWithoutSlidesCard) {
+      throw new Error('Expected the slide-less talk card.');
+    }
+    await user.click(
+      within(talkWithoutSlidesCard).getByRole('button', {
+        name: 'Open notes for Talk without slides',
+      }),
+    );
+
+    expect(await screen.findByText('No slide reference')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Export notes' }));
+    await waitFor(() => {
+      expect(window.indicoInk.getConferenceExportSnapshot).toHaveBeenCalledWith(
+        libraryEvent.id,
+        'talk-without-slides',
+      );
+    });
+  });
+
   it('keeps agenda filters selected when switching days', async () => {
     const user = userEvent.setup();
     const libraryEvent = {
