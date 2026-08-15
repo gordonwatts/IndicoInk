@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildConferenceNotesMarkdown,
+  renderAnnotatedNotePagePng,
   renderAnnotatedSlidePng,
 } from './exportNotes';
 import type { ConferenceExportSnapshot } from './shared/exportNotes';
@@ -227,6 +228,44 @@ describe('export notes', () => {
     expect(markdown).not.toContain('Annotations:');
     expect(markdown).toContain('Annotated slide 3');
     expect(markdown).not.toContain('Time:\n\n- [Original Slides]');
+  });
+
+  it('trims note-page export height to the last annotation', async () => {
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => ({
+        fillRect: vi.fn(),
+        strokeRect: vi.fn(),
+        beginPath: vi.fn(),
+        arc: vi.fn(),
+        fill: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
+        stroke: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        measureText: vi.fn(() => ({ width: 80 })),
+        fillText: vi.fn(),
+      })),
+      toDataURL: vi.fn(() => 'data:image/png;base64,note'),
+    } as unknown as HTMLCanvasElement;
+
+    await renderAnnotatedNotePagePng({
+      annotations: [
+        {
+          id: 'note-1',
+          kind: 'text',
+          x: 0.1,
+          y: 0.1,
+          text: 'Short note',
+        },
+      ],
+      createCanvas: () => canvas,
+    });
+
+    expect(canvas.height).toBeLessThan(2200);
+    expect(canvas.height).toBeGreaterThanOrEqual(600);
   });
 
   it('omits the session line when the session is unscheduled', () => {

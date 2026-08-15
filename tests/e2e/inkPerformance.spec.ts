@@ -133,8 +133,9 @@ test('meets the issue 87 loaded-workspace acceptance thresholds', async ({
     await expect(
       harness.page.locator('.pdf-preview-ink-canvas.dry').first(),
     ).toHaveAttribute('data-raster-status', 'ready', { timeout: 120_000 });
-    await harness.page.getByRole('button', { name: 'Pen' }).click();
-    await harness.page.getByRole('button', { name: 'Draw' }).click();
+    await harness.page
+      .getByRole('button', { name: 'Pen', exact: true })
+      .click();
 
     await harness.page.evaluate(() => {
       const runtime = window as typeof window & {

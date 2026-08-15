@@ -9,6 +9,7 @@ import {
   loadAppSettings,
   saveAppSettings,
 } from './appSettings';
+import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 
 describe('appSettings', () => {
   it('uses the default settings when nothing has been saved yet', () => {
@@ -17,6 +18,7 @@ describe('appSettings', () => {
     expect(loadAppSettings(userDataDir)).toEqual({
       recordLogging: false,
       penThickness: 2,
+      penColors: [...DEFAULT_PEN_COLORS],
       openAiBaseUrl: 'https://api.openai.com/v1',
       openAiModel: 'gpt-5.6-sol',
       openAiReasoningEffort: 'medium',
@@ -29,6 +31,14 @@ describe('appSettings', () => {
     saveAppSettings(userDataDir, {
       recordLogging: true,
       penThickness: 6,
+      penColors: [
+        '#000000',
+        '#ff0000',
+        '#00ff00',
+        '#0000ff',
+        '#ffff00',
+        '#ffffff',
+      ],
       openAiBaseUrl: 'https://example.test/v1/',
       openAiModel: 'test-model',
       openAiReasoningEffort: 'high',
@@ -40,6 +50,14 @@ describe('appSettings', () => {
     expect(loadAppSettings(userDataDir)).toEqual({
       recordLogging: true,
       penThickness: 6,
+      penColors: [
+        '#000000',
+        '#ff0000',
+        '#00ff00',
+        '#0000ff',
+        '#ffff00',
+        '#ffffff',
+      ],
       openAiBaseUrl: 'https://example.test/v1',
       openAiModel: 'test-model',
       openAiReasoningEffort: 'high',
@@ -48,10 +66,15 @@ describe('appSettings', () => {
 
   it('normalizes invalid shapes to the default settings', () => {
     expect(
-      coerceAppSettings({ recordLogging: 'yes', penThickness: 99 }),
+      coerceAppSettings({
+        recordLogging: 'yes',
+        penThickness: 99,
+        penColors: ['#ABCDEF', 'not-a-color'],
+      }),
     ).toEqual({
       recordLogging: false,
       penThickness: 8,
+      penColors: ['#abcdef', ...DEFAULT_PEN_COLORS.slice(1)],
       openAiBaseUrl: 'https://api.openai.com/v1',
       openAiModel: 'gpt-5.6-sol',
       openAiReasoningEffort: 'medium',
@@ -59,6 +82,7 @@ describe('appSettings', () => {
     expect(coerceAppSettings(null)).toEqual({
       recordLogging: false,
       penThickness: 2,
+      penColors: [...DEFAULT_PEN_COLORS],
       openAiBaseUrl: 'https://api.openai.com/v1',
       openAiModel: 'gpt-5.6-sol',
       openAiReasoningEffort: 'medium',

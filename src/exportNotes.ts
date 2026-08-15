@@ -156,7 +156,8 @@ const renderStroke = (
   context.beginPath();
   context.lineCap = 'round';
   context.lineJoin = 'round';
-  context.strokeStyle = '#000000';
+  context.strokeStyle = stroke.color ?? '#111111';
+  context.fillStyle = stroke.color ?? '#111111';
   context.moveTo(
     stroke.points[0]!.x * pageWidth,
     stroke.points[0]!.y * pageHeight,
@@ -392,13 +393,22 @@ export const renderAnnotatedNotePagePng = async ({
   annotations,
   createCanvas,
   width = 1600,
-  height = 2200,
+  height,
 }: {
   annotations: ExportSlideAnnotation[];
   createCanvas?: () => HTMLCanvasElement;
   width?: number;
   height?: number;
 }): Promise<{ imageDataUrl: string }> => {
+  const contentHeight = Math.max(
+    600,
+    ...annotations.flatMap((annotation) =>
+      annotation.kind === 'stroke'
+        ? annotation.points.map((point) => point.y * 2200 + 180)
+        : [annotation.y * 2200 + 180],
+    ),
+  );
+  const outputHeight = Math.min(2200, Math.ceil(height ?? contentHeight));
   const canvas =
     createCanvas?.() ?? globalThis.document.createElement('canvas');
   const context = canvas.getContext('2d');
@@ -407,14 +417,14 @@ export const renderAnnotatedNotePagePng = async ({
   }
 
   canvas.width = width;
-  canvas.height = height;
+  canvas.height = outputHeight;
   context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, width, height);
+  context.fillRect(0, 0, width, outputHeight);
   for (const annotation of annotations) {
     if (annotation.kind === 'stroke') {
-      renderStroke(context, width, height, annotation);
+      renderStroke(context, width, outputHeight, annotation);
     } else {
-      renderTextNote(context, width, height, annotation);
+      renderTextNote(context, width, outputHeight, annotation);
     }
   }
 

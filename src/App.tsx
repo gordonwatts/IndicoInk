@@ -12,6 +12,7 @@ import {
 } from './agendaCanvasLayout';
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
+import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 import { DEFAULT_PEN_THICKNESS } from './strokeTools';
 import type {
   AgendaTalkMaterialSummary,
@@ -900,6 +901,13 @@ function AgendaTimelineCanvas({
                                   icon="annotated"
                                 />
                               ) : null}
+                              {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                                <StatusLabel
+                                  label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                  tone="warning"
+                                  icon="annotated"
+                                />
+                              ) : null}
                             </div>
                           ) : null}
                           {talk.entryKind === 'linked-agenda' &&
@@ -1292,6 +1300,7 @@ export function App() {
           ...(appSettings ?? {
             recordLogging: false,
             penThickness: DEFAULT_PEN_THICKNESS,
+            penColors: [...DEFAULT_PEN_COLORS],
             openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
             openAiModel: OPENAI_DEFAULT_MODEL,
             openAiReasoningEffort: 'medium' as const,
@@ -1320,6 +1329,7 @@ export function App() {
           ...(appSettings ?? {
             recordLogging: false,
             penThickness: DEFAULT_PEN_THICKNESS,
+            penColors: [...DEFAULT_PEN_COLORS],
             openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
             openAiModel: OPENAI_DEFAULT_MODEL,
             openAiReasoningEffort: 'medium' as const,
@@ -1332,6 +1342,31 @@ export function App() {
           error instanceof Error
             ? error.message
             : 'Failed to save pen thickness.',
+        );
+      }
+    },
+    [appSettings],
+  );
+
+  const setPenColors = React.useCallback(
+    async (penColors: string[]) => {
+      setAppSettingsError(null);
+      try {
+        const updatedSettings = await window.indicoInk.setAppSettings({
+          ...(appSettings ?? {
+            recordLogging: false,
+            penThickness: DEFAULT_PEN_THICKNESS,
+            penColors: [...DEFAULT_PEN_COLORS],
+            openAiBaseUrl: OPENAI_DEFAULT_BASE_URL,
+            openAiModel: OPENAI_DEFAULT_MODEL,
+            openAiReasoningEffort: 'medium' as const,
+          }),
+          penColors,
+        });
+        setAppSettings(updatedSettings);
+      } catch (error) {
+        setAppSettingsError(
+          error instanceof Error ? error.message : 'Failed to save pen colors.',
         );
       }
     },
@@ -1826,7 +1861,8 @@ export function App() {
         : agendaFilter === 'bookmarked'
           ? talk.bookmarked
           : agendaFilter === 'annotated'
-            ? talk.annotatedSlideCount > 0
+            ? talk.annotatedSlideCount > 0 ||
+              (talk.annotatedNotePageCount ?? 0) > 0
             : talk.materialSummary !== 'No slides';
 
     return matchesDay && matchesFilter;
@@ -1835,7 +1871,8 @@ export function App() {
     (talk) => talk.bookmarked,
   );
   const annotatedAgendaTalks = displayedAgendaTalks.filter(
-    (talk) => talk.annotatedSlideCount > 0,
+    (talk) =>
+      talk.annotatedSlideCount > 0 || (talk.annotatedNotePageCount ?? 0) > 0,
   );
   const normalizedAgendaSearchQuery = agendaSearchQuery.trim().toLowerCase();
   const searchAgendaTalks = displayedAgendaTalks.filter((talk) =>
@@ -4010,11 +4047,20 @@ export function App() {
                               tone="neutral"
                               icon="open"
                             />
-                            <StatusLabel
-                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                              tone="warning"
-                              icon="annotated"
-                            />
+                            {talk.annotatedSlideCount > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
+                            {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
                             {talk.upstreamSummary ? (
                               <StatusLabel
                                 label={talk.upstreamSummary}
@@ -4247,6 +4293,9 @@ export function App() {
                       penThickness={
                         appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
                       }
+                      penColors={
+                        appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
+                      }
                       onPenThicknessChange={setPenThickness}
                       onBackToAgenda={() => {
                         setDestination('agenda');
@@ -4266,6 +4315,9 @@ export function App() {
                             onWorkspaceModeChange={handleViewerModeChange}
                             penThickness={
                               appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
+                            }
+                            penColors={
+                              appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
                             }
                             onPenThicknessChange={setPenThickness}
                             onSlideMetricsChange={setSlideViewerMetrics}
@@ -4295,6 +4347,9 @@ export function App() {
                           : {})}
                         penThickness={
                           appSettings?.penThickness ?? DEFAULT_PEN_THICKNESS
+                        }
+                        penColors={
+                          appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
                         }
                         onPenThicknessChange={setPenThickness}
                         onBackToAgenda={() => {
@@ -4350,11 +4405,20 @@ export function App() {
                               tone="neutral"
                               icon="open"
                             />
-                            <StatusLabel
-                              label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                              tone="warning"
-                              icon="annotated"
-                            />
+                            {talk.annotatedSlideCount > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
+                            {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                              <StatusLabel
+                                label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                tone="warning"
+                                icon="annotated"
+                              />
+                            ) : null}
                             {talk.upstreamSummary ? (
                               <StatusLabel
                                 label={talk.upstreamSummary}
@@ -4497,11 +4561,20 @@ export function App() {
                                   tone="neutral"
                                   icon="open"
                                 />
-                                <StatusLabel
-                                  label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
-                                  tone="warning"
-                                  icon="annotated"
-                                />
+                                {talk.annotatedSlideCount > 0 ? (
+                                  <StatusLabel
+                                    label={`${talk.annotatedSlideCount} annotated slide${talk.annotatedSlideCount === 1 ? '' : 's'}`}
+                                    tone="warning"
+                                    icon="annotated"
+                                  />
+                                ) : null}
+                                {(talk.annotatedNotePageCount ?? 0) > 0 ? (
+                                  <StatusLabel
+                                    label={`${talk.annotatedNotePageCount} note page${talk.annotatedNotePageCount === 1 ? '' : 's'}`}
+                                    tone="warning"
+                                    icon="annotated"
+                                  />
+                                ) : null}
                                 {talk.upstreamSummary ? (
                                   <StatusLabel
                                     label={talk.upstreamSummary}
@@ -4635,6 +4708,37 @@ export function App() {
                             {appSettingsError}
                           </div>
                         ) : null}
+                      </div>
+                    </div>
+                    <div className="settings-row settings-row-column">
+                      <span>Pen colors</span>
+                      <div className="settings-row-stack settings-row-stack-wide">
+                        <span className="settings-row-hint">
+                          Choose the six colors shown in the talk annotation
+                          toolbar.
+                        </span>
+                        <div
+                          className="settings-pen-colors"
+                          aria-label="Pen color choices"
+                        >
+                          {(
+                            appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
+                          ).map((color, index, colors) => (
+                            <label className="settings-pen-color" key={index}>
+                              <span>Color {index + 1}</span>
+                              <input
+                                aria-label={`Pen color choice ${index + 1}`}
+                                type="color"
+                                value={color}
+                                onChange={(event) => {
+                                  const nextColors = [...colors];
+                                  nextColors[index] = event.target.value;
+                                  void setPenColors(nextColors);
+                                }}
+                              />
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div className="settings-row settings-row-column">

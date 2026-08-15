@@ -52,7 +52,8 @@ const toBoolean = (value: unknown) => value === 1 || value === true;
 const serializeStrokePayload = (
   points: NormalizedPagePoint[],
   baseWidth?: number,
-) => JSON.stringify({ points, baseWidth });
+  color?: string,
+) => JSON.stringify({ points, baseWidth, color });
 
 const createEmptyPageState = (): PdfWorkspacePageState => ({
   strokes: [],
@@ -102,6 +103,7 @@ const normalizeStroke = (stroke: unknown): InkStroke | null => {
     id: string;
     pageNumber: number;
     baseWidth?: unknown;
+    color?: unknown;
     points: Array<unknown>;
   };
   const points = candidate.points.filter(
@@ -120,6 +122,9 @@ const normalizeStroke = (stroke: unknown): InkStroke | null => {
     ...(typeof candidate.baseWidth === 'number' &&
     Number.isFinite(candidate.baseWidth)
       ? { baseWidth: candidate.baseWidth }
+      : {}),
+    ...(typeof candidate.color === 'string' && candidate.color.trim()
+      ? { color: candidate.color }
       : {}),
     points,
   };
@@ -181,7 +186,7 @@ const normalizePageState = (value: unknown): PdfWorkspacePageState => {
 
 const deserializeStrokePayload = (
   value: string,
-): { points: NormalizedPagePoint[]; baseWidth: number } =>
+): { points: NormalizedPagePoint[]; baseWidth: number; color?: string } =>
   (() => {
     try {
       const parsed = JSON.parse(value) as unknown;
@@ -207,6 +212,10 @@ const deserializeStrokePayload = (
         parsed && typeof parsed === 'object' && 'baseWidth' in parsed
           ? (parsed as { baseWidth?: unknown }).baseWidth
           : DEFAULT_PEN_THICKNESS;
+      const parsedColor =
+        parsed && typeof parsed === 'object' && 'color' in parsed
+          ? (parsed as { color?: unknown }).color
+          : undefined;
 
       return {
         points,
@@ -215,6 +224,9 @@ const deserializeStrokePayload = (
           Number.isFinite(parsedBaseWidth)
             ? parsedBaseWidth
             : DEFAULT_PEN_THICKNESS,
+        ...(typeof parsedColor === 'string' && parsedColor.trim()
+          ? { color: parsedColor }
+          : {}),
       };
     } catch {
       return { points: [], baseWidth: DEFAULT_PEN_THICKNESS };
@@ -1266,7 +1278,11 @@ export class PersistenceStore {
     const db = await this.getDb();
     const payloadJson =
       'points' in annotation
-        ? serializeStrokePayload(annotation.points, annotation.baseWidth)
+        ? serializeStrokePayload(
+            annotation.points,
+            annotation.baseWidth,
+            annotation.color,
+          )
         : JSON.stringify({
             x: annotation.x,
             y: annotation.y,
@@ -1603,6 +1619,9 @@ export class PersistenceStore {
             ...(annotation.baseWidth === undefined
               ? {}
               : { baseWidth: annotation.baseWidth }),
+            ...(annotation.color === undefined
+              ? {}
+              : { color: annotation.color }),
             points: annotation.points,
           })),
       ),
@@ -1681,6 +1700,9 @@ export class PersistenceStore {
             ...(annotation.baseWidth === undefined
               ? {}
               : { baseWidth: annotation.baseWidth }),
+            ...(annotation.color === undefined
+              ? {}
+              : { color: annotation.color }),
             points: annotation.points,
           })),
       ),
@@ -1792,6 +1814,7 @@ export class PersistenceStore {
             ...(stroke.baseWidth === undefined
               ? {}
               : { baseWidth: stroke.baseWidth }),
+            ...(stroke.color === undefined ? {} : { color: stroke.color }),
             points: stroke.points,
             createdAt: now,
             updatedAt: now,
@@ -1894,6 +1917,7 @@ export class PersistenceStore {
             ...(stroke.baseWidth === undefined
               ? {}
               : { baseWidth: stroke.baseWidth }),
+            ...(stroke.color === undefined ? {} : { color: stroke.color }),
             points: stroke.points,
             createdAt: now,
             updatedAt: now,
@@ -2083,6 +2107,9 @@ export class PersistenceStore {
           ...(change.stroke.baseWidth === undefined
             ? {}
             : { baseWidth: change.stroke.baseWidth }),
+          ...(change.stroke.color === undefined
+            ? {}
+            : { color: change.stroke.color }),
           points: change.stroke.points,
           createdAt: now,
           updatedAt: now,

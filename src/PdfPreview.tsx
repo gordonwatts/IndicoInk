@@ -44,6 +44,10 @@ import type {
   PdfWorkspaceHistory,
   PdfWorkspaceSnapshot,
 } from './shared/pdfWorkspace';
+import {
+  DEFAULT_PEN_COLOR_NAMES,
+  DEFAULT_PEN_COLORS,
+} from './shared/appSettings';
 import { IconButton, SegmentedControl } from './ui';
 import {
   createConferenceId,
@@ -203,6 +207,8 @@ type ActiveInkAction =
       kind: 'text';
       pointerId: number;
       pageIndex: number;
+      startClientX: number;
+      startClientY: number;
     }
   | {
       kind: 'pan';
@@ -222,13 +228,7 @@ type PinchGesture = {
   anchor: PdfZoomFocalAnchor | null;
 };
 
-type MouseMode = 'draw' | 'pan';
 type ManualTool = 'pen' | 'text' | 'eraser';
-
-const mouseModeOptions = [
-  { label: 'Draw', value: 'draw' as const },
-  { label: 'Pan', value: 'pan' as const },
-];
 
 const waitForNextFrame = () =>
   new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -504,6 +504,21 @@ const getScrollViewportElement = (
   document.querySelector<HTMLElement>('.page-surface') ??
   document.documentElement;
 
+const getNearestScrollableAncestor = (target: EventTarget | null) => {
+  let element = target instanceof HTMLElement ? target : null;
+  while (element) {
+    const style = window.getComputedStyle(element);
+    if (
+      /(auto|scroll|overlay)/.test(style.overflowY) ||
+      /(auto|scroll|overlay)/.test(style.overflowX)
+    ) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+  return null;
+};
+
 const isEditableKeyboardTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable ||
@@ -611,6 +626,7 @@ type PdfPreviewProps = {
   scrollContainerRef?: React.RefObject<HTMLElement | null>;
   penThickness?: number;
   onPenThicknessChange?: (value: number) => void | Promise<void>;
+  penColors?: string[];
 };
 
 export const PEN_POINTER_MARKER_RADIUS = 2.5;
@@ -633,6 +649,7 @@ export function PdfPreview({
   scrollContainerRef,
   penThickness = DEFAULT_PEN_THICKNESS,
   onPenThicknessChange,
+  penColors = [...DEFAULT_PEN_COLORS],
 }: PdfPreviewProps) {
   const renderCountRef = React.useRef(0);
   renderCountRef.current += 1;
@@ -645,13 +662,45 @@ export function PdfPreview({
       renderCountRef.current;
   }
   const [state, setState] = React.useState<PdfPreviewState>({ kind: 'idle' });
-  const [mouseMode, setMouseMode] = React.useState<MouseMode>('draw');
   const [manualTool, setManualTool] = React.useState<ManualTool>('pen');
+  const [selectedPenColor, setSelectedPenColor] = React.useState(
+    penColors[0] ?? DEFAULT_PEN_COLORS[0],
+  );
+  const [isPenColorMenuOpen, setIsPenColorMenuOpen] = React.useState(false);
+  const penColorPickerRef = React.useRef<HTMLDivElement>(null);
   const [selectedPenThickness, setSelectedPenThickness] =
     React.useState(penThickness);
   React.useEffect(() => {
     setSelectedPenThickness(penThickness);
   }, [penThickness]);
+  React.useEffect(() => {
+    setSelectedPenColor((current) =>
+      penColors.includes(current)
+        ? current
+        : (penColors[0] ?? DEFAULT_PEN_COLORS[0]),
+    );
+  }, [penColors]);
+  React.useEffect(() => {
+    if (!isPenColorMenuOpen) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!penColorPickerRef.current?.contains(event.target as Node)) {
+        setIsPenColorMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsPenColorMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isPenColorMenuOpen]);
   const [pointerDiagnostics, setPointerDiagnostics] =
     React.useState<PointerDiagnostics>(createIdlePointerDiagnostics());
   const pageCanvasRefs = React.useRef<Array<HTMLCanvasElement | null>>([]);
@@ -675,6 +724,7 @@ export function PdfPreview({
   const latchedToolRef = React.useRef<PointerTool | null>(null);
   const activeInkActionRef = React.useRef<ActiveInkAction>(null);
   const touchPointersRef = React.useRef<Map<number, PdfZoomPoint>>(new Map());
+  const touchScrollContainerRef = React.useRef<HTMLElement | null>(null);
   const touchPanSamplesRef = React.useRef<TouchPanSample[]>([]);
   const touchMomentumFrameRef = React.useRef<number | null>(null);
   const pinchGestureRef = React.useRef<PinchGesture | null>(null);
@@ -1077,13 +1127,13 @@ export function PdfPreview({
       const interactionMode = readOnly
         ? 'pan'
         : toolState.renderedTool === 'touch'
-          ? 'pan'
+          ? manualTool === 'text'
+            ? 'text'
+            : 'pan'
           : manualTool === 'text'
             ? 'text'
             : toolState.renderedTool === 'mouse'
-              ? mouseMode === 'pan'
-                ? 'pan'
-                : manualInteractionMode
+              ? manualInteractionMode
               : toolState.renderedTool === 'pen'
                 ? manualInteractionMode
                 : getPointerInteractionMode(toolState.renderedTool);
@@ -1099,7 +1149,7 @@ export function PdfPreview({
         ),
       };
     },
-    [manualTool, mouseMode, readOnly],
+    [manualTool, readOnly],
   );
 
   const flushPointerDiagnostics = React.useCallback(() => {
@@ -1705,7 +1755,9 @@ export function PdfPreview({
       }
 
       let position = { x: 0, y: 0 };
-      const scrollContainer = getScrollViewportElement(scrollContainerRef);
+      const scrollContainer =
+        touchScrollContainerRef.current ??
+        getScrollViewportElement(scrollContainerRef);
       if (!scrollContainer) {
         return;
       }
@@ -1718,6 +1770,7 @@ export function PdfPreview({
 
       const animate = (timestamp: number) => {
         const currentScrollContainer =
+          touchScrollContainerRef.current ??
           getScrollViewportElement(scrollContainerRef);
         if (!currentScrollContainer) {
           touchMomentumFrameRef.current = null;
@@ -1891,7 +1944,9 @@ export function PdfPreview({
 
   const resumeTouchPan = React.useCallback(() => {
     const [remainingPointer] = Array.from(touchPointersRef.current.entries());
-    const scrollContainer = getScrollViewportElement(scrollContainerRef);
+    const scrollContainer =
+      touchScrollContainerRef.current ??
+      getScrollViewportElement(scrollContainerRef);
     if (!remainingPointer || !scrollContainer) {
       activeInkActionRef.current = null;
       return;
@@ -2268,6 +2323,8 @@ export function PdfPreview({
         action.stroke.points.slice(firstPointIndex),
         action.stroke.baseWidth ?? DEFAULT_PEN_THICKNESS,
         action.metrics,
+        false,
+        action.stroke.color,
       );
       action.renderedPointCount = pointCount;
     }
@@ -2284,6 +2341,8 @@ export function PdfPreview({
         [lastRealPoint, ...predictedPoints],
         action.stroke.baseWidth ?? DEFAULT_PEN_THICKNESS,
         action.metrics,
+        false,
+        action.stroke.color,
       );
     }
   }, []);
@@ -2312,6 +2371,8 @@ export function PdfPreview({
         action.stroke.points,
         action.stroke.baseWidth ?? DEFAULT_PEN_THICKNESS,
         action.metrics,
+        false,
+        action.stroke.color,
       );
       liveCommittedStrokeIdsRef.current.add(action.stroke.id);
       clearInkCanvas(
@@ -2351,7 +2412,7 @@ export function PdfPreview({
       (event: React.PointerEvent<HTMLDivElement>) => {
         if (
           textNoteResizeState?.pointerId === event.pointerId &&
-          textNoteResizeState.pageIndex === pageIndex
+          textNoteResizeState?.pageIndex === pageIndex
         ) {
           if (eventKind === 'pointermove') {
             const pageWidth = event.currentTarget.getBoundingClientRect().width;
@@ -2391,6 +2452,9 @@ export function PdfPreview({
 
         const isTouchPointer = event.pointerType === 'touch';
         if (isTouchPointer && eventKind === 'pointerdown') {
+          touchScrollContainerRef.current =
+            getNearestScrollableAncestor(event.currentTarget) ??
+            getScrollViewportElement(scrollContainerRef);
           cancelTouchMomentum();
           touchPanSamplesRef.current = [
             {
@@ -2516,6 +2580,8 @@ export function PdfPreview({
               kind: 'text',
               pointerId: event.pointerId,
               pageIndex,
+              startClientX: event.clientX,
+              startClientY: event.clientY,
             };
             setTextNoteDraft({
               mode: 'create',
@@ -2547,6 +2613,7 @@ export function PdfPreview({
                 id: createStrokeId(),
                 pageNumber: pageIndex + 1,
                 baseWidth: storedBaseWidth,
+                color: selectedPenColor,
                 points: [pagePoint],
               },
               renderedPointCount: 0,
@@ -2602,7 +2669,9 @@ export function PdfPreview({
             return;
           }
 
-          const scrollContainer = getScrollViewportElement(scrollContainerRef);
+          const scrollContainer =
+            touchScrollContainerRef.current ??
+            getScrollViewportElement(scrollContainerRef);
           if (interactionMode === 'pan' && scrollContainer) {
             activeInkActionRef.current = {
               kind: 'pan',
@@ -2621,6 +2690,26 @@ export function PdfPreview({
           activeInkActionRef.current &&
           activeInkActionRef.current.pointerId === event.pointerId
         ) {
+          if (activeInkActionRef.current.kind === 'text') {
+            const moved = Math.hypot(
+              event.clientX - activeInkActionRef.current.startClientX,
+              event.clientY - activeInkActionRef.current.startClientY,
+            );
+            if (moved > 8 && event.pointerType === 'touch') {
+              setTextNoteDraft(null);
+              const scrollContainer =
+                touchScrollContainerRef.current ??
+                getScrollViewportElement(scrollContainerRef);
+              activeInkActionRef.current = {
+                kind: 'pan',
+                pointerId: event.pointerId,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                startScrollLeft: scrollContainer.scrollLeft,
+                startScrollTop: scrollContainer.scrollTop,
+              };
+            }
+          }
           if (
             activeInkActionRef.current.kind === 'draw' &&
             activeInkActionRef.current.pageIndex === pageIndex &&
@@ -2672,9 +2761,11 @@ export function PdfPreview({
           if (
             activeInkActionRef.current.kind === 'pan' &&
             activeInkActionRef.current.pointerId === event.pointerId &&
-            getScrollViewportElement(scrollContainerRef)
+            (touchScrollContainerRef.current ??
+              getScrollViewportElement(scrollContainerRef))
           ) {
             const scrollContainer =
+              touchScrollContainerRef.current ??
               getScrollViewportElement(scrollContainerRef);
             const deltaX =
               event.clientX - activeInkActionRef.current.startClientX;
@@ -2759,7 +2850,8 @@ export function PdfPreview({
             );
           }
           if (
-            activeInkAction?.pointerId === event.pointerId &&
+            activeInkAction &&
+            activeInkAction.pointerId === event.pointerId &&
             (activeInkAction.kind === 'pan' ||
               activeInkAction.kind === 'text' ||
               activeInkAction.pageIndex === pageIndex)
@@ -2786,7 +2878,7 @@ export function PdfPreview({
           }
           if (
             textNoteDragState?.pointerId === event.pointerId &&
-            textNoteDragState.pageIndex === pageIndex
+            textNoteDragState?.pageIndex === pageIndex
           ) {
             const beforeTextNotesByPage = [...textNotesByPageRef.current];
             beforeTextNotesByPage[pageIndex] = (
@@ -2826,6 +2918,7 @@ export function PdfPreview({
       finishActiveDraw,
       previewViewportWidth,
       selectedPenThickness,
+      selectedPenColor,
       textNoteDragState,
       textNoteDraft,
       textNoteResizeState,
@@ -3626,6 +3719,57 @@ export function PdfPreview({
               />
               <output>{selectedPenThickness}px</output>
             </label>
+            <div className="pdf-preview-color-control">
+              <span>Color</span>
+              <div className="pdf-preview-color-picker" ref={penColorPickerRef}>
+                <button
+                  type="button"
+                  className="pdf-preview-color-trigger"
+                  aria-label="Pen color"
+                  aria-haspopup="listbox"
+                  aria-expanded={isPenColorMenuOpen}
+                  onClick={() => setIsPenColorMenuOpen((open) => !open)}
+                >
+                  <span
+                    className="pdf-preview-color-swatch"
+                    style={{ backgroundColor: selectedPenColor }}
+                    aria-hidden="true"
+                  />
+                </button>
+                {isPenColorMenuOpen ? (
+                  <div
+                    className="pdf-preview-color-menu"
+                    role="listbox"
+                    aria-label="Pen color choices"
+                  >
+                    {penColors.map((color, index) => (
+                      <button
+                        key={`${color}-${index}`}
+                        type="button"
+                        role="option"
+                        aria-label={
+                          DEFAULT_PEN_COLOR_NAMES[index] ?? `Color ${index + 1}`
+                        }
+                        aria-selected={selectedPenColor === color}
+                        className={`pdf-preview-color-option${
+                          selectedPenColor === color ? ' is-selected' : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedPenColor(color);
+                          setIsPenColorMenuOpen(false);
+                        }}
+                      >
+                        <span
+                          className="pdf-preview-color-swatch"
+                          style={{ backgroundColor: color }}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
           {workspaceMode && onWorkspaceModeChange ? (
             <SegmentedControl
@@ -3638,11 +3782,6 @@ export function PdfPreview({
               onChange={onWorkspaceModeChange}
             />
           ) : null}
-          <SegmentedControl
-            options={mouseModeOptions}
-            value={mouseMode}
-            onChange={setMouseMode}
-          />
           <div className="pdf-preview-toolbar-actions">
             <IconButton
               label="Undo"
