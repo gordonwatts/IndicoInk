@@ -2030,6 +2030,15 @@ export function App() {
   };
   const openAgendaTalkNotes = async (talk: AgendaTalkSummary) => {
     captureAgendaScrollPosition();
+    // A note-only talk must not inherit the previous talk's slide viewer.
+    // Preserve the viewer when switching from that talk's slides to its notes,
+    // but close it whenever the selected talk changes so the reference pane and
+    // export target cannot point at stale talk state.
+    const openSlideTalkId =
+      slideViewerState.kind === 'closed' ? null : slideViewerState.talkId;
+    if (openSlideTalkId !== talk.id) {
+      setSlideViewerState({ kind: 'closed' });
+    }
     const notebookDeck = await window.indicoInk.ensureNotebookDeck(talk.id);
     setNotesDeckId(notebookDeck.id);
     setSelectedEventId(talk.conferenceId);
@@ -2629,13 +2638,17 @@ export function App() {
       return;
     }
 
+    const exportTalkId =
+      destination === 'slides'
+        ? (selectedAgendaTalk?.id ?? activeSlideTalkId)
+        : null;
     const cancellationState = { cancelled: false };
     exportCancellationRef.current = cancellationState;
 
     try {
       const snapshot = await window.indicoInk.getConferenceExportSnapshot(
         selectedEventId,
-        destination === 'slides' ? activeSlideTalkId : null,
+        exportTalkId,
       );
       if (cancellationState.cancelled) {
         setExportState({
@@ -2671,9 +2684,7 @@ export function App() {
         title: `Export notes for ${snapshot.conference.title}`,
         defaultPath: createExportFileName(
           snapshot.conference,
-          destination === 'slides' && activeSlideTalkId
-            ? snapshot.talks[0]?.title
-            : null,
+          exportTalkId ? snapshot.talks[0]?.title : null,
         ),
       });
 
