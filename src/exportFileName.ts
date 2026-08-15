@@ -28,7 +28,9 @@ const sanitizeFileName = (value: string) =>
     .trim();
 
 const formatStartDate = (dates: string) => {
-  const match = dates.match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
+  const match = dates.match(
+    /^([A-Za-z]+)\s+(\d{1,2})(?:\s*[-–]\s*(?:[A-Za-z]+\s+)?\d{1,2})?,?\s*(\d{4})/,
+  );
   if (!match) {
     return null;
   }
