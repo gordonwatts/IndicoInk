@@ -72,8 +72,9 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
         },
       )
       .toBeGreaterThan(0);
-    await harness.page.getByRole('button', { name: 'Pen' }).click();
-    await harness.page.getByRole('button', { name: 'Draw' }).click();
+    await harness.page
+      .getByRole('button', { name: 'Pen', exact: true })
+      .click();
     await targetPage.scrollIntoViewIfNeeded();
 
     const before = await harness.page.evaluate(() => {

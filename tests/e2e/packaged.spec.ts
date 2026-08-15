@@ -57,8 +57,7 @@ async function drawAcceptanceStroke(page: import('@playwright/test').Page) {
   const endX = Math.round(box.x + box.width * 0.68);
   const endY = Math.round(box.y + box.height * 0.42);
 
-  await page.getByRole('button', { name: 'Pen' }).click();
-  await page.getByRole('button', { name: 'Draw' }).click();
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(midX, midY, { steps: 12 });
@@ -180,7 +179,7 @@ async function addAcceptanceTextNote(page: import('@playwright/test').Page) {
 
   await expect(page.getByText('Edited acceptance note')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Pen' }).click();
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
   const strokeCount = await page
     .locator('.pdf-preview-ink-canvas.dry')
     .first()
