@@ -685,6 +685,11 @@ ipcMain.handle(
           {
             fetchImpl,
             ...(apiKey ? { apiKey } : {}),
+            onProgress: (stage) =>
+              _event.sender.send('agenda:progress', {
+                operation: 'refresh',
+                stage,
+              }),
             ...(decision ? { decision } : {}),
           },
         );
@@ -714,7 +719,7 @@ ipcMain.handle(
           apiKey: openAiApiKey,
           fetchImpl,
           onProgress: (stage) =>
-            _event.sender.send('web-agenda:progress', {
+            _event.sender.send('agenda:progress', {
               operation: 'refresh',
               stage,
             }),
@@ -755,6 +760,11 @@ ipcMain.handle(
           {
             fetchImpl,
             ...(fetchOptions ?? {}),
+            onProgress: (stage) =>
+              _event.sender.send('agenda:progress', {
+                operation: 'open',
+                stage,
+              }),
           },
         );
         return {
@@ -793,7 +803,7 @@ ipcMain.handle(
           apiKey: openAiApiKey,
           fetchImpl,
           onProgress: (stage) =>
-            _event.sender.send('web-agenda:progress', {
+            _event.sender.send('agenda:progress', {
               operation: 'open',
               stage,
             }),

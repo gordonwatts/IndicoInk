@@ -102,7 +102,7 @@ describe('App', () => {
         apiKeyUpdatedAt: 1,
       }),
       deleteOpenAiApiKey: vi.fn().mockResolvedValue(undefined),
-      onWebAgendaProgress: vi.fn().mockReturnValue(() => {}),
+      onAgendaProgress: vi.fn().mockReturnValue(() => {}),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       onIndicoEventUrlRequested: vi.fn().mockReturnValue(() => {}),
       openPdf: vi.fn().mockResolvedValue({
@@ -664,14 +664,20 @@ describe('App', () => {
     ).toBeTruthy();
   });
 
-  it('shows source-aware webpage extraction progress', async () => {
+  it('shows source-aware agenda ingestion progress', async () => {
     let progressListener:
       | ((progress: {
           operation: 'open' | 'refresh';
-          stage: 'fetching-webpage' | 'extracting-agenda';
+          stage:
+            | 'fetching-event'
+            | 'reading-event'
+            | 'parsing-event'
+            | 'saving-event'
+            | 'fetching-webpage'
+            | 'extracting-agenda';
         }) => void)
       | undefined;
-    window.indicoInk.onWebAgendaProgress = vi.fn((listener) => {
+    window.indicoInk.onAgendaProgress = vi.fn((listener) => {
       progressListener = listener;
       return () => {};
     });
@@ -688,6 +694,11 @@ describe('App', () => {
       progressListener?.({ operation: 'open', stage: 'extracting-agenda' }),
     );
     expect(screen.getByText('Extracting agenda...')).toBeTruthy();
+
+    act(() =>
+      progressListener?.({ operation: 'open', stage: 'reading-event' }),
+    );
+    expect(screen.getByText('Reading the event response...')).toBeTruthy();
   });
 
   it('lists and deletes saved Indico API keys from Settings', async () => {

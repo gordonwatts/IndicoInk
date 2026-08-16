@@ -156,22 +156,33 @@ const saveOpenAiConfiguration = async (
 const deleteOpenAiApiKey = async (): Promise<void> =>
   ipcRenderer.invoke('openai:delete-api-key');
 
-const onWebAgendaProgress = (
+const onAgendaProgress = (
   listener: (progress: {
     operation: 'open' | 'refresh';
-    stage: 'fetching-webpage' | 'extracting-agenda';
+    stage:
+      | 'fetching-event'
+      | 'reading-event'
+      | 'parsing-event'
+      | 'saving-event'
+      | 'fetching-webpage'
+      | 'extracting-agenda';
   }) => void,
 ) => {
   const handleProgress = (
     _event: Electron.IpcRendererEvent,
     progress: {
       operation: 'open' | 'refresh';
-      stage: 'fetching-webpage' | 'extracting-agenda';
+      stage:
+        | 'fetching-event'
+        | 'reading-event'
+        | 'parsing-event'
+        | 'saving-event'
+        | 'fetching-webpage'
+        | 'extracting-agenda';
     },
   ) => listener(progress);
-  ipcRenderer.on('web-agenda:progress', handleProgress);
-  return () =>
-    ipcRenderer.removeListener('web-agenda:progress', handleProgress);
+  ipcRenderer.on('agenda:progress', handleProgress);
+  return () => ipcRenderer.removeListener('agenda:progress', handleProgress);
 };
 
 const setTalkBookmarked = async (
@@ -253,7 +264,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   getOpenAiConfiguration,
   saveOpenAiConfiguration,
   deleteOpenAiApiKey,
-  onWebAgendaProgress,
+  onAgendaProgress,
   setTalkBookmarked,
   setSelectedDeck,
   openTalkDeck,
@@ -321,10 +332,16 @@ export type IndicoInkApi = {
     input: OpenAiConfigurationInput,
   ) => Promise<OpenAiConfigurationSummary>;
   deleteOpenAiApiKey: () => Promise<void>;
-  onWebAgendaProgress: (
+  onAgendaProgress: (
     listener: (progress: {
       operation: 'open' | 'refresh';
-      stage: 'fetching-webpage' | 'extracting-agenda';
+      stage:
+        | 'fetching-event'
+        | 'reading-event'
+        | 'parsing-event'
+        | 'saving-event'
+        | 'fetching-webpage'
+        | 'extracting-agenda';
     }) => void,
   ) => () => void;
   setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;

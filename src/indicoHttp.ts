@@ -111,20 +111,27 @@ export type FetchIndicoJsonOptions = {
   timeoutMilliseconds?: number;
   maxBytes?: number;
   apiKey?: string;
+  onProgress?: (stage: IndicoFetchProgressStage) => void;
   fetchImpl?: (
     input: string,
     init?: { signal?: AbortSignal; headers?: Record<string, string> },
   ) => Promise<IndicoJsonResponse>;
 };
 
-const defaultTimeoutMilliseconds = 45_000;
+export const INDICO_DEFAULT_TIMEOUT_MILLISECONDS = 120_000;
 const defaultMaxBytes = 15_000_000;
+
+export type IndicoFetchProgressStage =
+  | 'fetching-event'
+  | 'reading-event'
+  | 'parsing-event'
+  | 'saving-event';
 
 const getByteLength = (value: string) => Buffer.byteLength(value, 'utf8');
 
 const createTimeoutError = (url: string, timeoutMilliseconds: number) =>
   new IndicoTimeoutError(
-    `Timed out fetching ${url} after ${timeoutMilliseconds} ms.`,
+    `Timed out fetching the Indico event export after ${timeoutMilliseconds} ms. The response may be large or the connection may be slow; try again on a stronger connection. URL: ${url}`,
   );
 
 const isIndicoApiToken = (apiKey: string) => /^ind[op]_/.test(apiKey);
@@ -154,9 +161,10 @@ export const fetchIndicoJson = async <T>(
   identity: IndicoEventIdentity,
   {
     detail = 'sessions',
-    timeoutMilliseconds = defaultTimeoutMilliseconds,
+    timeoutMilliseconds = INDICO_DEFAULT_TIMEOUT_MILLISECONDS,
     maxBytes = defaultMaxBytes,
     apiKey,
+    onProgress,
     fetchImpl = globalThis.fetch.bind(globalThis),
   }: FetchIndicoJsonOptions = {},
 ): Promise<T> => {
@@ -167,6 +175,7 @@ export const fetchIndicoJson = async <T>(
   const request = createIndicoAuthenticatedRequest(safeRequestUrl, apiKey);
 
   try {
+    onProgress?.('fetching-event');
     const response = await fetchImpl(request.url, {
       signal: controller.signal,
       ...(Object.keys(request.headers).length
@@ -189,6 +198,8 @@ export const fetchIndicoJson = async <T>(
       );
     }
 
+    onProgress?.('reading-event');
+
     const declaredLength = response.headers.get('content-length');
     if (declaredLength && Number(declaredLength) > maxBytes) {
       throw new IndicoResponseSizeError(
@@ -203,6 +214,7 @@ export const fetchIndicoJson = async <T>(
       );
     }
 
+    onProgress?.('parsing-event');
     try {
       return JSON.parse(body) as T;
     } catch {

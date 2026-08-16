@@ -10,6 +10,7 @@ import { parseIndicoEventUrl } from './indicoEvent';
 import {
   fetchIndicoJson,
   IndicoHttpError,
+  type IndicoFetchProgressStage,
   type FetchIndicoJsonOptions,
 } from './indicoHttp';
 import {
@@ -95,7 +96,9 @@ const buildConflict = (
 
 export const fetchMappedIndicoEvent = async (
   eventUrl: string,
-  options: FetchIndicoJsonOptions = {},
+  options: FetchIndicoJsonOptions & {
+    onProgress?: (stage: IndicoFetchProgressStage) => void;
+  } = {},
 ) => {
   const identity = parseIndicoEventUrl(eventUrl);
   if (!identity) {
@@ -423,8 +426,12 @@ export const reconcileMappedAgenda = async (
 export const refreshIndicoEvent = async (
   store: PersistenceStore,
   eventUrl: string,
-  options: FetchIndicoJsonOptions & { decision?: RefreshDecision } = {},
+  options: FetchIndicoJsonOptions & {
+    decision?: RefreshDecision;
+    onProgress?: (stage: IndicoFetchProgressStage) => void;
+  } = {},
 ): Promise<RefreshLibraryEventResult> => {
   const { mapped } = await fetchMappedIndicoEvent(eventUrl, options);
+  options.onProgress?.('saving-event');
   return reconcileMappedAgenda(store, mapped, options);
 };
