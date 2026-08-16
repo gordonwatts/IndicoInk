@@ -8,6 +8,7 @@ import {
   IndicoResponseParseError,
   IndicoResponseSizeError,
   IndicoTimeoutError,
+  INDICO_DEFAULT_TIMEOUT_MILLISECONDS,
   isLikelyIndicoApiKeyError,
   type IndicoJsonResponse,
 } from './indicoHttp';
@@ -40,10 +41,21 @@ describe('fetchIndicoJson', () => {
       }),
     );
 
-    await expect(fetchIndicoJson(identity, { fetchImpl })).resolves.toEqual({
+    const progress: string[] = [];
+    await expect(
+      fetchIndicoJson(identity, {
+        fetchImpl,
+        onProgress: (stage) => progress.push(stage),
+      }),
+    ).resolves.toEqual({
       count: 1,
       results: [{ title: 'Test' }],
     });
+    expect(progress).toEqual([
+      'fetching-event',
+      'reading-event',
+      'parsing-event',
+    ]);
   });
 
   it('sends the API key as an ak query parameter', async () => {
@@ -101,7 +113,7 @@ describe('fetchIndicoJson', () => {
     ).rejects.toBeInstanceOf(IndicoTimeoutError);
   });
 
-  it('allows large agenda responses up to the 45-second default deadline', async () => {
+  it('allows large agenda responses up to the slower-device default deadline', async () => {
     vi.useFakeTimers();
     try {
       const fetchImpl = vi.fn(
@@ -118,9 +130,13 @@ describe('fetchIndicoJson', () => {
       const request = fetchIndicoJson(identity, { fetchImpl });
       const requestExpectation = expect(request).rejects.toMatchObject({
         name: 'IndicoTimeoutError',
-        message: expect.stringContaining('45000 ms'),
+        message: expect.stringContaining(
+          `${INDICO_DEFAULT_TIMEOUT_MILLISECONDS} ms`,
+        ),
       });
-      await vi.advanceTimersByTimeAsync(44_999);
+      await vi.advanceTimersByTimeAsync(
+        INDICO_DEFAULT_TIMEOUT_MILLISECONDS - 1,
+      );
       expect(fetchImpl.mock.calls[0]![1]?.signal?.aborted).toBe(false);
 
       await vi.advanceTimersByTimeAsync(1);

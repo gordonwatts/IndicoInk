@@ -83,10 +83,16 @@ declare global {
         input: OpenAiConfigurationInput,
       ) => Promise<OpenAiConfigurationSummary>;
       deleteOpenAiApiKey: () => Promise<void>;
-      onWebAgendaProgress: (
+      onAgendaProgress: (
         listener: (progress: {
           operation: 'open' | 'refresh';
-          stage: 'fetching-webpage' | 'extracting-agenda';
+          stage:
+            | 'fetching-event'
+            | 'reading-event'
+            | 'parsing-event'
+            | 'saving-event'
+            | 'fetching-webpage'
+            | 'extracting-agenda';
         }) => void,
       ) => () => void;
       setTalkBookmarked: (talkId: string, bookmarked: boolean) => Promise<void>;

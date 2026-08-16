@@ -5,6 +5,7 @@ import { parseIndicoEventUrl } from './indicoEvent';
 import {
   fetchIndicoJson,
   IndicoHttpError,
+  type IndicoFetchProgressStage,
   type FetchIndicoJsonOptions,
 } from './indicoHttp';
 import {
@@ -12,7 +13,9 @@ import {
   mapIndicoExportEnvelope,
 } from './indicoMapping';
 
-export type ImportIndicoEventOptions = FetchIndicoJsonOptions;
+export type ImportIndicoEventOptions = FetchIndicoJsonOptions & {
+  onProgress?: (stage: IndicoFetchProgressStage | 'saving-event') => void;
+};
 
 export class IndicoEventImportError extends Error {
   constructor(message: string) {
@@ -33,7 +36,15 @@ export const importIndicoEvent = async (
     );
   }
 
-  const raw = await fetchIndicoJson<unknown>(identity, options);
+  const raw = await fetchIndicoJson<unknown>(identity, {
+    ...options,
+    ...(options.onProgress
+      ? {
+          onProgress: (stage: IndicoFetchProgressStage) =>
+            options.onProgress?.(stage),
+        }
+      : {}),
+  });
   if (
     isEmptyIndicoExportEnvelope(raw as { count?: unknown; results?: unknown })
   ) {
@@ -48,5 +59,6 @@ export const importIndicoEvent = async (
     raw as { results?: unknown },
     identity,
   );
+  options.onProgress?.('saving-event');
   return persistImportedAgenda(store, mapped);
 };

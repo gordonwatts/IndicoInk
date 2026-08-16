@@ -1112,6 +1112,9 @@ export function App() {
     tone: 'neutral' | 'success' | 'warning' | 'error';
     message: string;
   } | null>(null);
+  const [agendaProgressMessage, setAgendaProgressMessage] = React.useState<
+    string | null
+  >(null);
   const [isOpeningEvent, setIsOpeningEvent] = React.useState(false);
   const [apiKeyDialogRequest, setApiKeyDialogRequest] =
     React.useState<ApiKeyDialogRequest | null>(null);
@@ -1233,15 +1236,36 @@ export function App() {
 
   React.useEffect(
     () =>
-      window.indicoInk.onWebAgendaProgress(({ operation, stage }) => {
-        const message =
-          stage === 'fetching-webpage'
-            ? operation === 'refresh'
-              ? 'Refreshing from webpage: fetching webpage...'
-              : 'Fetching webpage...'
-            : operation === 'refresh'
-              ? 'Refreshing from webpage: extracting agenda...'
-              : 'Extracting agenda...';
+      window.indicoInk.onAgendaProgress(({ operation, stage }) => {
+        const message = (() => {
+          switch (stage) {
+            case 'fetching-event':
+              return operation === 'refresh'
+                ? 'Refreshing event: requesting the Indico export...'
+                : 'Requesting the Indico event export...';
+            case 'reading-event':
+              return operation === 'refresh'
+                ? 'Refreshing event: reading the response...'
+                : 'Reading the event response...';
+            case 'parsing-event':
+              return operation === 'refresh'
+                ? 'Refreshing event: parsing the agenda...'
+                : 'Parsing the event agenda...';
+            case 'saving-event':
+              return operation === 'refresh'
+                ? 'Saving the refreshed agenda locally...'
+                : 'Saving the agenda locally...';
+            case 'fetching-webpage':
+              return operation === 'refresh'
+                ? 'Refreshing from webpage: fetching webpage...'
+                : 'Fetching webpage...';
+            case 'extracting-agenda':
+              return operation === 'refresh'
+                ? 'Refreshing from webpage: extracting agenda...'
+                : 'Extracting agenda...';
+          }
+        })();
+        setAgendaProgressMessage(message);
         if (operation === 'refresh') {
           setRefreshState({ kind: 'checking', message });
         } else {
@@ -2192,6 +2216,7 @@ export function App() {
     }
 
     setIsOpeningEvent(true);
+    setAgendaProgressMessage(null);
     setOpenEventFeedback({
       tone: 'neutral',
       message: 'Fetching the event source and saving the agenda locally...',
@@ -2222,6 +2247,7 @@ export function App() {
     }
 
     setIsSavingApiKey(true);
+    setAgendaProgressMessage(null);
     setApiKeyError(null);
 
     try {
@@ -2339,6 +2365,7 @@ export function App() {
     }
 
     setIsSavingOpenAi(true);
+    setAgendaProgressMessage(null);
     setOpenAiError(null);
     try {
       const configuration = await window.indicoInk.saveOpenAiConfiguration({
@@ -4907,6 +4934,13 @@ export function App() {
                         ? 'refreshed.'
                         : 'opened.'}
                     </p>
+                    {isSavingApiKey && agendaProgressMessage ? (
+                      <StatusLabel
+                        label={agendaProgressMessage}
+                        tone="neutral"
+                        icon="info"
+                      />
+                    ) : null}
                     <label className="field">
                       <span>API key</span>
                       <input
@@ -4961,6 +4995,13 @@ export function App() {
                 body={
                   <div className="dialog-copy">
                     <p>{openAiDialogRequest.message}</p>
+                    {isSavingOpenAi && agendaProgressMessage ? (
+                      <StatusLabel
+                        label={agendaProgressMessage}
+                        tone="neutral"
+                        icon="info"
+                      />
+                    ) : null}
                     <label className="field">
                       <span>Endpoint URL</span>
                       <input
