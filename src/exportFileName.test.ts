@@ -12,6 +12,24 @@ describe('createExportFileName', () => {
     ).toBe('2026-06-12 - IndicoInk Summit notes.md');
   });
 
+  it('prefixes compact multi-day date ranges with their first day', () => {
+    expect(
+      createExportFileName({
+        dates: 'June 12-14, 2026',
+        title: 'IndicoInk Summit',
+      }),
+    ).toBe('2026-06-12 - IndicoInk Summit notes.md');
+  });
+
+  it('prefixes ranges that repeat the month before the end day', () => {
+    expect(
+      createExportFileName({
+        dates: 'June 12 - June 14, 2026',
+        title: 'IndicoInk Summit',
+      }),
+    ).toBe('2026-06-12 - IndicoInk Summit notes.md');
+  });
+
   it('keeps the title-only fallback when no start date is available', () => {
     expect(
       createExportFileName({
@@ -31,5 +49,19 @@ describe('createExportFileName', () => {
         'Opening / results: overview',
       ),
     ).toBe('2026-06-12 - IndicoInk Summit - Opening results overview notes.md');
+  });
+
+  it('caps long talk-scoped names while preserving the date and extension', () => {
+    const fileName = createExportFileName(
+      {
+        dates: 'June 12, 2026 - June 14, 2026',
+        title: 'IndicoInk Summit',
+      },
+      'A'.repeat(400),
+    );
+
+    expect(fileName).toHaveLength(200);
+    expect(fileName).toMatch(/^2026-06-12 - IndicoInk Summit - A+/);
+    expect(fileName).toMatch(/\.\.\. notes\.md$/);
   });
 });

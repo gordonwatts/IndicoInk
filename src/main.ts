@@ -40,6 +40,7 @@ import type {
   ExportTalkSnapshot,
   ExportNotePageSnapshot,
 } from './shared/exportNotes';
+import { sortExportTalks } from './exportOrder';
 import { DeckCacheManager } from './deckCache';
 import type { DeckCacheDownloadStatus } from './shared/deckCache';
 import type {
@@ -331,7 +332,7 @@ const buildConferenceExportSnapshot = async (
       sourceUrl: conference.sourceUrl,
       exportedAt: Date.now(),
     },
-    talks: exportTalks,
+    talks: sortExportTalks(exportTalks),
     ...(restoredDecks.length ? { restoredDecks } : {}),
   };
 };
