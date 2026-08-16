@@ -7,6 +7,8 @@ import type {
   AgendaDownloadSummary,
   AgendaDownloadStatus,
 } from './shared/agendaDownload';
+import type { DeckCacheDownloadStatus } from './shared/deckCache';
+import { isSlideDeck } from './slideDeck';
 
 type AgendaDownloadStore = {
   listTalksByConference(conferenceId: string): Promise<Talk[]>;
@@ -18,7 +20,10 @@ type AgendaDownloadRecord = {
   canceled: boolean;
 };
 
-type EnsureDeckAvailable = (deck: Deck) => Promise<DeckCacheEnsureResult>;
+type EnsureDeckAvailable = (
+  deck: Deck,
+  onStatus?: (status: DeckCacheDownloadStatus) => void,
+) => Promise<DeckCacheEnsureResult>;
 type IsDeckCached = (deck: Deck) => Promise<boolean>;
 
 export class AgendaDownloadManager {
@@ -150,7 +155,17 @@ export class AgendaDownloadManager {
             updatedAt: this.now(),
           };
 
-          const result = await this.ensureDeckAvailable(deck);
+          const result = await this.ensureDeckAvailable(deck, (deckStatus) => {
+            if (record.canceled || !deckStatus.message) {
+              return;
+            }
+
+            record.status = {
+              ...record.status,
+              message: deckStatus.message,
+              updatedAt: this.now(),
+            };
+          });
           if (record.canceled) {
             return;
           }
@@ -217,7 +232,9 @@ export class AgendaDownloadManager {
       )
     )
       .map(({ decks }) => ({
-        decks: decks.filter((deck) => deck.mimeType === 'application/pdf'),
+        decks: decks.filter((deck) =>
+          isSlideDeck(deck.mimeType, deck.sourceUrl, deck.displayName),
+        ),
       }))
       .filter(({ decks }) => decks.length > 0);
   }

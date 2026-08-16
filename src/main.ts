@@ -174,7 +174,8 @@ const getAgendaDownloadManager = () =>
   agendaDownloadManager ??
   (agendaDownloadManager = new AgendaDownloadManager(
     getPersistenceStore(),
-    (deck) => getDeckCacheManager().ensureDeckAvailable(deck),
+    (deck, onStatus) =>
+      getDeckCacheManager().ensureDeckAvailable(deck, onStatus),
     (deck) => getDeckCacheManager().isDeckCached(deck),
   ));
 

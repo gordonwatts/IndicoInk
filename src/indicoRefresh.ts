@@ -21,6 +21,7 @@ import type {
   RefreshConflict,
   RefreshLibraryEventResult,
 } from './shared/library';
+import { choosePreferredSlideDeck, isSlideDeck } from './slideDeck';
 
 type RefreshDecision = 'keep' | 'replace';
 
@@ -29,7 +30,9 @@ const getConferenceDecksByTalk = async (
   talkId: string,
 ) => {
   const decks = await store.listDecksByTalk(talkId);
-  return decks.filter((deck) => deck.mimeType === 'application/pdf');
+  return decks.filter((deck) =>
+    isSlideDeck(deck.mimeType, deck.sourceUrl, deck.displayName),
+  );
 };
 
 const compareTalk = (current: Talk, next: Talk) =>
@@ -180,6 +183,7 @@ export const reconcileMappedAgenda = async (
     const incomingDecks = incomingTalk.materials.filter(
       (material) => material.kind === 'pdf',
     );
+    const preferredIncomingDeck = choosePreferredSlideDeck(incomingDecks);
     const incomingDeckBySourceUrl = new Map(
       incomingDecks.map((material) => [material.url, material] as const),
     );
@@ -219,7 +223,7 @@ export const reconcileMappedAgenda = async (
         sourceUrl: incomingDeck.url,
         displayName: incomingDeck.title,
         mimeType: incomingDeck.mimeType,
-        selected: incomingDeck.selected,
+        selected: preferredIncomingDeck?.url === incomingDeck.url,
         createdAt: currentDeck.createdAt,
         updatedAt: currentDeck.updatedAt,
         upstreamStatus: 'present',
@@ -315,10 +319,12 @@ export const reconcileMappedAgenda = async (
       const currentDeckBySourceUrl = new Map(
         currentDecks.map((deck) => [deck.sourceUrl, deck] as const),
       );
-
-      for (const incomingMaterial of incomingTalk.materials.filter(
+      const incomingDecks = incomingTalk.materials.filter(
         (material) => material.kind === 'pdf',
-      )) {
+      );
+      const preferredIncomingDeck = choosePreferredSlideDeck(incomingDecks);
+
+      for (const incomingMaterial of incomingDecks) {
         const currentDeck = currentDeckBySourceUrl.get(incomingMaterial.url);
         const deckId = createDeckId(talkId, incomingMaterial.url);
         const nextDeck: Deck = {
@@ -328,7 +334,7 @@ export const reconcileMappedAgenda = async (
           sourceUrl: incomingMaterial.url,
           displayName: incomingMaterial.title,
           mimeType: incomingMaterial.mimeType,
-          selected: incomingMaterial.selected,
+          selected: preferredIncomingDeck?.url === incomingMaterial.url,
           createdAt: currentDeck?.createdAt ?? Date.now(),
           updatedAt: Date.now(),
           upstreamStatus: currentDeck
@@ -339,7 +345,7 @@ export const reconcileMappedAgenda = async (
                 sourceUrl: incomingMaterial.url,
                 displayName: incomingMaterial.title,
                 mimeType: incomingMaterial.mimeType,
-                selected: incomingMaterial.selected,
+                selected: preferredIncomingDeck?.url === incomingMaterial.url,
                 createdAt: currentDeck.createdAt,
                 updatedAt: currentDeck.updatedAt,
               })

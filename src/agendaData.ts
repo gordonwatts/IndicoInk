@@ -1,17 +1,18 @@
 import type { PersistenceStore } from './persistenceStore';
 import type { AgendaTalkSummary } from './shared/agenda';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
+import { isPdfDeck, isSlideDeck } from './slideDeck';
 
-const formatMaterialSummary = (pdfDeckCount: number) => {
-  if (pdfDeckCount === 0) {
+const formatMaterialSummary = (slideDeckCount: number) => {
+  if (slideDeckCount === 0) {
     return 'No slides';
   }
 
-  if (pdfDeckCount === 1) {
+  if (slideDeckCount === 1) {
     return 'PDF';
   }
 
-  return `${pdfDeckCount} PDFs`;
+  return `${slideDeckCount} PDFs`;
 };
 
 export const buildAgendaTalkSummaries = async (
@@ -28,7 +29,8 @@ export const buildAgendaTalkSummaries = async (
       const decks = await store.listDecksByTalk(talk.id);
       const pdfDecks = decks.filter(
         (deck) =>
-          deck.kind !== 'notebook' && deck.mimeType === 'application/pdf',
+          deck.kind !== 'notebook' &&
+          isSlideDeck(deck.mimeType, deck.sourceUrl, deck.displayName),
       );
       const notebookDeck = decks.find((deck) => deck.kind === 'notebook');
       const annotatedNotePageCount = notebookDeck
@@ -93,10 +95,13 @@ export const buildAgendaTalkSummaries = async (
               ...(deck.upstreamStatus
                 ? { upstreamStatus: deck.upstreamStatus }
                 : {}),
-              pageCount:
-                deck.mimeType === 'application/pdf'
-                  ? (await store.listSlidesByDeck(deck.id)).length
-                  : null,
+              pageCount: isPdfDeck(
+                deck.mimeType,
+                deck.sourceUrl,
+                deck.displayName,
+              )
+                ? (await store.listSlidesByDeck(deck.id)).length
+                : null,
             })),
         ),
         annotatedSlideCount,
