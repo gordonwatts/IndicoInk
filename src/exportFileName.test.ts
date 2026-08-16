@@ -50,4 +50,18 @@ describe('createExportFileName', () => {
       ),
     ).toBe('2026-06-12 - IndicoInk Summit - Opening results overview notes.md');
   });
+
+  it('caps long talk-scoped names while preserving the date and extension', () => {
+    const fileName = createExportFileName(
+      {
+        dates: 'June 12, 2026 - June 14, 2026',
+        title: 'IndicoInk Summit',
+      },
+      'A'.repeat(400),
+    );
+
+    expect(fileName).toHaveLength(200);
+    expect(fileName).toMatch(/^2026-06-12 - IndicoInk Summit - A+/);
+    expect(fileName).toMatch(/\.\.\. notes\.md$/);
+  });
 });

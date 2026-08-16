@@ -15,6 +15,9 @@ const monthNumbers: Record<string, number> = {
   december: 12,
 };
 
+const maxExportFileNameLength = 200;
+const exportFileNameSuffix = ' notes.md';
+
 const sanitizeFileName = (value: string) =>
   Array.from(value.trim())
     .map((character) =>
@@ -64,6 +67,27 @@ const formatStartDate = (dates: string) => {
     .padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
 };
 
+const truncateExportFileName = (baseName: string) => {
+  const fullName = `${baseName}${exportFileNameSuffix}`;
+  if (fullName.length <= maxExportFileNameLength) {
+    return fullName;
+  }
+
+  const truncationSuffix = `...${exportFileNameSuffix}`;
+  let truncatedBaseName = '';
+  for (const character of baseName) {
+    if (
+      `${truncatedBaseName}${character}${truncationSuffix}`.length >
+      maxExportFileNameLength
+    ) {
+      break;
+    }
+    truncatedBaseName += character;
+  }
+
+  return `${truncatedBaseName.trimEnd()}${truncationSuffix}`;
+};
+
 export const createExportFileName = (
   conference: Pick<ConferenceExportSnapshot['conference'], 'title' | 'dates'>,
   talkTitle?: string | null,
@@ -74,5 +98,6 @@ export const createExportFileName = (
   const baseName = talkName
     ? `${conferenceName} - ${talkName}`
     : conferenceName;
-  return `${datePrefix ? `${datePrefix} - ` : ''}${baseName} notes.md`;
+  const datedBaseName = `${datePrefix ? `${datePrefix} - ` : ''}${baseName}`;
+  return truncateExportFileName(datedBaseName);
 };
