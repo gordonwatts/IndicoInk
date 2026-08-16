@@ -23,6 +23,14 @@ const makeDeck = (): Deck => ({
   updatedAt: 1700000000000,
 });
 
+const makePowerPointDeck = (): Deck => ({
+  ...makeDeck(),
+  sourceUrl: 'https://example.org/materials/deck.pptx',
+  displayName: 'PowerPoint slides',
+  mimeType:
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+});
+
 const makeDownloadResponse = (
   overrides: {
     ok?: boolean;
@@ -239,5 +247,45 @@ describe('deck cache manager', () => {
           'This API token needs additional Indico file access before this slide deck can be opened.',
       }),
     );
+  });
+
+  it('downloads PowerPoint files and converts them into cached PDFs', async () => {
+    const cacheRoot = createTempDir('deck-cache-powerpoint');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(
+      makeDownloadResponse({
+        arrayBuffer: vi
+          .fn()
+          .mockResolvedValue(Buffer.from('pptx bytes').buffer),
+      }),
+    );
+    const convertPowerPoint = vi.fn(async (_input: string, output: string) => {
+      writeFileSync(output, '%PDF-1.4\n% converted\n');
+    });
+    const manager = new DeckCacheManager(
+      cacheRoot,
+      fetchDeckBytes,
+      undefined,
+      undefined,
+      convertPowerPoint,
+    );
+    const deck = makePowerPointDeck();
+
+    await expect(manager.ensureDeckAvailable(deck)).resolves.toEqual({
+      kind: 'ready',
+      restored: true,
+      filePath: manager.getCacheFilePath(deck.conferenceId, deck.id),
+    });
+
+    expect(convertPowerPoint).toHaveBeenCalledWith(
+      expect.stringMatching(/\.pptx$/),
+      expect.stringMatching(/\.converted\.pdf$/),
+      expect.any(Function),
+    );
+    expect(
+      readFileSync(
+        manager.getCacheFilePath(deck.conferenceId, deck.id),
+        'utf8',
+      ),
+    ).toContain('%PDF-1.4');
   });
 });

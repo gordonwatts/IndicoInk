@@ -2,6 +2,7 @@ import type { AgendaImportData } from './agendaImportModel';
 import type { PersistenceStore } from './persistenceStore';
 import { createDeckId, createTalkId } from './persistenceModels';
 import type { ImportedConferenceResult } from './shared/library';
+import { choosePreferredSlideDeck } from './slideDeck';
 
 export const persistImportedAgenda = async (
   store: PersistenceStore,
@@ -43,10 +44,7 @@ export const persistImportedAgenda = async (
       const pdfMaterials = talk.materials.filter(
         (material) => material.kind === 'pdf',
       );
-      const selectedMaterial =
-        pdfMaterials.find((material) => material.selected) ??
-        pdfMaterials[0] ??
-        null;
+      const selectedMaterial = choosePreferredSlideDeck(pdfMaterials);
 
       for (const material of pdfMaterials) {
         deckCount += 1;

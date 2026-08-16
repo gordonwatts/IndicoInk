@@ -260,4 +260,34 @@ describe('mapIndicoExportEnvelope', () => {
     expect(mapped.talks[0]?.materials[0]?.kind).toBe('pdf');
     expect(mapped.talks[0]?.materials[0]?.url).toContain('/Deck.pdf');
   });
+
+  it('treats PowerPoint attachments as slide decks', () => {
+    const mapped = mapIndicoExportEnvelope(
+      {
+        results: [
+          {
+            title: 'PowerPoint event',
+            contributions: [
+              {
+                id: 'ppt-talk',
+                title: 'PowerPoint talk',
+                material: [
+                  {
+                    title: 'Slides',
+                    url: 'https://indico.example.org/materials/slides.pptx',
+                    mimetype:
+                      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      identity,
+    );
+
+    expect(mapped.talks[0]?.materials[0]?.kind).toBe('pdf');
+    expect(mapped.talks[0]?.materials[0]?.mimeType).toContain('presentation');
+  });
 });

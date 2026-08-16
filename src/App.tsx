@@ -67,6 +67,7 @@ import {
   renderAnnotatedNotePagePng,
 } from './exportNotes';
 import { createExportFileName } from './exportFileName';
+import { isPdfDeck, isSlideDeck } from './slideDeck';
 
 type Destination =
   | 'library'
@@ -404,21 +405,22 @@ function talkMatchesSearchQuery(talk: AgendaTalkSummary, query: string) {
 }
 
 function getSelectedTalkDeck(talk: AgendaTalkSummary) {
+  const slideDecks = talk.materials.filter((material) =>
+    isSlideDeck(material.mimeType, material.sourceUrl, material.title),
+  );
   return (
-    talk.materials.find(
-      (material) =>
-        material.mimeType === 'application/pdf' && material.selected,
+    slideDecks.find((material) => material.selected) ??
+    slideDecks.find((material) =>
+      isPdfDeck(material.mimeType, material.sourceUrl, material.title),
     ) ??
-    talk.materials.find(
-      (material) => material.mimeType === 'application/pdf',
-    ) ??
+    slideDecks[0] ??
     null
   );
 }
 
 function getAgendaTalkPdfMaterials(talk: AgendaTalkSummary) {
-  return talk.materials.filter(
-    (material) => material.mimeType === 'application/pdf',
+  return talk.materials.filter((material) =>
+    isSlideDeck(material.mimeType, material.sourceUrl, material.title),
   );
 }
 
@@ -426,7 +428,8 @@ function shouldShowAgendaTalkMaterials(talk: AgendaTalkSummary) {
   return (
     getAgendaTalkPdfMaterials(talk).length > 1 ||
     talk.materials.some(
-      (material) => material.mimeType !== 'application/pdf',
+      (material) =>
+        !isSlideDeck(material.mimeType, material.sourceUrl, material.title),
     ) ||
     Boolean(talk.upstreamSummary)
   );
@@ -478,7 +481,7 @@ function getAgendaTalkPrimaryAction(talk: AgendaTalkSummary) {
 }
 
 function formatMaterialLabel(material: AgendaTalkMaterialSummary) {
-  if (material.mimeType === 'application/pdf') {
+  if (isSlideDeck(material.mimeType, material.sourceUrl, material.title)) {
     const pageLabel =
       material.pageCount && material.pageCount > 0
         ? ` · ${material.pageCount} page${material.pageCount === 1 ? '' : 's'}`
@@ -1920,12 +1923,13 @@ export function App() {
   const selectedTalkDeck = selectedAgendaTalk
     ? getSelectedTalkDeck(selectedAgendaTalk)
     : null;
-  const agendaMaterialsPdfMaterials = agendaMaterialsTalk
+  const agendaMaterialsSlideMaterials = agendaMaterialsTalk
     ? getAgendaTalkPdfMaterials(agendaMaterialsTalk)
     : [];
   const agendaMaterialsNonPdfMaterials = agendaMaterialsTalk
     ? agendaMaterialsTalk.materials.filter(
-        (material) => material.mimeType !== 'application/pdf',
+        (material) =>
+          !isSlideDeck(material.mimeType, material.sourceUrl, material.title),
       )
     : [];
   const agendaEventTimeZone = agendaTalks[0]?.eventTimeZone ?? null;
@@ -1941,18 +1945,13 @@ export function App() {
     captureAgendaScrollPosition();
     setViewerMode('slides');
 
-    const selectedPdfMaterial =
-      talk.materials.find(
-        (material) =>
-          material.mimeType === 'application/pdf' &&
-          (deckId ? material.id === deckId : material.selected),
-      ) ??
-      talk.materials.find(
-        (material) =>
-          material.mimeType === 'application/pdf' &&
-          (deckId ? material.id === deckId : true),
-      ) ??
-      null;
+    const selectedPdfMaterial = deckId
+      ? (talk.materials.find(
+          (material) =>
+            material.id === deckId &&
+            isSlideDeck(material.mimeType, material.sourceUrl, material.title),
+        ) ?? null)
+      : getSelectedTalkDeck(talk);
 
     if (!selectedPdfMaterial) {
       return;
@@ -3889,17 +3888,17 @@ export function App() {
                                   ) : null}
                                 </div>
 
-                                {agendaMaterialsPdfMaterials.length ? (
+                                {agendaMaterialsSlideMaterials.length ? (
                                   <div className="agenda-talk-materials">
                                     <div className="surface-panel-header">
-                                      <h3>PDF materials</h3>
+                                      <h3>Slide materials</h3>
                                       <p>
                                         Choose the deck to remember as the
                                         default for this talk.
                                       </p>
                                     </div>
                                     <div className="agenda-talk-material-list">
-                                      {agendaMaterialsPdfMaterials.map(
+                                      {agendaMaterialsSlideMaterials.map(
                                         (material) => (
                                           <Row
                                             key={material.id}

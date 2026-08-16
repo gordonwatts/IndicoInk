@@ -9,6 +9,7 @@ import type { Conference } from './persistenceModels';
 import type { IndicoEventIdentity } from './indicoEvent';
 import { sha1Hex } from './stableHash';
 import { parseWallClockTimeInZone } from './agendaTime';
+import { isSlideDeck } from './slideDeck';
 
 type IndicoDateValue = {
   date?: string;
@@ -399,10 +400,9 @@ const mapMaterial = (
     url,
     mimeType,
     selected: Boolean(material.selected),
-    kind:
-      mimeType.includes('pdf') || url.toLowerCase().endsWith('.pdf')
-        ? 'pdf'
-        : 'other',
+    // PowerPoint presentations are downloaded and converted to PDF by the
+    // main process, so they enter the same persisted slide-deck path.
+    kind: isSlideDeck(mimeType, url, title) ? 'pdf' : 'other',
   };
 };
 

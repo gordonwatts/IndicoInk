@@ -87,6 +87,68 @@ describe('agenda download manager', () => {
     );
   });
 
+  it('surfaces deck conversion progress in the agenda download status', async () => {
+    let releaseConversion!: () => void;
+    const conversion = new Promise<void>((resolve) => {
+      releaseConversion = resolve;
+    });
+    const ensureDeckAvailable = vi.fn(async (_deck, onStatus) => {
+      onStatus?.({
+        operationId: 'deck-operation',
+        conferenceId: 'conference-1',
+        talkId: 'talk-1',
+        deckId: 'deck-1',
+        sourceUrl: 'https://example.org/slides.pptx',
+        displayName: 'PowerPoint slides',
+        filePath: 'C:/cache/deck-1.pdf',
+        startedAt: 1,
+        kind: 'downloading',
+        bytesDownloaded: 10,
+        totalBytes: 10,
+        message: 'Converting PowerPoint to PDF...',
+        updatedAt: 2,
+      });
+      await conversion;
+      return {
+        kind: 'ready' as const,
+        restored: true,
+        filePath: 'C:/cache/deck-1.pdf',
+      };
+    });
+    const store = {
+      listTalksByConference: vi.fn().mockResolvedValue([makeTalk('talk-1')]),
+      listDecksByTalk: vi
+        .fn()
+        .mockResolvedValue([
+          makeDeck('deck-1', 'application/vnd.ms-powerpoint'),
+        ]),
+    };
+    const manager = new AgendaDownloadManager(store, ensureDeckAvailable);
+
+    const result = manager.startDownload('conference-1');
+
+    await vi.waitFor(() => {
+      expect(manager.getDownloadStatus(result.operationId)).toEqual(
+        expect.objectContaining({
+          kind: 'downloading',
+          totalDecks: 1,
+          message: 'Converting PowerPoint to PDF...',
+        }),
+      );
+    });
+    releaseConversion();
+    await vi.waitFor(() => {
+      expect(manager.getDownloadStatus(result.operationId)?.kind).toBe('ready');
+    });
+    expect(ensureDeckAvailable).toHaveBeenCalledOnce();
+    expect(manager.getDownloadStatus(result.operationId)).toEqual(
+      expect.objectContaining({
+        completedDecks: 1,
+        downloadedTalks: 1,
+      }),
+    );
+  });
+
   it('does not start another download for the same conference while active', async () => {
     let releaseTalks!: (talks: Talk[]) => void;
     const talks = new Promise<Talk[]>((resolve) => {
