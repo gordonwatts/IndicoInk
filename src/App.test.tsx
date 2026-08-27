@@ -1932,9 +1932,11 @@ describe('App', () => {
       kind: 'downloading' as const,
       pageCount: 0,
     });
-    window.indicoInk.getDeckDownloadStatus = vi
+    const getDeckDownloadStatus = vi
       .fn()
-      .mockResolvedValue(downloadStatus);
+      .mockResolvedValueOnce(downloadStatus)
+      .mockImplementation(() => new Promise(() => {}));
+    window.indicoInk.getDeckDownloadStatus = getDeckDownloadStatus;
 
     render(<App />);
     await user.click(
@@ -1950,6 +1952,10 @@ describe('App', () => {
 
     expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(screen.getByText('1.00 KB/s')).toBeTruthy();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getDeckDownloadStatus).toHaveBeenCalledTimes(1);
     expect(intervalSpy).toHaveBeenCalledWith(
       expect.any(Function),
       SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,

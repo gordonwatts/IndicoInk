@@ -1563,6 +1563,8 @@ export function App() {
 
   const activeSlideDownloadStatus =
     slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
+  const activeSlideDownloadOperationId =
+    activeSlideDownloadStatus?.operationId ?? null;
   const activeSlideTitle =
     slideViewerState.kind === 'closed' ? '' : slideViewerState.title;
   const activeSlideMaterials =
@@ -2931,7 +2933,7 @@ export function App() {
       return undefined;
     }
 
-    const operationId = activeSlideDownloadStatus?.operationId ?? null;
+    const operationId = activeSlideDownloadOperationId;
     if (!operationId) {
       return undefined;
     }
@@ -2995,7 +2997,7 @@ export function App() {
         deckDownloadPollRef.current = null;
       }
     };
-  }, [activeSlideDownloadStatus, slideViewerState.kind]);
+  }, [activeSlideDownloadOperationId, slideViewerState.kind]);
 
   React.useEffect(() => {
     const operationId = agendaDownloadStatus?.operationId;
