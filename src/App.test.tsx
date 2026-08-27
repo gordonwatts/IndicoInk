@@ -1915,12 +1915,12 @@ describe('App', () => {
       sourceUrl: deckSourceUrl,
       displayName: 'Slides',
       filePath: null,
-      startedAt: Date.now(),
+      startedAt: 1_000,
       kind: 'downloading' as const,
-      bytesDownloaded: 0,
-      totalBytes: null,
+      bytesDownloaded: 2_048,
+      totalBytes: 4_096,
       message: 'Downloading slides...',
-      updatedAt: Date.now(),
+      updatedAt: 3_000,
     };
 
     window.indicoInk.listLibraryEvents = vi
@@ -1949,6 +1949,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('1.00 KB/s')).toBeTruthy();
     expect(intervalSpy).toHaveBeenCalledWith(
       expect.any(Function),
       SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,

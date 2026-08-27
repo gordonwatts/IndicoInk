@@ -1588,7 +1588,10 @@ export function App() {
       ? (() => {
           const elapsedMilliseconds = Math.max(
             0,
-            Date.now() - activeSlideDownloadStatus.startedAt,
+            // Anchor the rate to the latest backend snapshot. Using Date.now()
+            // here made unrelated renderer renders animate the pill.
+            activeSlideDownloadStatus.updatedAt -
+              activeSlideDownloadStatus.startedAt,
           );
           const bytesPerSecond =
             elapsedMilliseconds > 0
