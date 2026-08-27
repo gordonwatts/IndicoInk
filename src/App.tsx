@@ -148,9 +148,10 @@ const filterOptions = [
   { label: 'Slides available', value: 'slides' as const },
 ];
 
-// The download dialog is informational, so a one-second refresh keeps its
-// transfer-rate display useful without needlessly repainting the renderer.
-export const SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS = 1000;
+// Keep byte and percentage progress responsive while sampling the noisier
+// transfer-rate pill at a calmer cadence.
+export const SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS = 500;
+export const SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS = 1000;
 
 const isEditableKeyboardTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -1199,6 +1200,11 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
+  const [slideDownloadRateSample, setSlideDownloadRateSample] = React.useState<{
+    operationId: string;
+    updatedAt: number;
+    bytesPerSecond: number | null;
+  } | null>(null);
   const [viewerMode, setViewerMode] = React.useState<ViewerMode>('slides');
   const [notesDeckId, setNotesDeckId] = React.useState<string | null>(null);
   const [, setSlideViewerMetrics] = React.useState<{
@@ -1565,6 +1571,39 @@ export function App() {
     slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
   const activeSlideDownloadOperationId =
     activeSlideDownloadStatus?.operationId ?? null;
+  React.useEffect(() => {
+    if (activeSlideDownloadStatus?.kind !== 'downloading') {
+      return;
+    }
+
+    const elapsedMilliseconds = Math.max(
+      0,
+      activeSlideDownloadStatus.updatedAt -
+        activeSlideDownloadStatus.startedAt,
+    );
+    const bytesPerSecond =
+      elapsedMilliseconds > 0
+        ? activeSlideDownloadStatus.bytesDownloaded /
+          (elapsedMilliseconds / 1000)
+        : null;
+
+    setSlideDownloadRateSample((currentSample) => {
+      if (
+        currentSample?.operationId ===
+          activeSlideDownloadStatus.operationId &&
+        activeSlideDownloadStatus.updatedAt - currentSample.updatedAt <
+          SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS
+      ) {
+        return currentSample;
+      }
+
+      return {
+        operationId: activeSlideDownloadStatus.operationId,
+        updatedAt: activeSlideDownloadStatus.updatedAt,
+        bytesPerSecond,
+      };
+    });
+  }, [activeSlideDownloadStatus]);
   const activeSlideTitle =
     slideViewerState.kind === 'closed' ? '' : slideViewerState.title;
   const activeSlideMaterials =
@@ -1596,10 +1635,13 @@ export function App() {
               activeSlideDownloadStatus.startedAt,
           );
           const bytesPerSecond =
-            elapsedMilliseconds > 0
-              ? activeSlideDownloadStatus.bytesDownloaded /
-                (elapsedMilliseconds / 1000)
-              : null;
+            slideDownloadRateSample?.operationId ===
+            activeSlideDownloadStatus.operationId
+              ? slideDownloadRateSample.bytesPerSecond
+              : elapsedMilliseconds > 0
+                ? activeSlideDownloadStatus.bytesDownloaded /
+                  (elapsedMilliseconds / 1000)
+                : null;
           const percentComplete =
             activeSlideDownloadStatus.totalBytes &&
             activeSlideDownloadStatus.totalBytes > 0

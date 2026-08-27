@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   App,
+  SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
   SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
 } from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
@@ -1868,7 +1869,7 @@ describe('App', () => {
     expect(screen.getByText('Downloading Keynote slides...')).toBeTruthy();
   });
 
-  it('refreshes the slide download dialog at a calm one-second cadence', async () => {
+  it('keeps slide progress responsive while sampling the transfer rate more slowly', async () => {
     const user = userEvent.setup();
     const intervalSpy = vi.spyOn(window, 'setInterval');
     const libraryEvent = {
@@ -1918,9 +1919,31 @@ describe('App', () => {
       startedAt: 1_000,
       kind: 'downloading' as const,
       bytesDownloaded: 2_048,
-      totalBytes: 4_096,
+      totalBytes: 8_192,
       message: 'Downloading slides...',
       updatedAt: 3_000,
+    };
+    const halfSecondStatus = {
+      ...downloadStatus,
+      bytesDownloaded: 4_096,
+      updatedAt:
+        downloadStatus.updatedAt +
+        SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
+    };
+    const oneSecondStatus = {
+      ...downloadStatus,
+      bytesDownloaded: 6_144,
+      updatedAt:
+        downloadStatus.updatedAt +
+        SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
+    };
+    const oneAndAHalfSecondStatus = {
+      ...downloadStatus,
+      bytesDownloaded: 7_168,
+      updatedAt:
+        downloadStatus.updatedAt +
+        SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS +
+        SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
     };
 
     window.indicoInk.listLibraryEvents = vi
@@ -1934,7 +1957,9 @@ describe('App', () => {
     });
     const getDeckDownloadStatus = vi
       .fn()
-      .mockResolvedValueOnce(downloadStatus)
+      .mockResolvedValueOnce(halfSecondStatus)
+      .mockResolvedValueOnce(oneSecondStatus)
+      .mockResolvedValueOnce(oneAndAHalfSecondStatus)
       .mockImplementation(() => new Promise(() => {}));
     window.indicoInk.getDeckDownloadStatus = getDeckDownloadStatus;
 
@@ -1951,15 +1976,39 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('dialog')).toBeTruthy();
-    expect(screen.getByText('1.00 KB/s')).toBeTruthy();
     await act(async () => {
       await Promise.resolve();
     });
     expect(getDeckDownloadStatus).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('50% complete')).toBeTruthy();
+    expect(screen.getByText('1.60 KB/s')).toBeTruthy();
     expect(intervalSpy).toHaveBeenCalledWith(
       expect.any(Function),
       SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
     );
+    expect(SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS).toBeLessThan(
+      SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
+    );
+
+    const pollCallback = intervalSpy.mock.calls.find(
+      ([, delay]) => delay === SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
+    )?.[0];
+    expect(pollCallback).toBeTypeOf('function');
+    await act(async () => {
+      await pollCallback?.();
+    });
+
+    expect(getDeckDownloadStatus).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('75% complete')).toBeTruthy();
+    expect(screen.getByText('1.60 KB/s')).toBeTruthy();
+
+    await act(async () => {
+      await pollCallback?.();
+    });
+
+    expect(getDeckDownloadStatus).toHaveBeenCalledTimes(3);
+    expect(screen.getByText('88% complete')).toBeTruthy();
+    expect(screen.getByText('2.00 KB/s')).toBeTruthy();
     intervalSpy.mockRestore();
   });
 
