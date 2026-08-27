@@ -9,7 +9,10 @@ import {
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from './App';
+import {
+  App,
+  SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
+} from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
 import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 import type { OpenAiConfigurationSummary } from './shared/openAi';
@@ -1863,6 +1866,94 @@ describe('App', () => {
 
     expect(await screen.findByText('Downloading talks')).toBeTruthy();
     expect(screen.getByText('Downloading Keynote slides...')).toBeTruthy();
+  });
+
+  it('refreshes the slide download dialog at a calm one-second cadence', async () => {
+    const user = userEvent.setup();
+    const intervalSpy = vi.spyOn(window, 'setInterval');
+    const libraryEvent = {
+      id: 'conference-slide-download',
+      sourceUrl: 'https://indico.example.org/event/slide-download',
+      title: 'Slide Download Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const talk = {
+      id: 'talk-slide-download',
+      conferenceId: libraryEvent.id,
+      contributionId: 'contribution-slide-download',
+      sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+      dayLabel: 'Friday, June 12, 2026',
+      title: 'Downloading slides',
+      speaker: 'Ada Lovelace',
+      sessionTitle: 'Tooling session',
+      timeRangeLabel: '09:00 - 09:30',
+      room: 'Auditorium',
+      bookmarked: false,
+      materialSummary: '1 PDF',
+      materials: [
+        {
+          id: 'deck-slide-download',
+          title: 'Slides',
+          sourceUrl: 'https://indico.example.org/materials/slides.pdf',
+          mimeType: 'application/pdf',
+          selected: true,
+          pageCount: null,
+        },
+      ],
+      annotatedSlideCount: 0,
+    };
+    const deckSourceUrl = 'https://indico.example.org/materials/slides.pdf';
+    const downloadStatus = {
+      operationId: 'deck-download-1',
+      conferenceId: libraryEvent.id,
+      talkId: talk.id,
+      deckId: 'deck-slide-download',
+      sourceUrl: deckSourceUrl,
+      displayName: 'Slides',
+      filePath: null,
+      startedAt: Date.now(),
+      kind: 'downloading' as const,
+      bytesDownloaded: 0,
+      totalBytes: null,
+      message: 'Downloading slides...',
+      updatedAt: Date.now(),
+    };
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([talk]);
+    window.indicoInk.openTalkDeck = vi.fn().mockResolvedValue({
+      ...downloadStatus,
+      kind: 'downloading' as const,
+      pageCount: 0,
+    });
+    window.indicoInk.getDeckDownloadStatus = vi
+      .fn()
+      .mockResolvedValue(downloadStatus);
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open talk for Downloading slides',
+      }),
+    );
+
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(intervalSpy).toHaveBeenCalledWith(
+      expect.any(Function),
+      SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
+    );
+    intervalSpy.mockRestore();
   });
 
   it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {

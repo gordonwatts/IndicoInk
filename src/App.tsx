@@ -148,6 +148,10 @@ const filterOptions = [
   { label: 'Slides available', value: 'slides' as const },
 ];
 
+// The download dialog is informational, so a one-second refresh keeps its
+// transfer-rate display useful without needlessly repainting the renderer.
+export const SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS = 1000;
+
 const isEditableKeyboardTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable ||
@@ -2980,7 +2984,7 @@ export function App() {
     void poll();
     deckDownloadPollRef.current = window.setInterval(() => {
       void poll();
-    }, 500);
+    }, SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS);
 
     return () => {
       if (deckDownloadPollRef.current !== null) {
