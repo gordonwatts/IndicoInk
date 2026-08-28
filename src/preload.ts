@@ -206,6 +206,18 @@ const getDeckDownloadStatus = async (
 ): Promise<DeckCacheDownloadStatus | null> =>
   ipcRenderer.invoke('deck:download-status', operationId);
 
+const onDeckDownloadProgress = (
+  listener: (status: DeckCacheDownloadStatus) => void,
+) => {
+  const handleProgress = (
+    _event: Electron.IpcRendererEvent,
+    status: DeckCacheDownloadStatus,
+  ) => listener(status);
+  ipcRenderer.on('deck:download-progress', handleProgress);
+  return () =>
+    ipcRenderer.removeListener('deck:download-progress', handleProgress);
+};
+
 const cancelDeckDownload = async (operationId: string): Promise<void> =>
   ipcRenderer.invoke('deck:cancel-download', operationId);
 
@@ -269,6 +281,7 @@ contextBridge.exposeInMainWorld('indicoInk', {
   setSelectedDeck,
   openTalkDeck,
   getDeckDownloadStatus,
+  onDeckDownloadProgress,
   cancelDeckDownload,
   openExternalUrl,
   openDataFolder,
@@ -354,6 +367,9 @@ export type IndicoInkApi = {
   getDeckDownloadStatus: (
     operationId: string,
   ) => Promise<DeckCacheDownloadStatus | null>;
+  onDeckDownloadProgress: (
+    listener: (status: DeckCacheDownloadStatus) => void,
+  ) => () => void;
   cancelDeckDownload: (operationId: string) => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   openDataFolder: () => Promise<void>;

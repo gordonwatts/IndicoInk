@@ -105,6 +105,9 @@ declare global {
       getDeckDownloadStatus: (
         operationId: string,
       ) => Promise<DeckCacheDownloadStatus | null>;
+      onDeckDownloadProgress: (
+        listener: (status: DeckCacheDownloadStatus) => void,
+      ) => () => void;
       cancelDeckDownload: (operationId: string) => Promise<void>;
       openExternalUrl: (url: string) => Promise<void>;
       openDataFolder: () => Promise<void>;

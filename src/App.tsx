@@ -150,7 +150,6 @@ const filterOptions = [
 
 // Keep byte and percentage progress responsive while sampling the noisier
 // transfer-rate pill at a calmer cadence.
-export const SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS = 500;
 export const SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS = 1000;
 
 const isEditableKeyboardTarget = (target: EventTarget | null) =>
@@ -545,6 +544,48 @@ type SlideViewerState =
     };
 
 type ViewerMode = 'slides' | 'notes';
+const applySlideDownloadStatus = (
+  currentState: SlideViewerState,
+  status: DeckCacheDownloadStatus,
+): SlideViewerState => {
+  if (
+    currentState.kind !== 'loading' ||
+    currentState.downloadStatus?.operationId !== status.operationId
+  ) {
+    return currentState;
+  }
+
+  if (status.kind === 'ready') {
+    return {
+      kind: 'ready',
+      conferenceId: currentState.conferenceId,
+      talkId: currentState.talkId,
+      deckId: currentState.deckId,
+      filePath: currentState.filePath ?? status.filePath,
+      title: currentState.title,
+      selectedMaterialId: currentState.selectedMaterialId,
+      materials: currentState.materials,
+      downloadStatus: status,
+    };
+  }
+
+  if (status.kind === 'error' || status.kind === 'canceled') {
+    return {
+      kind: 'error',
+      conferenceId: currentState.conferenceId,
+      talkId: currentState.talkId,
+      deckId: currentState.deckId,
+      filePath: currentState.filePath,
+      title: currentState.title,
+      selectedMaterialId: currentState.selectedMaterialId,
+      materials: currentState.materials,
+      downloadStatus: status,
+      message: status.message ?? 'Download failed.',
+    };
+  }
+
+  return { ...currentState, downloadStatus: status };
+};
 
 function AgendaTimelineCanvas({
   visibleAgendaTalks,
@@ -1220,7 +1261,6 @@ export function App() {
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
-  const deckDownloadPollRef = React.useRef<number | null>(null);
   const agendaDownloadPollRef = React.useRef<number | null>(null);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
     null,
@@ -1569,8 +1609,6 @@ export function App() {
 
   const activeSlideDownloadStatus =
     slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
-  const activeSlideDownloadOperationId =
-    activeSlideDownloadStatus?.operationId ?? null;
   React.useEffect(() => {
     if (activeSlideDownloadStatus?.kind !== 'downloading') {
       return;
@@ -2967,79 +3005,13 @@ export function App() {
   };
 
   React.useEffect(() => {
-    if (slideViewerState.kind !== 'loading') {
-      if (deckDownloadPollRef.current !== null) {
-        window.clearInterval(deckDownloadPollRef.current);
-        deckDownloadPollRef.current = null;
-      }
-      return undefined;
-    }
+    return window.indicoInk.onDeckDownloadProgress((status) => {
+      setSlideViewerState((currentState) =>
+        applySlideDownloadStatus(currentState, status),
+      );
+    });
+  }, []);
 
-    const operationId = activeSlideDownloadOperationId;
-    if (!operationId) {
-      return undefined;
-    }
-
-    const poll = async () => {
-      const status = await window.indicoInk.getDeckDownloadStatus(operationId);
-      if (!status) {
-        return;
-      }
-
-      setSlideViewerState((currentState) => {
-        if (currentState.kind !== 'loading') {
-          return currentState;
-        }
-
-        const nextStatus = status;
-        if (nextStatus.kind === 'ready') {
-          return {
-            kind: 'ready',
-            conferenceId: currentState.conferenceId,
-            talkId: currentState.talkId,
-            deckId: currentState.deckId,
-            filePath: currentState.filePath ?? nextStatus.filePath,
-            title: currentState.title,
-            selectedMaterialId: currentState.selectedMaterialId,
-            materials: currentState.materials,
-            downloadStatus: nextStatus,
-          };
-        }
-
-        if (nextStatus.kind === 'error' || nextStatus.kind === 'canceled') {
-          return {
-            kind: 'error',
-            conferenceId: currentState.conferenceId,
-            talkId: currentState.talkId,
-            deckId: currentState.deckId,
-            filePath: currentState.filePath,
-            title: currentState.title,
-            selectedMaterialId: currentState.selectedMaterialId,
-            materials: currentState.materials,
-            downloadStatus: nextStatus,
-            message: nextStatus.message ?? 'Download failed.',
-          };
-        }
-
-        return {
-          ...currentState,
-          downloadStatus: nextStatus,
-        };
-      });
-    };
-
-    void poll();
-    deckDownloadPollRef.current = window.setInterval(() => {
-      void poll();
-    }, SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS);
-
-    return () => {
-      if (deckDownloadPollRef.current !== null) {
-        window.clearInterval(deckDownloadPollRef.current);
-        deckDownloadPollRef.current = null;
-      }
-    };
-  }, [activeSlideDownloadOperationId, slideViewerState.kind]);
 
   React.useEffect(() => {
     const operationId = agendaDownloadStatus?.operationId;

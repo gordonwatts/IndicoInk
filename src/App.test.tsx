@@ -12,11 +12,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   App,
   SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
-  SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
 } from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
 import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 import type { OpenAiConfigurationSummary } from './shared/openAi';
+import type { DeckCacheDownloadStatus } from './shared/deckCache';
 
 let clipboardWriteTextMock: ReturnType<typeof vi.fn>;
 
@@ -107,6 +107,7 @@ describe('App', () => {
       }),
       deleteOpenAiApiKey: vi.fn().mockResolvedValue(undefined),
       onAgendaProgress: vi.fn().mockReturnValue(() => {}),
+      onDeckDownloadProgress: vi.fn().mockReturnValue(() => {}),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       onIndicoEventUrlRequested: vi.fn().mockReturnValue(() => {}),
       openPdf: vi.fn().mockResolvedValue({
@@ -1869,9 +1870,10 @@ describe('App', () => {
     expect(screen.getByText('Downloading Keynote slides...')).toBeTruthy();
   });
 
-  it('keeps slide progress responsive while sampling the transfer rate more slowly', async () => {
+  it('updates slide progress from download events while sampling the transfer rate more slowly', async () => {
     const user = userEvent.setup();
-    const intervalSpy = vi.spyOn(window, 'setInterval');
+    let progressListener: ((status: DeckCacheDownloadStatus) => void) | null =
+      null;
     const libraryEvent = {
       id: 'conference-slide-download',
       sourceUrl: 'https://indico.example.org/event/slide-download',
@@ -1907,15 +1909,14 @@ describe('App', () => {
       ],
       annotatedSlideCount: 0,
     };
-    const deckSourceUrl = 'https://indico.example.org/materials/slides.pdf';
     const downloadStatus = {
       operationId: 'deck-download-1',
       conferenceId: libraryEvent.id,
       talkId: talk.id,
       deckId: 'deck-slide-download',
-      sourceUrl: deckSourceUrl,
+      sourceUrl: 'https://indico.example.org/materials/slides.pdf',
       displayName: 'Slides',
-      filePath: null,
+      filePath: 'C:/temp/slides.pdf',
       startedAt: 1_000,
       kind: 'downloading' as const,
       bytesDownloaded: 2_048,
@@ -1926,16 +1927,13 @@ describe('App', () => {
     const halfSecondStatus = {
       ...downloadStatus,
       bytesDownloaded: 4_096,
-      updatedAt:
-        downloadStatus.updatedAt +
-        SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
+      updatedAt: downloadStatus.updatedAt + 500,
     };
     const oneSecondStatus = {
       ...downloadStatus,
       bytesDownloaded: 6_144,
       updatedAt:
-        downloadStatus.updatedAt +
-        SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
+        downloadStatus.updatedAt + SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
     };
     const oneAndAHalfSecondStatus = {
       ...downloadStatus,
@@ -1943,7 +1941,7 @@ describe('App', () => {
       updatedAt:
         downloadStatus.updatedAt +
         SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS +
-        SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
+        500,
     };
 
     window.indicoInk.listLibraryEvents = vi
@@ -1952,16 +1950,15 @@ describe('App', () => {
     window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([talk]);
     window.indicoInk.openTalkDeck = vi.fn().mockResolvedValue({
       ...downloadStatus,
-      kind: 'downloading' as const,
       pageCount: 0,
     });
-    const getDeckDownloadStatus = vi
-      .fn()
-      .mockResolvedValueOnce(halfSecondStatus)
-      .mockResolvedValueOnce(oneSecondStatus)
-      .mockResolvedValueOnce(oneAndAHalfSecondStatus)
-      .mockImplementation(() => new Promise(() => {}));
-    window.indicoInk.getDeckDownloadStatus = getDeckDownloadStatus;
+    const onDeckDownloadProgress = vi.fn(
+      (listener: (status: DeckCacheDownloadStatus) => void) => {
+        progressListener = listener;
+        return () => {};
+      },
+    );
+    window.indicoInk.onDeckDownloadProgress = onDeckDownloadProgress;
 
     render(<App />);
     await user.click(
@@ -1975,41 +1972,29 @@ describe('App', () => {
       }),
     );
 
-    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(onDeckDownloadProgress).toHaveBeenCalledTimes(1);
+    if (!progressListener) {
+      throw new Error('Expected the download progress listener to be registered.');
+    }
+
     await act(async () => {
-      await Promise.resolve();
+      progressListener?.(halfSecondStatus);
     });
-    expect(getDeckDownloadStatus).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(screen.getByText('50% complete')).toBeTruthy();
     expect(screen.getByText('1.60 KB/s')).toBeTruthy();
-    expect(intervalSpy).toHaveBeenCalledWith(
-      expect.any(Function),
-      SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
-    );
-    expect(SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS).toBeLessThan(
-      SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
-    );
 
-    const pollCallback = intervalSpy.mock.calls.find(
-      ([, delay]) => delay === SLIDE_DOWNLOAD_STATUS_POLL_INTERVAL_MS,
-    )?.[0];
-    expect(pollCallback).toBeTypeOf('function');
     await act(async () => {
-      await pollCallback?.();
+      progressListener?.(oneSecondStatus);
     });
-
-    expect(getDeckDownloadStatus).toHaveBeenCalledTimes(2);
     expect(screen.getByText('75% complete')).toBeTruthy();
     expect(screen.getByText('1.60 KB/s')).toBeTruthy();
 
     await act(async () => {
-      await pollCallback?.();
+      progressListener?.(oneAndAHalfSecondStatus);
     });
-
-    expect(getDeckDownloadStatus).toHaveBeenCalledTimes(3);
     expect(screen.getByText('88% complete')).toBeTruthy();
     expect(screen.getByText('2.00 KB/s')).toBeTruthy();
-    intervalSpy.mockRestore();
   });
 
   it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {

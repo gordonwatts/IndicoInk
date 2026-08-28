@@ -132,7 +132,7 @@ describe('deck cache manager', () => {
                     };
                   },
                 ),
-            }) as ReadableStreamDefaultReader<Uint8Array>,
+            }) as unknown as ReadableStreamDefaultReader<Uint8Array>,
         },
       }),
     );
@@ -165,6 +165,46 @@ describe('deck cache manager', () => {
     expect(existsSync(filePath)).toBe(false);
   });
 
+  it('notifies progress after each downloaded chunk', async () => {
+    const cacheRoot = createTempDir('deck-cache-progress-events');
+    const chunks = [
+      new Uint8Array([1, 2]),
+      new Uint8Array([3, 4]),
+    ];
+    const read = vi.fn()
+      .mockResolvedValueOnce({ value: chunks[0], done: false })
+      .mockResolvedValueOnce({ value: chunks[1], done: false })
+      .mockResolvedValueOnce({ value: undefined, done: true });
+    const fetchDeckBytes = vi.fn().mockResolvedValue(
+      makeDownloadResponse({
+        body: { getReader: () => ({ read }) as unknown as ReadableStreamDefaultReader<Uint8Array> },
+      }),
+    );
+    const progressStatuses: Array<{ bytesDownloaded: number; kind: string }> = [];
+    const manager = new DeckCacheManager(
+      cacheRoot,
+      fetchDeckBytes,
+      undefined,
+      undefined,
+      undefined,
+      (status) => progressStatuses.push({ bytesDownloaded: status.bytesDownloaded, kind: status.kind }),
+    );
+
+    const result = await manager.openDeck(makeDeck());
+    expect(result.kind).toBe('downloading');
+    if (result.kind !== 'downloading') {
+      throw new Error('Expected a download to start.');
+    }
+
+    await vi.waitFor(() => {
+      expect(manager.getDownloadStatus(result.operationId)?.kind).toBe('ready');
+    });
+
+    expect(
+      progressStatuses.filter(({ bytesDownloaded, kind }) => kind === 'downloading' && bytesDownloaded > 0).map(({ bytesDownloaded }) => bytesDownloaded),
+    ).toEqual([2, 4]);
+    expect(progressStatuses.at(-1)?.kind).toBe('ready');
+  });
   it('adds a stored API key to download requests for the deck origin', async () => {
     const cacheRoot = createTempDir('deck-cache-api-key');
     const fetchDeckBytes = vi.fn().mockResolvedValue(makeDownloadResponse());
