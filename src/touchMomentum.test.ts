@@ -11,6 +11,27 @@ describe('touch momentum', () => {
     ).toEqual({ x: 1, y: 1 });
   });
 
+  it('caps velocity when delayed input reports an extreme fling', () => {
+    expect(
+      getTouchPanVelocity([
+        { x: 600, y: 0, time: 0 },
+        { x: 0, y: -600, time: 10 },
+      ]),
+    ).toEqual({ x: 2, y: 2 });
+  });
+
+  it('also caps momentum supplied directly by a caller', () => {
+    const next = advanceTouchMomentum({ x: 0, y: 100 }, { x: 20, y: -20 }, 16, {
+      maxX: 10_000,
+      maxY: 10_000,
+    });
+
+    expect(next.position.x).toBeCloseTo(31.3856);
+    expect(next.position.y).toBeCloseTo(68.6144);
+    expect(next.velocity.x).toBeCloseTo(1.9616);
+    expect(next.velocity.y).toBeCloseTo(-1.9616);
+  });
+
   it('decelerates and advances both scroll axes', () => {
     const next = advanceTouchMomentum(
       { x: 100, y: 200 },
