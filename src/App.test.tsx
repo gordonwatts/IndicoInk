@@ -9,10 +9,14 @@ import {
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from './App';
+import {
+  App,
+  SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
+} from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
 import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 import type { OpenAiConfigurationSummary } from './shared/openAi';
+import type { DeckCacheDownloadStatus } from './shared/deckCache';
 
 let clipboardWriteTextMock: ReturnType<typeof vi.fn>;
 
@@ -103,6 +107,7 @@ describe('App', () => {
       }),
       deleteOpenAiApiKey: vi.fn().mockResolvedValue(undefined),
       onAgendaProgress: vi.fn().mockReturnValue(() => {}),
+      onDeckDownloadProgress: vi.fn().mockReturnValue(() => {}),
       getStartupIndicoEventUrl: vi.fn().mockResolvedValue(null),
       onIndicoEventUrlRequested: vi.fn().mockReturnValue(() => {}),
       openPdf: vi.fn().mockResolvedValue({
@@ -1863,6 +1868,133 @@ describe('App', () => {
 
     expect(await screen.findByText('Downloading talks')).toBeTruthy();
     expect(screen.getByText('Downloading Keynote slides...')).toBeTruthy();
+  });
+
+  it('updates slide progress from download events while sampling the transfer rate more slowly', async () => {
+    const user = userEvent.setup();
+    let progressListener: ((status: DeckCacheDownloadStatus) => void) | null =
+      null;
+    const libraryEvent = {
+      id: 'conference-slide-download',
+      sourceUrl: 'https://indico.example.org/event/slide-download',
+      title: 'Slide Download Event',
+      dates: 'June 12, 2026',
+      host: 'indico.example.org',
+      lastOpened: 'Opened just now',
+      annotationSummary: '0 annotated slides',
+      cacheStatus: 'Online only',
+    };
+    const talk = {
+      id: 'talk-slide-download',
+      conferenceId: libraryEvent.id,
+      contributionId: 'contribution-slide-download',
+      sortStartsAt: Date.UTC(2026, 5, 12, 9, 0, 0, 0),
+      dayLabel: 'Friday, June 12, 2026',
+      title: 'Downloading slides',
+      speaker: 'Ada Lovelace',
+      sessionTitle: 'Tooling session',
+      timeRangeLabel: '09:00 - 09:30',
+      room: 'Auditorium',
+      bookmarked: false,
+      materialSummary: '1 PDF',
+      materials: [
+        {
+          id: 'deck-slide-download',
+          title: 'Slides',
+          sourceUrl: 'https://indico.example.org/materials/slides.pdf',
+          mimeType: 'application/pdf',
+          selected: true,
+          pageCount: null,
+        },
+      ],
+      annotatedSlideCount: 0,
+    };
+    const downloadStatus = {
+      operationId: 'deck-download-1',
+      conferenceId: libraryEvent.id,
+      talkId: talk.id,
+      deckId: 'deck-slide-download',
+      sourceUrl: 'https://indico.example.org/materials/slides.pdf',
+      displayName: 'Slides',
+      filePath: 'C:/temp/slides.pdf',
+      startedAt: 1_000,
+      kind: 'downloading' as const,
+      bytesDownloaded: 2_048,
+      totalBytes: 8_192,
+      message: 'Downloading slides...',
+      updatedAt: 3_000,
+    };
+    const halfSecondStatus = {
+      ...downloadStatus,
+      bytesDownloaded: 4_096,
+      updatedAt: downloadStatus.updatedAt + 500,
+    };
+    const oneSecondStatus = {
+      ...downloadStatus,
+      bytesDownloaded: 6_144,
+      updatedAt:
+        downloadStatus.updatedAt + SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
+    };
+    const oneAndAHalfSecondStatus = {
+      ...downloadStatus,
+      bytesDownloaded: 7_168,
+      updatedAt:
+        downloadStatus.updatedAt +
+        SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS +
+        500,
+    };
+
+    window.indicoInk.listLibraryEvents = vi
+      .fn()
+      .mockResolvedValue([libraryEvent]);
+    window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([talk]);
+    window.indicoInk.openTalkDeck = vi.fn().mockResolvedValue({
+      ...downloadStatus,
+      pageCount: 0,
+    });
+    const onDeckDownloadProgress = vi.fn(
+      (listener: (status: DeckCacheDownloadStatus) => void) => {
+        progressListener = listener;
+        return () => {};
+      },
+    );
+    window.indicoInk.onDeckDownloadProgress = onDeckDownloadProgress;
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `Open ${libraryEvent.title}`,
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open talk for Downloading slides',
+      }),
+    );
+
+    expect(onDeckDownloadProgress).toHaveBeenCalledTimes(1);
+    if (!progressListener) {
+      throw new Error('Expected the download progress listener to be registered.');
+    }
+
+    await act(async () => {
+      progressListener?.(halfSecondStatus);
+    });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('50% complete')).toBeTruthy();
+    expect(screen.getByText('1.60 KB/s')).toBeTruthy();
+
+    await act(async () => {
+      progressListener?.(oneSecondStatus);
+    });
+    expect(screen.getByText('75% complete')).toBeTruthy();
+    expect(screen.getByText('1.60 KB/s')).toBeTruthy();
+
+    await act(async () => {
+      progressListener?.(oneAndAHalfSecondStatus);
+    });
+    expect(screen.getByText('88% complete')).toBeTruthy();
+    expect(screen.getByText('2.00 KB/s')).toBeTruthy();
   });
 
   it('keeps non-PDF materials in the materials dialog and opens the selected PDF deck', async () => {

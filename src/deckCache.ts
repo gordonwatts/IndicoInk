@@ -50,6 +50,8 @@ type ConvertPowerPointToPdf = (
   onProgress?: (message: string) => void,
 ) => Promise<void>;
 
+type OnDownloadStatus = (status: DeckCacheDownloadStatus) => void;
+
 const createCacheFilePath = (
   cacheRoot: string,
   conferenceId: string,
@@ -65,6 +67,7 @@ export class DeckCacheManager {
     private readonly getApiKeyForUrl: GetApiKeyForUrl = async () => null,
     private readonly now = () => Date.now(),
     private readonly convertPowerPoint: ConvertPowerPointToPdf = convertPowerPointToPdf,
+    private readonly onDownloadStatus?: OnDownloadStatus,
   ) {}
 
   getCacheFilePath(conferenceId: string, deckId: string) {
@@ -95,6 +98,7 @@ export class DeckCacheManager {
       message: 'Download canceled.',
       updatedAt: this.now(),
     };
+    this.notifyStatus(record.status);
   }
 
   async openDeck(deck: Deck): Promise<DeckCacheOpenResult> {
@@ -311,9 +315,11 @@ export class DeckCacheManager {
         ? 'Downloading PowerPoint...'
         : 'Downloading PDF...';
       status.updatedAt = this.now();
+      this.notifyStatus(status);
 
       const declaredLength = response.headers.get('content-length');
       status.totalBytes = declaredLength ? Number(declaredLength) : null;
+      this.notifyStatus(status);
       mkdirSync(dirname(filePath), { recursive: true });
 
       if (response.body) {
@@ -332,6 +338,7 @@ export class DeckCacheManager {
               await handle.write(Buffer.from(result.value));
               status.bytesDownloaded += result.value.byteLength;
               status.updatedAt = this.now();
+              this.notifyStatus(status);
             }
           }
         } finally {
@@ -348,6 +355,7 @@ export class DeckCacheManager {
         });
         status.bytesDownloaded = bytes.byteLength;
         status.updatedAt = this.now();
+        this.notifyStatus(status);
       }
 
       if (controller.signal.aborted) {
@@ -357,9 +365,11 @@ export class DeckCacheManager {
       if (convertedPath) {
         status.message = 'Converting PowerPoint to PDF...';
         status.updatedAt = this.now();
+        this.notifyStatus(status);
         await this.convertPowerPoint(tempPath, convertedPath, (message) => {
           status.message = `Converting PowerPoint to PDF: ${message}`;
           status.updatedAt = this.now();
+          this.notifyStatus(status);
         });
         if (!(await this.isValidPdfCache(convertedPath))) {
           throw new Error('PowerPoint conversion did not produce a valid PDF.');
@@ -374,13 +384,19 @@ export class DeckCacheManager {
         ? 'PowerPoint converted to PDF.'
         : 'Download complete.';
       status.updatedAt = this.now();
+      this.notifyStatus(status);
     } catch (error) {
       await this.cleanupPartialDownload(record);
       status.kind = controller.signal.aborted ? 'canceled' : 'error';
       status.message =
         error instanceof Error ? error.message : 'Failed to download PDF.';
       status.updatedAt = this.now();
+      this.notifyStatus(status);
     }
+  }
+
+  private notifyStatus(status: DeckCacheDownloadStatus) {
+    this.onDownloadStatus?.({ ...status });
   }
 
   private async isValidPdfCache(filePath: string) {

@@ -168,6 +168,13 @@ const getDeckCacheManager = () =>
     join(getUserDataPath(), 'deck-cache'),
     session.defaultSession.fetch.bind(session.defaultSession),
     getStoredApiKeyForUrl,
+    undefined,
+    undefined,
+    (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('deck:download-progress', status);
+      }
+    },
   ));
 
 const getAgendaDownloadManager = () =>

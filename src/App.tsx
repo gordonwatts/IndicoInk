@@ -148,6 +148,10 @@ const filterOptions = [
   { label: 'Slides available', value: 'slides' as const },
 ];
 
+// Keep byte and percentage progress responsive while sampling the noisier
+// transfer-rate pill at a calmer cadence.
+export const SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS = 1000;
+
 const isEditableKeyboardTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable ||
@@ -540,6 +544,48 @@ type SlideViewerState =
     };
 
 type ViewerMode = 'slides' | 'notes';
+const applySlideDownloadStatus = (
+  currentState: SlideViewerState,
+  status: DeckCacheDownloadStatus,
+): SlideViewerState => {
+  if (
+    currentState.kind !== 'loading' ||
+    currentState.downloadStatus?.operationId !== status.operationId
+  ) {
+    return currentState;
+  }
+
+  if (status.kind === 'ready') {
+    return {
+      kind: 'ready',
+      conferenceId: currentState.conferenceId,
+      talkId: currentState.talkId,
+      deckId: currentState.deckId,
+      filePath: currentState.filePath ?? status.filePath,
+      title: currentState.title,
+      selectedMaterialId: currentState.selectedMaterialId,
+      materials: currentState.materials,
+      downloadStatus: status,
+    };
+  }
+
+  if (status.kind === 'error' || status.kind === 'canceled') {
+    return {
+      kind: 'error',
+      conferenceId: currentState.conferenceId,
+      talkId: currentState.talkId,
+      deckId: currentState.deckId,
+      filePath: currentState.filePath,
+      title: currentState.title,
+      selectedMaterialId: currentState.selectedMaterialId,
+      materials: currentState.materials,
+      downloadStatus: status,
+      message: status.message ?? 'Download failed.',
+    };
+  }
+
+  return { ...currentState, downloadStatus: status };
+};
 
 function AgendaTimelineCanvas({
   visibleAgendaTalks,
@@ -1195,6 +1241,11 @@ export function App() {
   >({ kind: 'idle' });
   const [slideViewerState, setSlideViewerState] =
     React.useState<SlideViewerState>({ kind: 'closed' });
+  const [slideDownloadRateSample, setSlideDownloadRateSample] = React.useState<{
+    operationId: string;
+    updatedAt: number;
+    bytesPerSecond: number | null;
+  } | null>(null);
   const [viewerMode, setViewerMode] = React.useState<ViewerMode>('slides');
   const [notesDeckId, setNotesDeckId] = React.useState<string | null>(null);
   const [, setSlideViewerMetrics] = React.useState<{
@@ -1210,7 +1261,6 @@ export function App() {
   const agendaCanvasMeasureRef = React.useRef<HTMLDivElement | null>(null);
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
-  const deckDownloadPollRef = React.useRef<number | null>(null);
   const agendaDownloadPollRef = React.useRef<number | null>(null);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
     null,
@@ -1559,6 +1609,39 @@ export function App() {
 
   const activeSlideDownloadStatus =
     slideViewerState.kind === 'closed' ? null : slideViewerState.downloadStatus;
+  React.useEffect(() => {
+    if (activeSlideDownloadStatus?.kind !== 'downloading') {
+      return;
+    }
+
+    const elapsedMilliseconds = Math.max(
+      0,
+      activeSlideDownloadStatus.updatedAt -
+        activeSlideDownloadStatus.startedAt,
+    );
+    const bytesPerSecond =
+      elapsedMilliseconds > 0
+        ? activeSlideDownloadStatus.bytesDownloaded /
+          (elapsedMilliseconds / 1000)
+        : null;
+
+    setSlideDownloadRateSample((currentSample) => {
+      if (
+        currentSample?.operationId ===
+          activeSlideDownloadStatus.operationId &&
+        activeSlideDownloadStatus.updatedAt - currentSample.updatedAt <
+          SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS
+      ) {
+        return currentSample;
+      }
+
+      return {
+        operationId: activeSlideDownloadStatus.operationId,
+        updatedAt: activeSlideDownloadStatus.updatedAt,
+        bytesPerSecond,
+      };
+    });
+  }, [activeSlideDownloadStatus]);
   const activeSlideTitle =
     slideViewerState.kind === 'closed' ? '' : slideViewerState.title;
   const activeSlideMaterials =
@@ -1584,13 +1667,19 @@ export function App() {
       ? (() => {
           const elapsedMilliseconds = Math.max(
             0,
-            Date.now() - activeSlideDownloadStatus.startedAt,
+            // Anchor the rate to the latest backend snapshot. Using Date.now()
+            // here made unrelated renderer renders animate the pill.
+            activeSlideDownloadStatus.updatedAt -
+              activeSlideDownloadStatus.startedAt,
           );
           const bytesPerSecond =
-            elapsedMilliseconds > 0
-              ? activeSlideDownloadStatus.bytesDownloaded /
-                (elapsedMilliseconds / 1000)
-              : null;
+            slideDownloadRateSample?.operationId ===
+            activeSlideDownloadStatus.operationId
+              ? slideDownloadRateSample.bytesPerSecond
+              : elapsedMilliseconds > 0
+                ? activeSlideDownloadStatus.bytesDownloaded /
+                  (elapsedMilliseconds / 1000)
+                : null;
           const percentComplete =
             activeSlideDownloadStatus.totalBytes &&
             activeSlideDownloadStatus.totalBytes > 0
@@ -2916,79 +3005,13 @@ export function App() {
   };
 
   React.useEffect(() => {
-    if (slideViewerState.kind !== 'loading') {
-      if (deckDownloadPollRef.current !== null) {
-        window.clearInterval(deckDownloadPollRef.current);
-        deckDownloadPollRef.current = null;
-      }
-      return undefined;
-    }
+    return window.indicoInk.onDeckDownloadProgress((status) => {
+      setSlideViewerState((currentState) =>
+        applySlideDownloadStatus(currentState, status),
+      );
+    });
+  }, []);
 
-    const operationId = activeSlideDownloadStatus?.operationId ?? null;
-    if (!operationId) {
-      return undefined;
-    }
-
-    const poll = async () => {
-      const status = await window.indicoInk.getDeckDownloadStatus(operationId);
-      if (!status) {
-        return;
-      }
-
-      setSlideViewerState((currentState) => {
-        if (currentState.kind !== 'loading') {
-          return currentState;
-        }
-
-        const nextStatus = status;
-        if (nextStatus.kind === 'ready') {
-          return {
-            kind: 'ready',
-            conferenceId: currentState.conferenceId,
-            talkId: currentState.talkId,
-            deckId: currentState.deckId,
-            filePath: currentState.filePath ?? nextStatus.filePath,
-            title: currentState.title,
-            selectedMaterialId: currentState.selectedMaterialId,
-            materials: currentState.materials,
-            downloadStatus: nextStatus,
-          };
-        }
-
-        if (nextStatus.kind === 'error' || nextStatus.kind === 'canceled') {
-          return {
-            kind: 'error',
-            conferenceId: currentState.conferenceId,
-            talkId: currentState.talkId,
-            deckId: currentState.deckId,
-            filePath: currentState.filePath,
-            title: currentState.title,
-            selectedMaterialId: currentState.selectedMaterialId,
-            materials: currentState.materials,
-            downloadStatus: nextStatus,
-            message: nextStatus.message ?? 'Download failed.',
-          };
-        }
-
-        return {
-          ...currentState,
-          downloadStatus: nextStatus,
-        };
-      });
-    };
-
-    void poll();
-    deckDownloadPollRef.current = window.setInterval(() => {
-      void poll();
-    }, 500);
-
-    return () => {
-      if (deckDownloadPollRef.current !== null) {
-        window.clearInterval(deckDownloadPollRef.current);
-        deckDownloadPollRef.current = null;
-      }
-    };
-  }, [activeSlideDownloadStatus, slideViewerState.kind]);
 
   React.useEffect(() => {
     const operationId = agendaDownloadStatus?.operationId;
