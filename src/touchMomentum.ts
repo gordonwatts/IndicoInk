@@ -22,6 +22,10 @@ export type TouchMomentumStep = {
 
 const DEFAULT_SAMPLE_WINDOW_MS = 120;
 const DEFAULT_DECELERATION_PX_PER_MS2 = 0.0024;
+// Keep a stalled or delayed input frame from turning into an unbounded fling.
+// At this cap, momentum can still travel roughly 830 px before stopping with
+// the default deceleration, but it cannot skip an entire long document.
+const MAX_TOUCH_PAN_VELOCITY_PX_PER_MS = 2;
 const MIN_ACTIVE_VELOCITY_PX_PER_MS = 0.01;
 
 export const getTouchPanVelocity = (
@@ -49,8 +53,8 @@ export const getTouchPanVelocity = (
   }
 
   return {
-    x: -(last.x - first.x) / elapsed,
-    y: -(last.y - first.y) / elapsed,
+    x: clampVelocity(-(last.x - first.x) / elapsed),
+    y: clampVelocity(-(last.y - first.y) / elapsed),
   };
 };
 
@@ -74,6 +78,12 @@ const slowVelocity = (
   return velocity - Math.sign(velocity) * amount;
 };
 
+const clampVelocity = (velocity: number): number =>
+  Math.max(
+    -MAX_TOUCH_PAN_VELOCITY_PX_PER_MS,
+    Math.min(MAX_TOUCH_PAN_VELOCITY_PX_PER_MS, velocity),
+  );
+
 export const advanceTouchMomentum = (
   position: { x: number; y: number },
   velocity: TouchMomentumVelocity,
@@ -81,9 +91,13 @@ export const advanceTouchMomentum = (
   bounds: TouchMomentumBounds,
   deceleration = DEFAULT_DECELERATION_PX_PER_MS2,
 ): TouchMomentumStep => {
+  const cappedVelocity = {
+    x: clampVelocity(velocity.x),
+    y: clampVelocity(velocity.y),
+  };
   const nextVelocity = {
-    x: slowVelocity(velocity.x, elapsedMs, deceleration),
-    y: slowVelocity(velocity.y, elapsedMs, deceleration),
+    x: slowVelocity(cappedVelocity.x, elapsedMs, deceleration),
+    y: slowVelocity(cappedVelocity.y, elapsedMs, deceleration),
   };
   const nextX = clampPosition(
     position.x + nextVelocity.x * elapsedMs,
