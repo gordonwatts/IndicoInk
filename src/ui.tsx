@@ -27,7 +27,9 @@ export type IconName =
   | 'eraser'
   | 'check'
   | 'info'
-  | 'dialog';
+  | 'dialog'
+  | 'fullscreen'
+  | 'fullscreen-exit';
 
 const iconPaths: Record<IconName, string> = {
   library:
@@ -69,6 +71,10 @@ const iconPaths: Record<IconName, string> = {
   info: 'M12 6.6a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Zm-1 2.4h2v7h-2V9Z',
   dialog:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Z',
+  fullscreen:
+    'M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM4 15h2v3h3v2H4v-5Zm14 0h2v5h-5v-2h3v-3Z',
+  'fullscreen-exit':
+    'M9 4v2H6v3H4V4h5Zm6 0h5v5h-2V6h-3V4ZM4 15h2v5h5v-2H6v-3H4Zm16 0v5h-5v-2h3v-3h2Z',
 };
 
 const filledBookmarkPath = 'M5.5 4.5h13v15.2L12 16.1l-6.5 3.6V4.5Z';

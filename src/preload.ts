@@ -43,6 +43,22 @@ const getAppSettings = async (): Promise<AppSettings> =>
 const setAppSettings = async (settings: AppSettings): Promise<AppSettings> =>
   ipcRenderer.invoke('app:set-settings', settings);
 
+const getFullscreen = async (): Promise<boolean> =>
+  ipcRenderer.invoke('window:get-fullscreen');
+
+const toggleFullscreen = async (): Promise<boolean> =>
+  ipcRenderer.invoke('window:toggle-fullscreen');
+
+const onFullscreenChanged = (listener: (isFullscreen: boolean) => void) => {
+  const handleChange = (
+    _event: Electron.IpcRendererEvent,
+    isFullscreen: boolean,
+  ) => listener(isFullscreen);
+  ipcRenderer.on('window:fullscreen-changed', handleChange);
+  return () =>
+    ipcRenderer.removeListener('window:fullscreen-changed', handleChange);
+};
+
 let startupIndicoEventUrlPromise: Promise<string | null> | null = null;
 const getStartupIndicoEventUrl = (): Promise<string | null> => {
   startupIndicoEventUrlPromise ??= ipcRenderer.invoke(
@@ -250,6 +266,9 @@ const openExportFileLocation = async (filePath: string): Promise<void> =>
 contextBridge.exposeInMainWorld('indicoInk', {
   getAppInfo,
   getDataFolder,
+  getFullscreen,
+  toggleFullscreen,
+  onFullscreenChanged,
   getAppSettings,
   getStartupIndicoEventUrl,
   onIndicoEventUrlRequested,
@@ -295,6 +314,11 @@ contextBridge.exposeInMainWorld('indicoInk', {
 export type IndicoInkApi = {
   getAppInfo: () => Promise<AppInfo>;
   getDataFolder: () => Promise<string>;
+  getFullscreen: () => Promise<boolean>;
+  toggleFullscreen: () => Promise<boolean>;
+  onFullscreenChanged: (
+    listener: (isFullscreen: boolean) => void,
+  ) => () => void;
   getAppSettings: () => Promise<AppSettings>;
   getStartupIndicoEventUrl: () => Promise<string | null>;
   onIndicoEventUrlRequested: (

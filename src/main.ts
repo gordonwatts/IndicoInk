@@ -395,6 +395,24 @@ const createWindow = () => {
     rendererAcceptsLaunchRequests = false;
   });
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') {
+      event.preventDefault();
+      mainWindow?.setFullScreen(!mainWindow.isFullScreen());
+    }
+  });
+
+  const notifyFullscreenChanged = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(
+        'window:fullscreen-changed',
+        mainWindow.isFullScreen(),
+      );
+    }
+  };
+  mainWindow.on('enter-full-screen', notifyFullscreenChanged);
+  mainWindow.on('leave-full-screen', notifyFullscreenChanged);
+
   if (hasPackagedRenderer) {
     void mainWindow.loadFile(packagedRendererPath).catch((error) => {
       appendStartupLogEntry(app.getPath('userData'), 'window:load-file', error);
@@ -579,6 +597,20 @@ ipcMain.handle(
     return eventUrl;
   },
 );
+
+ipcMain.handle(
+  'window:get-fullscreen',
+  () => mainWindow?.isFullScreen() ?? false,
+);
+
+ipcMain.handle('window:toggle-fullscreen', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  return mainWindow.isFullScreen();
+});
 
 ipcMain.handle('pdf:open', async () =>
   openPdfSelection((options) => dialog.showOpenDialog(options)),

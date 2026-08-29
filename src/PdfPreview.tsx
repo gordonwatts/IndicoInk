@@ -627,6 +627,8 @@ type PdfPreviewProps = {
   penThickness?: number;
   onPenThicknessChange?: (value: number) => void | Promise<void>;
   penColors?: string[];
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void | Promise<void>;
 };
 
 export const PEN_POINTER_MARKER_RADIUS = 2.5;
@@ -650,6 +652,8 @@ export function PdfPreview({
   penThickness = DEFAULT_PEN_THICKNESS,
   onPenThicknessChange,
   penColors = [...DEFAULT_PEN_COLORS],
+  isFullscreen = false,
+  onToggleFullscreen,
 }: PdfPreviewProps) {
   const renderCountRef = React.useRef(0);
   renderCountRef.current += 1;
@@ -3810,6 +3814,16 @@ export function PdfPreview({
               icon="plus"
               onClick={() => handleZoomIn()}
             />
+            {onToggleFullscreen ? (
+              <IconButton
+                label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+                title={isFullscreen ? 'Exit full screen (F11)' : 'Enter full screen (F11)'}
+                icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
+                onClick={() => {
+                  void onToggleFullscreen();
+                }}
+              />
+            ) : null}
           </div>
         </div>
         {persistenceError ? (
