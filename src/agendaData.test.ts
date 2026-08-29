@@ -23,7 +23,7 @@ describe('buildAgendaTalkSummaries', () => {
         },
       ]),
       getConference: vi.fn().mockResolvedValue({ timeZone: 'UTC' }),
-      listDecksByTalk: vi.fn().mockResolvedValue([
+      listDecksByConference: vi.fn().mockResolvedValue([
         {
           id: 'missing-unannotated',
           conferenceId: 'conference-1',
@@ -61,18 +61,14 @@ describe('buildAgendaTalkSummaries', () => {
           upstreamStatus: 'present',
         },
       ]),
-      listSlidesByDeck: vi.fn().mockImplementation(async (deckId: string) =>
-        deckId === 'missing-annotated'
-          ? [
-              {
-                id: 'slide-1',
-                deckId,
-                slideNumber: 1,
-                annotated: true,
-              },
-            ]
-          : [],
-      ),
+      listSlidesByConference: vi.fn().mockResolvedValue([
+        {
+          id: 'slide-1',
+          deckId: 'missing-annotated',
+          slideNumber: 1,
+          annotated: true,
+        },
+      ]),
       listAnnotationsBySlide: vi
         .fn()
         .mockImplementation(async (slideId: string) =>
@@ -92,5 +88,10 @@ describe('buildAgendaTalkSummaries', () => {
       'new-deck',
     ]);
     expect(talk?.annotatedSlideCount).toBe(1);
+    expect(
+      talk?.materials.find(({ id }) => id === 'missing-annotated'),
+    ).toMatchObject({ pageCount: 1 });
+    expect(store.listDecksByConference).toHaveBeenCalledOnce();
+    expect(store.listSlidesByConference).toHaveBeenCalledOnce();
   });
 });
