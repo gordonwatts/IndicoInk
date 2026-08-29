@@ -1377,6 +1377,10 @@ input:focus-visible {
   user-select: none;
 }
 
+.pdf-preview-page[hidden] {
+  display: none;
+}
+
 .pdf-preview-sheet {
   position: relative;
   display: grid;
