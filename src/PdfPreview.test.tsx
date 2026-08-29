@@ -50,11 +50,14 @@ describe('PdfPreview', () => {
 
   it('shows the compact slide-note controls without jump or download chrome', async () => {
     const onSlideMetricsChange = vi.fn();
+    const onToggleFullscreen = vi.fn();
 
     render(
       <PdfPreview
         filePath={null}
         title="Compact test"
+        isFullscreen={false}
+        onToggleFullscreen={onToggleFullscreen}
         onSlideMetricsChange={onSlideMetricsChange}
       />,
     );
@@ -62,6 +65,14 @@ describe('PdfPreview', () => {
     expect(screen.getByRole('button', { name: 'Pen' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Text' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Eraser' })).toBeTruthy();
+    const enterFullscreenButton = screen.getByRole('button', {
+      name: 'Enter full screen',
+    });
+    expect(enterFullscreenButton.previousElementSibling).toBe(
+      screen.getByRole('button', { name: 'Zoom in' }),
+    );
+    await userEvent.click(enterFullscreenButton);
+    expect(onToggleFullscreen).toHaveBeenCalledOnce();
     expect(
       screen
         .getByRole('slider', { name: 'Pen thickness' })

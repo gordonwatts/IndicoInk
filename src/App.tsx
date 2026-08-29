@@ -3414,18 +3414,6 @@ export function App() {
               />
             ))}
           </nav>
-          <IconButton
-            label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-            title={
-              isFullscreen
-                ? 'Exit full screen (F11)'
-                : 'Enter full screen (F11)'
-            }
-            icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
-            onClick={() => {
-              void toggleFullscreen();
-            }}
-          />
         </aside>
       )}
 
@@ -4412,6 +4400,8 @@ export function App() {
                         appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
                       }
                       onPenThicknessChange={setPenThickness}
+                      isFullscreen={isFullscreen}
+                      onToggleFullscreen={toggleFullscreen}
                       onBackToAgenda={() => {
                         ++slideOpenRequestRef.current;
                         setDestination('agenda');
@@ -4436,6 +4426,8 @@ export function App() {
                               appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
                             }
                             onPenThicknessChange={setPenThickness}
+                            isFullscreen={isFullscreen}
+                            onToggleFullscreen={toggleFullscreen}
                             onSlideMetricsChange={setSlideViewerMetrics}
                           />
                         ) : (
@@ -4468,6 +4460,8 @@ export function App() {
                           appSettings?.penColors ?? [...DEFAULT_PEN_COLORS]
                         }
                         onPenThicknessChange={setPenThickness}
+                        isFullscreen={isFullscreen}
+                        onToggleFullscreen={toggleFullscreen}
                         onBackToAgenda={() => {
                           ++slideOpenRequestRef.current;
                           setDestination('agenda');
