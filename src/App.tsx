@@ -1262,6 +1262,7 @@ export function App() {
   const pageSurfaceRef = React.useRef<HTMLElement | null>(null);
   const agendaSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const agendaDownloadPollRef = React.useRef<number | null>(null);
+  const slideOpenRequestRef = React.useRef(0);
   const exportCancellationRef = React.useRef<{ cancelled: boolean } | null>(
     null,
   );
@@ -1763,6 +1764,8 @@ export function App() {
           tone="neutral"
           icon="info"
         />
+      ) : slideViewerState.kind === 'loading' ? (
+        <StatusLabel label="Preparing slides..." tone="neutral" icon="info" />
       ) : activeSlideDownloadStatus?.kind === 'error' ? (
         <StatusLabel
           label={activeSlideDownloadStatus.message ?? 'Download failed.'}
@@ -2031,6 +2034,7 @@ export function App() {
     talk: AgendaTalkSummary,
     deckId?: string,
   ) => {
+    const requestId = ++slideOpenRequestRef.current;
     captureAgendaScrollPosition();
     setViewerMode('slides');
 
@@ -2046,16 +2050,31 @@ export function App() {
       return;
     }
 
+    setSelectedEventId(talk.conferenceId);
+    setAgendaDayLabel(talk.dayLabel);
+    setSelectedAgendaTalkId(talk.id);
+    setDestination('slides');
+    setSlideViewerState({
+      kind: 'loading',
+      conferenceId: talk.conferenceId,
+      talkId: talk.id,
+      deckId: selectedPdfMaterial.id,
+      filePath: null,
+      title: talk.title,
+      selectedMaterialId: selectedPdfMaterial.id,
+      materials: talk.materials,
+      downloadStatus: null,
+    });
+
     const openResult = await window.indicoInk.openTalkDeck(
       talk.conferenceId,
       talk.id,
       selectedPdfMaterial.id,
     );
 
-    setSelectedEventId(talk.conferenceId);
-    setAgendaDayLabel(talk.dayLabel);
-    setSelectedAgendaTalkId(talk.id);
-    setDestination('slides');
+    if (requestId !== slideOpenRequestRef.current) {
+      return;
+    }
 
     if (openResult.kind === 'ready') {
       setSlideViewerState({
@@ -2141,6 +2160,7 @@ export function App() {
     });
   };
   const openAgendaTalkNotes = async (talk: AgendaTalkSummary) => {
+    ++slideOpenRequestRef.current;
     captureAgendaScrollPosition();
     // A note-only talk must not inherit the previous talk's slide viewer.
     // Preserve the viewer when switching from that talk's slides to its notes,
@@ -4269,6 +4289,26 @@ export function App() {
               </div>
               {selectedAgendaTalk ? (
                 <>
+                  {slideViewerState.kind === 'loading' &&
+                  !activeSlideDownloadStatus ? (
+                    <div className="dialog-backdrop slide-download-dialog">
+                      <DialogSurface
+                        title={'Opening ' + activeSlideTitle}
+                        body={
+                          <div className="slide-download-progress">
+                            <p
+                              className="slide-download-progress-copy"
+                              aria-live="polite"
+                            >
+                              Preparing download...
+                            </p>
+                          </div>
+                        }
+                        primaryLabel="Preparing..."
+                        primaryDisabled
+                      />
+                    </div>
+                  ) : null}
                   {activeSlideDownloadStatus?.kind === 'downloading' ? (
                     <div className="dialog-backdrop slide-download-dialog">
                       <DialogSurface
@@ -4350,6 +4390,7 @@ export function App() {
                       }
                       onPenThicknessChange={setPenThickness}
                       onBackToAgenda={() => {
+                        ++slideOpenRequestRef.current;
                         setDestination('agenda');
                       }}
                     />
@@ -4405,6 +4446,7 @@ export function App() {
                         }
                         onPenThicknessChange={setPenThickness}
                         onBackToAgenda={() => {
+                          ++slideOpenRequestRef.current;
                           setDestination('agenda');
                         }}
                       />
