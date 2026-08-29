@@ -1983,6 +1983,20 @@ describe('App', () => {
 
     expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(screen.getByText('Preparing download...')).toBeTruthy();
+    const cancelPreparationButton = screen.getByRole('button', {
+      name: 'Cancel',
+    });
+    expect((cancelPreparationButton as HTMLButtonElement).disabled).toBe(false);
+    await user.click(cancelPreparationButton);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Download Talks' })).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open talk for Downloading slides',
+      }),
+    );
+    expect(await screen.findByRole('dialog')).toBeTruthy();
     resolveOpenTalkDeck(openTalkDeckResult);
     await act(async () => {});
 
