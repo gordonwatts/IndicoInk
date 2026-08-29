@@ -380,6 +380,7 @@ const createWindow = () => {
     height: 900,
     backgroundColor: '#f6f4ef',
     icon: join(app.getAppPath(), 'assets', 'icons', 'indicoink.ico'),
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
@@ -388,6 +389,9 @@ const createWindow = () => {
       nodeIntegration: false,
     },
   });
+
+  // Explicitly remove any platform-provided menu attached to the window.
+  mainWindow.setMenu(null);
 
   mainWindow.webContents.on('did-start-loading', () => {
     rendererAcceptsLaunchRequests = false;
