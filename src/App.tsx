@@ -2739,6 +2739,15 @@ export function App() {
     await window.indicoInk.cancelDeckDownload(operationId);
     setDestination('agenda');
   };
+  const handleCancelSlidePreparation = () => {
+    // In this phase the main process has not returned the download operation
+    // id yet, so there is no operation available to cancel through the deck
+    // cache API. Invalidate the pending request and return to the agenda;
+    // when the request eventually resolves its result will be ignored.
+    ++slideOpenRequestRef.current;
+    setSlideViewerState({ kind: 'closed' });
+    setDestination('agenda');
+  };
   const handleRetryDeckDownload = async () => {
     if (
       slideViewerState.kind !== 'error' ||
@@ -4327,8 +4336,8 @@ export function App() {
                             </p>
                           </div>
                         }
-                        primaryLabel="Preparing..."
-                        primaryDisabled
+                        primaryLabel="Cancel"
+                        onPrimary={handleCancelSlidePreparation}
                       />
                     </div>
                   ) : null}
