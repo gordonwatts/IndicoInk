@@ -1184,6 +1184,7 @@ export function App() {
   const [openAiError, setOpenAiError] = React.useState<string | null>(null);
   const [isSavingOpenAi, setIsSavingOpenAi] = React.useState(false);
   const [info, setInfo] = React.useState<AppInfo | null>(null);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
   const appVersionText = info ? info.appVersion : 'Loading...';
   const electronVersionText = info ? info.electronVersion : 'Loading...';
   const [dataFolderPath, setDataFolderPath] = React.useState<string>('');
@@ -1282,6 +1283,11 @@ export function App() {
 
   React.useEffect(() => {
     void window.indicoInk.getDataFolder().then(setDataFolderPath);
+  }, []);
+
+  React.useEffect(() => {
+    void window.indicoInk.getFullscreen().then(setIsFullscreen);
+    return window.indicoInk.onFullscreenChanged(setIsFullscreen);
   }, []);
 
   React.useEffect(() => {
@@ -1455,6 +1461,11 @@ export function App() {
     await refreshLibraryEvents();
     setDestination('library');
   }, [refreshLibraryEvents]);
+
+  const toggleFullscreen = React.useCallback(async () => {
+    const nextIsFullscreen = await window.indicoInk.toggleFullscreen();
+    setIsFullscreen(nextIsFullscreen);
+  }, []);
 
   React.useEffect(() => {
     if (destination !== 'search') {
@@ -3403,6 +3414,18 @@ export function App() {
               />
             ))}
           </nav>
+          <IconButton
+            label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+            title={
+              isFullscreen
+                ? 'Exit full screen (F11)'
+                : 'Enter full screen (F11)'
+            }
+            icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
+            onClick={() => {
+              void toggleFullscreen();
+            }}
+          />
         </aside>
       )}
 

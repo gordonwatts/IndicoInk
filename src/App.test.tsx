@@ -209,6 +209,9 @@ describe('App', () => {
       }),
       writeExportFile: vi.fn().mockResolvedValue(undefined),
       openExportFileLocation: vi.fn().mockResolvedValue(undefined),
+      getFullscreen: vi.fn().mockResolvedValue(false),
+      toggleFullscreen: vi.fn().mockResolvedValue(true),
+      onFullscreenChanged: vi.fn().mockReturnValue(() => {}),
     };
   });
 

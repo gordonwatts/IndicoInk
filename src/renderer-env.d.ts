@@ -33,6 +33,11 @@ declare global {
     indicoInk: {
       getAppInfo: () => Promise<AppInfo>;
       getDataFolder: () => Promise<string>;
+      getFullscreen: () => Promise<boolean>;
+      toggleFullscreen: () => Promise<boolean>;
+      onFullscreenChanged: (
+        listener: (isFullscreen: boolean) => void,
+      ) => () => void;
       getAppSettings: () => Promise<AppSettings>;
       getStartupIndicoEventUrl: () => Promise<string | null>;
       onIndicoEventUrlRequested: (
