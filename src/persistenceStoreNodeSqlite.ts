@@ -1158,6 +1158,20 @@ export class PersistenceStore {
     return rows.map((row) => rowToDeck(row));
   }
 
+  async listDecksByConference(conferenceId: string): Promise<Deck[]> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(
+        `SELECT decks.*
+         FROM talks
+         JOIN decks ON decks.talk_id = talks.id
+         WHERE talks.conference_id = ?
+         ORDER BY decks.talk_id, decks.created_at`,
+      )
+      .all(conferenceId) as Record<string, unknown>[];
+    return rows.map((row) => rowToDeck(row));
+  }
+
   async ensureNotebookDeck(talkId: string): Promise<Deck> {
     const talk = await this.getTalk(talkId);
     if (!talk) {
@@ -1262,6 +1276,21 @@ export class PersistenceStore {
     const rows = db
       .prepare('SELECT * FROM slides WHERE deck_id = ? ORDER BY slide_number')
       .all(deckId) as Record<string, unknown>[];
+    return rows.map((row) => rowToSlide(row));
+  }
+
+  async listSlidesByConference(conferenceId: string): Promise<Slide[]> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(
+        `SELECT slides.*
+         FROM talks
+         JOIN decks ON decks.talk_id = talks.id
+         JOIN slides ON slides.deck_id = decks.id
+         WHERE talks.conference_id = ?
+         ORDER BY slides.deck_id, slides.slide_number`,
+      )
+      .all(conferenceId) as Record<string, unknown>[];
     return rows.map((row) => rowToSlide(row));
   }
 

@@ -131,7 +131,13 @@ describe('persistence store', () => {
       store.listTalksByConference('conference-1'),
     ).resolves.toHaveLength(1);
     await expect(store.listDecksByTalk('talk-1')).resolves.toHaveLength(1);
+    await expect(
+      store.listDecksByConference('conference-1'),
+    ).resolves.toHaveLength(1);
     await expect(store.listSlidesByDeck('deck-1')).resolves.toHaveLength(1);
+    await expect(
+      store.listSlidesByConference('conference-1'),
+    ).resolves.toHaveLength(1);
     await expect(
       store.listAnnotationsBySlide(createSlideId('deck-1', 1)),
     ).resolves.toHaveLength(1);
