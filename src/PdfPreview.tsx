@@ -77,6 +77,7 @@ import {
   type StrokeSpatialIndex,
 } from './strokeSpatialIndex';
 import { diffWorkspaceAnnotations } from './workspaceChanges';
+import { isIncrementalSlideBuild, type PixelPage } from './incrementalSlides';
 
 type PdfPreviewState =
   | { kind: 'idle' }
@@ -528,6 +529,7 @@ const isEditableKeyboardTarget = (target: EventTarget | null) =>
 
 type MemoizedPdfPageFrameProps = {
   pageIndex: number;
+  hidden: boolean;
   displayWidth: number;
   displayHeight: number;
   pageSize: { width: number; height: number };
@@ -552,6 +554,7 @@ const MemoizedPdfPageFrame = React.memo(
   (props: MemoizedPdfPageFrameProps) => (
     <figure
       className="pdf-preview-page"
+      hidden={props.hidden}
       ref={(element) => {
         props.pageFigureRefs.current[props.pageIndex] = element;
       }}
@@ -589,6 +592,7 @@ const MemoizedPdfPageFrame = React.memo(
   ),
   (previous, next) =>
     previous.pageIndex === next.pageIndex &&
+    previous.hidden === next.hidden &&
     previous.displayWidth === next.displayWidth &&
     previous.displayHeight === next.displayHeight &&
     previous.pageSize === next.pageSize &&
@@ -837,6 +841,14 @@ export function PdfPreview({
   const [previewViewportWidth, setPreviewViewportWidth] = React.useState(0);
   const [currentSlideNumber, setCurrentSlideNumber] = React.useState(1);
   const [isNavigatorCollapsed, setIsNavigatorCollapsed] = React.useState(true);
+  const [incrementalBuildPageNumbers, setIncrementalBuildPageNumbers] =
+    React.useState<number[]>([]);
+  const [showAllSlides, setShowAllSlides] = React.useState(false);
+
+  React.useEffect(() => {
+    setIncrementalBuildPageNumbers([]);
+    setShowAllSlides(false);
+  }, [filePath]);
 
   const clearLinkPopoverHideTimer = React.useCallback(() => {
     if (linkPopoverHideTimerRef.current !== null) {
@@ -1373,6 +1385,33 @@ export function PdfPreview({
     state.kind === 'loading' || state.kind === 'ready' || state.kind === 'error'
       ? state.pageCount
       : 0;
+  const annotatedPageNumbers = React.useMemo(
+    () =>
+      Array.from({ length: currentPageCount }, (_, index) => index + 1).filter(
+        (pageNumber) =>
+          (strokesByPage[pageNumber - 1]?.length ?? 0) > 0 ||
+          (textNotesByPage[pageNumber - 1]?.length ?? 0) > 0,
+      ),
+    [currentPageCount, strokesByPage, textNotesByPage],
+  );
+  const collapsedPageNumbers = React.useMemo(() => {
+    if (showAllSlides) {
+      return new Set<number>();
+    }
+    const annotated = new Set(annotatedPageNumbers);
+    return new Set(
+      incrementalBuildPageNumbers.filter(
+        (pageNumber) => !annotated.has(pageNumber),
+      ),
+    );
+  }, [annotatedPageNumbers, incrementalBuildPageNumbers, showAllSlides]);
+  const visiblePageNumbers = React.useMemo(
+    () =>
+      Array.from({ length: currentPageCount }, (_, index) => index + 1).filter(
+        (pageNumber) => !collapsedPageNumbers.has(pageNumber),
+      ),
+    [collapsedPageNumbers, currentPageCount],
+  );
   const persistedPageCount = blankPageMode
     ? Math.max(
         0,
@@ -1995,29 +2034,33 @@ export function PdfPreview({
   );
 
   const handlePreviousSlide = React.useCallback(() => {
-    const previousSlide = Math.max(1, currentSlideNumberRef.current - 1);
-    if (previousSlide === currentSlideNumberRef.current) {
+    let previousSlide: number | undefined;
+    visiblePageNumbers.forEach((pageNumber) => {
+      if (pageNumber < currentSlideNumberRef.current) {
+        previousSlide = pageNumber;
+      }
+    });
+    if (previousSlide === undefined) {
       return;
     }
 
     handleJumpToSlideNumber(previousSlide);
-  }, [handleJumpToSlideNumber]);
+  }, [handleJumpToSlideNumber, visiblePageNumbers]);
 
   const handleNextSlide = React.useCallback(() => {
     if (currentPageCount < 1) {
       return;
     }
 
-    const nextSlide = Math.min(
-      currentPageCount,
-      currentSlideNumberRef.current + 1,
+    const nextSlide = visiblePageNumbers.find(
+      (pageNumber) => pageNumber > currentSlideNumberRef.current,
     );
-    if (nextSlide === currentSlideNumberRef.current) {
+    if (nextSlide === undefined) {
       return;
     }
 
     handleJumpToSlideNumber(nextSlide);
-  }, [currentPageCount, handleJumpToSlideNumber]);
+  }, [currentPageCount, handleJumpToSlideNumber, visiblePageNumbers]);
 
   const handleGoHome = React.useCallback(() => {
     cancelTouchMomentum();
@@ -2032,9 +2075,10 @@ export function PdfPreview({
       });
     }
 
-    currentSlideNumberRef.current = 1;
-    setCurrentSlideNumber(1);
-  }, [cancelTouchMomentum, scrollContainerRef]);
+    const firstVisibleSlide = visiblePageNumbers[0] ?? 1;
+    currentSlideNumberRef.current = firstVisibleSlide;
+    setCurrentSlideNumber(firstVisibleSlide);
+  }, [cancelTouchMomentum, scrollContainerRef, visiblePageNumbers]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3229,6 +3273,9 @@ export function PdfPreview({
         }
 
         const pageCount = document.numPages;
+        const detectedBuildPageNumbers: number[] = [];
+        let previousRenderedPage: PixelPage | null = null;
+        let canDetectIncrementalBuilds = true;
         if (pageCanvasRefs.current.length !== pageCount) {
           pageCanvasRefs.current = Array.from(
             { length: pageCount },
@@ -3390,6 +3437,28 @@ export function PdfPreview({
             viewport,
           }).promise;
 
+          if (canDetectIncrementalBuilds) {
+            try {
+              const renderedPage = nextContext.getImageData(
+                0,
+                0,
+                nextCanvas.width,
+                nextCanvas.height,
+              );
+              if (
+                previousRenderedPage &&
+                isIncrementalSlideBuild(previousRenderedPage, renderedPage)
+              ) {
+                detectedBuildPageNumbers.push(pageNumber - 1);
+              }
+              previousRenderedPage = renderedPage;
+            } catch {
+              canDetectIncrementalBuilds = false;
+              detectedBuildPageNumbers.length = 0;
+              previousRenderedPage = null;
+            }
+          }
+
           if (cancelled) {
             break;
           }
@@ -3450,6 +3519,9 @@ export function PdfPreview({
         }
 
         if (!cancelled) {
+          setIncrementalBuildPageNumbers(
+            canDetectIncrementalBuilds ? detectedBuildPageNumbers : [],
+          );
           setLinkHotspotsByPage(nextLinkHotspotsByPage);
           setState({
             kind: 'ready',
@@ -3656,6 +3728,26 @@ export function PdfPreview({
   ]);
 
   React.useEffect(() => {
+    if (
+      visiblePageNumbers.length === 0 ||
+      visiblePageNumbers.includes(currentSlideNumber)
+    ) {
+      return;
+    }
+
+    const nextVisibleSlide =
+      visiblePageNumbers.find(
+        (pageNumber) => pageNumber > currentSlideNumber,
+      ) ?? visiblePageNumbers[visiblePageNumbers.length - 1];
+    if (nextVisibleSlide === undefined) {
+      return;
+    }
+
+    currentSlideNumberRef.current = nextVisibleSlide;
+    setCurrentSlideNumber(nextVisibleSlide);
+  }, [currentSlideNumber, visiblePageNumbers]);
+
+  React.useEffect(() => {
     onSlideMetricsChange?.({
       currentSlideNumber,
       currentPageCount,
@@ -3846,40 +3938,49 @@ export function PdfPreview({
             <span className="pdf-preview-navigator-summary-label">
               Annotated
             </span>
-            {(() => {
-              const annotatedSlides = Array.from(
-                { length: currentPageCount },
-                (_, index) => index + 1,
-              ).filter(
-                (slideNumber) =>
-                  (strokesByPage[slideNumber - 1]?.length ?? 0) > 0 ||
-                  (textNotesByPage[slideNumber - 1]?.length ?? 0) > 0,
-              );
-
-              return annotatedSlides.length ? (
-                annotatedSlides.map((slideNumber) => (
-                  <button
-                    key={slideNumber}
-                    type="button"
-                    className="pdf-preview-navigator-chip"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleJumpToSlideNumber(slideNumber);
-                    }}
-                  >
-                    {slideNumber}
-                  </button>
-                ))
-              ) : (
-                <span className="pdf-preview-navigator-empty">
-                  No annotated slides
-                </span>
-              );
-            })()}
+            {annotatedPageNumbers.length ? (
+              annotatedPageNumbers.map((slideNumber) => (
+                <button
+                  key={slideNumber}
+                  type="button"
+                  className="pdf-preview-navigator-chip"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleJumpToSlideNumber(slideNumber);
+                  }}
+                >
+                  {slideNumber}
+                </button>
+              ))
+            ) : (
+              <span className="pdf-preview-navigator-empty">
+                No annotated slides
+              </span>
+            )}
           </span>
         </summary>
+        {incrementalBuildPageNumbers.length ? (
+          <div className="pdf-preview-navigator-builds">
+            <span>
+              {incrementalBuildPageNumbers.length}{' '}
+              {incrementalBuildPageNumbers.length === 1
+                ? 'build slide'
+                : 'build slides'}
+              {' detected'}
+            </span>
+            <label>
+              <input
+                type="checkbox"
+                checked={showAllSlides}
+                onChange={(event) => setShowAllSlides(event.target.checked)}
+              />
+              <span>Show all slides</span>
+            </label>
+          </div>
+        ) : null}
         <div className="pdf-preview-navigator-grid">
-          {Array.from({ length: currentPageCount }, (_, index) => {
+          {visiblePageNumbers.map((pageNumber) => {
+            const index = pageNumber - 1;
             const annotated =
               (strokesByPage[index]?.length ?? 0) > 0 ||
               (textNotesByPage[index]?.length ?? 0) > 0;
@@ -3887,12 +3988,12 @@ export function PdfPreview({
               <button
                 key={index}
                 type="button"
-                className={`pdf-preview-navigator-item${index + 1 === currentSlideNumber ? ' is-active' : ''}`}
+                className={`pdf-preview-navigator-item${pageNumber === currentSlideNumber ? ' is-active' : ''}`}
                 onClick={() => {
-                  handleJumpToSlideNumber(index + 1);
+                  handleJumpToSlideNumber(pageNumber);
                 }}
               >
-                <span>{index + 1}</span>
+                <span>{pageNumber}</span>
                 {annotated ? (
                   <span className="pdf-preview-navigator-dot" />
                 ) : null}
@@ -3984,6 +4085,7 @@ export function PdfPreview({
                 <MemoizedPdfPageFrame
                   key={index}
                   pageIndex={index}
+                  hidden={collapsedPageNumbers.has(index + 1)}
                   displayWidth={displayWidth}
                   displayHeight={displayHeight}
                   pageSize={pageSize}
