@@ -1,7 +1,6 @@
 import {
   app,
   BrowserWindow,
-  Menu,
   dialog,
   ipcMain,
   shell,
@@ -380,7 +379,6 @@ const createWindow = () => {
     height: 900,
     backgroundColor: '#f6f4ef',
     icon: join(app.getAppPath(), 'assets', 'icons', 'indicoink.ico'),
-    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
@@ -392,7 +390,6 @@ const createWindow = () => {
 
   // Explicitly remove any platform-provided menu attached to the window.
   mainWindow.removeMenu();
-  mainWindow.setMenuBarVisibility(false);
 
   mainWindow.webContents.on('did-start-loading', () => {
     rendererAcceptsLaunchRequests = false;
@@ -1009,8 +1006,6 @@ ipcMain.handle(
 );
 
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
-
   if (importFixtureName) {
     if (!(importFixtureName in conferenceFixtures)) {
       appendStartupLogEntry(
