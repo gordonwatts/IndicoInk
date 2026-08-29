@@ -3414,6 +3414,18 @@ export function App() {
               />
             ))}
           </nav>
+          <IconButton
+            label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+            title={
+              isFullscreen
+                ? 'Exit full screen (F11)'
+                : 'Enter full screen (F11)'
+            }
+            icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
+            onClick={() => {
+              void toggleFullscreen();
+            }}
+          />
         </aside>
       )}
 
