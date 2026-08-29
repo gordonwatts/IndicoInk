@@ -542,6 +542,16 @@ test('returns from a talk to the previous agenda scroll position', async () => {
     await expect
       .poll(async () => pageSurface.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(850);
+
+    await pageSurface.evaluate((element) => {
+      element.scrollTop = Math.min(
+        element.scrollHeight - element.clientHeight,
+        element.scrollTop + 240,
+      );
+    });
+    await expect
+      .poll(async () => pageSurface.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(1_000);
   } finally {
     await harness.close();
   }

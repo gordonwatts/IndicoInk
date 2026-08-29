@@ -3297,15 +3297,7 @@ export function App() {
         scrollContainer.scrollLeft = restoredScroll.scrollLeft;
         scrollContainer.scrollTop = restoredScroll.scrollTop;
       }
-
-      if (remainingFrames <= 0) {
-        agendaScrollFrameRef.current = null;
-        return;
-      }
-
-      agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
-        applyRestoredScroll(remainingFrames - 1);
-      });
+      agendaScrollFrameRef.current = null;
     };
 
     agendaScrollFrameRef.current = scheduleScrollRestoration(() => {
