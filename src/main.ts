@@ -392,6 +392,7 @@ const createWindow = () => {
 
   // Explicitly remove any platform-provided menu attached to the window.
   mainWindow.setMenu(null);
+  mainWindow.setMenuBarVisibility(false);
 
   mainWindow.webContents.on('did-start-loading', () => {
     rendererAcceptsLaunchRequests = false;
