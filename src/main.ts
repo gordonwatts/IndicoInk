@@ -388,6 +388,9 @@ const createWindow = () => {
     },
   });
 
+  // Explicitly remove any platform-provided menu attached to the window.
+  mainWindow.removeMenu();
+
   mainWindow.webContents.on('did-start-loading', () => {
     rendererAcceptsLaunchRequests = false;
   });
