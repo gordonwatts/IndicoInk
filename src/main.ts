@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  Menu,
   dialog,
   ipcMain,
   shell,
@@ -1003,6 +1004,8 @@ ipcMain.handle(
 );
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
+
   if (importFixtureName) {
     if (!(importFixtureName in conferenceFixtures)) {
       appendStartupLogEntry(
