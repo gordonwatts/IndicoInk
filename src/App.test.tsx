@@ -1948,10 +1948,16 @@ describe('App', () => {
       .fn()
       .mockResolvedValue([libraryEvent]);
     window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([talk]);
-    window.indicoInk.openTalkDeck = vi.fn().mockResolvedValue({
-      ...downloadStatus,
-      pageCount: 0,
-    });
+    const openTalkDeckResult = { ...downloadStatus, pageCount: 0 };
+    let resolveOpenTalkDeck!: (
+      result: typeof openTalkDeckResult,
+    ) => void;
+    window.indicoInk.openTalkDeck = vi.fn().mockImplementation(
+      () =>
+        new Promise<typeof openTalkDeckResult>((resolve) => {
+          resolveOpenTalkDeck = resolve;
+        }),
+    );
     const onDeckDownloadProgress = vi.fn(
       (listener: (status: DeckCacheDownloadStatus) => void) => {
         progressListener = listener;
@@ -1971,6 +1977,11 @@ describe('App', () => {
         name: 'Open talk for Downloading slides',
       }),
     );
+
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Preparing download...')).toBeTruthy();
+    resolveOpenTalkDeck(openTalkDeckResult);
+    await act(async () => {});
 
     expect(onDeckDownloadProgress).toHaveBeenCalledTimes(1);
     if (!progressListener) {
