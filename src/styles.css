@@ -1273,6 +1273,28 @@ input:focus-visible {
   color: var(--text-secondary);
 }
 
+.pdf-preview-navigator-builds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-supporting);
+}
+
+.pdf-preview-navigator-builds label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.pdf-preview-navigator-builds input {
+  margin: 0;
+}
+
 .pdf-preview-navigator-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
@@ -1353,6 +1375,10 @@ input:focus-visible {
   gap: 0;
   margin: 0;
   user-select: none;
+}
+
+.pdf-preview-page[hidden] {
+  display: none;
 }
 
 .pdf-preview-sheet {
