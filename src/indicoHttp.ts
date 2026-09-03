@@ -114,7 +114,11 @@ export type FetchIndicoJsonOptions = {
   onProgress?: (stage: IndicoFetchProgressStage) => void;
   fetchImpl?: (
     input: string,
-    init?: { signal?: AbortSignal; headers?: Record<string, string> },
+    init?: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      cache?: 'no-store';
+    },
   ) => Promise<IndicoJsonResponse>;
 };
 
@@ -176,11 +180,16 @@ export const fetchIndicoJson = async <T>(
 
   try {
     onProgress?.('fetching-event');
+    // Event exports do not advertise freshness metadata, so Chromium may
+    // reuse a stale response when a talk is uploaded after the first import.
+    // Force refreshes (and initial imports) through the network cache.
     const response = await fetchImpl(request.url, {
       signal: controller.signal,
-      ...(Object.keys(request.headers).length
-        ? { headers: request.headers }
-        : {}),
+      cache: 'no-store',
+      headers: {
+        ...request.headers,
+        'Cache-Control': 'no-cache',
+      },
     });
 
     if (!response.ok) {
