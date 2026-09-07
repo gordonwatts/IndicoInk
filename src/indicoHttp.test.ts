@@ -56,6 +56,12 @@ describe('fetchIndicoJson', () => {
       'reading-event',
       'parsing-event',
     ]);
+    expect(fetchImpl.mock.calls[0]![1]).toMatchObject({
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    });
   });
 
   it('sends the API key as an ak query parameter', async () => {
@@ -90,6 +96,7 @@ describe('fetchIndicoJson', () => {
     expect(requestedUrl.searchParams.get('ak')).toBeNull();
     expect(fetchImpl.mock.calls[0]![1]?.headers).toEqual({
       Authorization: 'Bearer indp_test-token',
+      'Cache-Control': 'no-cache',
     });
   });
 
