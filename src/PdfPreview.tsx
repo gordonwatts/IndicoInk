@@ -4181,7 +4181,8 @@ export function PdfPreview({
                       style={{
                         left: `${marker.point.x * 100}%`,
                         top: `${marker.point.y * 100}%`,
-                      }}
+                        '--pointer-marker-color': selectedPenColor,
+                      } as React.CSSProperties}
                     />
                   ) : null}
                   <div
