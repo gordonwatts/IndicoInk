@@ -20,6 +20,7 @@ import {
   validateConferenceFixture,
 } from './conferenceFixtures';
 import { createFixturePdfBytes } from './fixturePdf';
+import { isSlideDeck } from './slideDeck';
 import type { PersistenceStore } from './persistenceStore';
 import type {
   ImportedConferenceResult,
@@ -128,7 +129,9 @@ export const buildLibraryEventSummaries = async (
           talks.map(
             async (talk) =>
               (await store.listDecksByTalk(talk.id)).filter(
-                (deck) => deck.kind !== 'notebook',
+                (deck) =>
+                  deck.kind !== 'notebook' &&
+                  isSlideDeck(deck.mimeType, deck.sourceUrl, deck.displayName),
               ).length,
           ),
         )

@@ -2580,6 +2580,9 @@ export function App() {
 
     await window.indicoInk.openExternalUrl(url);
   };
+  const handleOpenMaterial = async (material: AgendaTalkMaterialSummary) => {
+    await window.indicoInk.openExternalUrl(material.sourceUrl);
+  };
   const resolveLinkedAgendaTarget = async (talk: AgendaTalkSummary) => {
     const linkedAgendaUrl = talk.linkedAgendaUrl ?? '';
     const isCachedSessionUrl =
@@ -4059,6 +4062,10 @@ export function App() {
                                             title={formatMaterialLabel(
                                               material,
                                             )}
+                                            onClick={() => {
+                                              void handleOpenMaterial(material);
+                                            }}
+                                            ariaLabel={`Open ${material.title}`}
                                             meta={
                                               <StatusLabel
                                                 label="Non-PDF material"
