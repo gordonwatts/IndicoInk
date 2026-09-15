@@ -100,6 +100,29 @@ describe('incremental slide detection', () => {
     ).toBe(false);
   });
 
+  it('keeps pages when a broad background transition changes most pixels', () => {
+    const width = 100;
+    const height = 100;
+    const createGradientPage = (strength: number): PixelPage => {
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const interior =
+            x > 2 && x < width - 3 && y > 2 && y < height - 3 ? 1 : 0;
+          const pixelOffset = (y * width + x) * 4;
+          data[pixelOffset] = 40 + Math.round(strength * interior);
+          data[pixelOffset + 1] = 80 + Math.round(strength * interior);
+          data[pixelOffset + 2] = 120 + Math.round(strength * interior);
+          data[pixelOffset + 3] = 255;
+        }
+      }
+      return { width, height, data };
+    };
+
+    expect(
+      isIncrementalSlideBuild(createGradientPage(0), createGradientPage(160)),
+    ).toBe(false);
+  });
   it('collapses every intermediate page in a multi-step build', () => {
     const thirdLine = [
       { x: 2, y: 6 },
