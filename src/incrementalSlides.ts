@@ -11,6 +11,10 @@ const CHANNEL_QUANTIZATION = 16;
 const PAGE_DIFFERENCE_THRESHOLD = 36;
 const INK_DIFFERENCE_THRESHOLD = 24;
 const MIN_ADDITION_SHARE = 0.85;
+// A genuine incremental build changes a localized portion of the page. A
+// large fraction of changed pixels is more likely to be a background/theme
+// transition (for example, ROOT's blue gradient) than an overlay build.
+const MAX_CHANGED_SHARE = 0.5;
 
 const colorDistance = (left: Rgb, right: Rgb) =>
   Math.abs(left[0] - right[0]) +
@@ -140,6 +144,7 @@ export const isIncrementalSlideBuild = (
   const minimumChangedPixels = Math.max(4, Math.ceil(sampledPixels * 0.00005));
   return (
     additions >= minimumChangedPixels &&
+    changedPixels / sampledPixels <= MAX_CHANGED_SHARE &&
     additions / changedPixels >= MIN_ADDITION_SHARE
   );
 };
