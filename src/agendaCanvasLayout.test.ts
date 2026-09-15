@@ -154,6 +154,29 @@ describe('agenda canvas layout', () => {
     expect(absoluteTalkTops[2]).toBe(layout.timeMarkerTopPx[marker1430]);
   });
 
+  it('keeps talks with identical start times from covering each other', () => {
+    const layout = buildAgendaCanvasLayout([
+      makeTalk('same-time-1', 13, 0, 120, 'First nested talk'),
+      makeTalk('same-time-2', 13, 0, 120, 'Second nested talk'),
+      makeTalk('same-time-3', 13, 0, 120, 'Third nested talk'),
+      makeTalk('later-talk', 15, 30, 30, 'Later talk', 'Later session'),
+    ]);
+    const session = layout.columns[0]!;
+
+    for (let index = 1; index < session.talkPlacements.length; index += 1) {
+      const previous = session.talkPlacements[index - 1]!;
+      const current = session.talkPlacements[index]!;
+      expect(current.topPx).toBeGreaterThanOrEqual(
+        previous.topPx + previous.heightPx + 12,
+      );
+    }
+
+    const laterSession = layout.columns[1]!;
+    expect(session.blockTopPx + session.trackHeightPx).toBeLessThanOrEqual(
+      laterSession.blockTopPx,
+    );
+  });
+
   it('aligns simultaneous talk starts across parallel sessions', () => {
     const talks = [
       makeTalk('track-a-1', 19, 30, 20, 'Track A first', 'Track A'),
