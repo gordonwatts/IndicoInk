@@ -44,7 +44,9 @@ type IndicoFolderValue = {
 };
 
 type IndicoContributionValue = {
+  _type?: string;
   id?: string | number;
+  db_id?: string | number;
   friendly_id?: string | number;
   title?: string;
   description?: string;
@@ -270,10 +272,25 @@ const createMaterialId = (
 const getContributionId = (
   contribution: IndicoContributionValue,
   index: number,
-) =>
-  getNumberLike(contribution.friendly_id) ||
-  getNumberLike(contribution.id) ||
-  `contribution-${index + 1}`;
+) => {
+  // Indico reuses friendly IDs for sub-contributions (they are scoped to
+  // their parent contribution). The database ID is globally unique and must
+  // be used for those records or persistence will collapse unrelated talks.
+  if (contribution._type === 'SubContribution') {
+    return (
+      getNumberLike(contribution.db_id) ||
+      getNumberLike(contribution.friendly_id) ||
+      getNumberLike(contribution.id) ||
+      `contribution-${index + 1}`
+    );
+  }
+
+  return (
+    getNumberLike(contribution.friendly_id) ||
+    getNumberLike(contribution.id) ||
+    `contribution-${index + 1}`
+  );
+};
 
 const getContributionTitle = (
   contribution: IndicoContributionValue,
@@ -509,7 +526,7 @@ export const mapIndicoExportEnvelope = (
 
   const hierarchyByDay = new Map<string, IndicoHierarchyDay>();
 
-  for (const source of contributionSources) {
+  for (const [sourceIndex, source] of contributionSources.entries()) {
     if (!source.contribution) {
       const linkedAgenda = source.linkedAgenda!;
       const contributionId =
@@ -536,8 +553,7 @@ export const mapIndicoExportEnvelope = (
       continue;
     }
     const contribution = source.contribution;
-    const contributionId =
-      getNumberLike(contribution.friendly_id) || getNumberLike(contribution.id);
+    const contributionId = getContributionId(contribution, sourceIndex);
     const startsAt = parseDateTime(contribution.startDate, eventTimeZone);
     const dateKey = contribution.startDate?.date ?? 'unknown';
     const dayLabel =
