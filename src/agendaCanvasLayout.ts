@@ -579,22 +579,30 @@ export function buildAgendaCanvasLayout(
           return [];
         }
 
-        const previousTalkStart =
-          getAgendaTalkStartMinutes(previousPlacement.talk) ??
-          previousBlock.startMinutes;
-        if (block.startMinutes <= previousTalkStart) {
+        const previousTalkStarts = previousBlock.talkPlacements.map(
+          (placement) =>
+            getAgendaTalkStartMinutes(placement.talk) ??
+            previousBlock.startMinutes,
+        );
+        const hasDuplicateTalkStarts =
+          new Set(previousTalkStarts).size < previousTalkStarts.length;
+        const constraintStartMinutes = hasDuplicateTalkStarts
+          ? previousBlock.startMinutes
+          : (previousTalkStarts.at(-1) ?? previousBlock.startMinutes);
+        if (block.startMinutes <= constraintStartMinutes) {
           return [];
         }
 
         return [
           {
-            startMinutes: previousTalkStart,
+            startMinutes: constraintStartMinutes,
             endMinutes: block.startMinutes,
-            minimumHeightPx:
-              previousPlacement.heightPx +
-              agendaCanvasTrackPadding +
-              agendaCanvasTalkGap +
-              agendaSessionHeaderOffsetPx,
+            minimumHeightPx: hasDuplicateTalkStarts
+              ? previousBlock.trackHeightPx + agendaCanvasTalkGap
+              : previousPlacement.heightPx +
+                agendaCanvasTrackPadding +
+                agendaCanvasTalkGap +
+                agendaSessionHeaderOffsetPx,
           },
         ];
       });
@@ -612,15 +620,26 @@ export function buildAgendaCanvasLayout(
     const blockTopPx =
       timeAxis.getTopForMinute(block.startMinutes) -
       agendaSessionHeaderOffsetPx;
-    const talkPlacements = block.talkPlacements.map((placement) => {
+    const talkPlacements = block.talkPlacements.reduce<
+      AgendaCanvasTalkPlacement[]
+    >((placements, placement) => {
       const talkStartMinutes =
         getAgendaTalkStartMinutes(placement.talk) ?? block.startMinutes;
+      const scheduledTopPx =
+        timeAxis.getTopForMinute(talkStartMinutes) - blockTopPx;
+      const previousPlacement = placements.at(-1);
+      const minimumTopPx = previousPlacement
+        ? previousPlacement.topPx +
+          previousPlacement.heightPx +
+          agendaCanvasTalkGap
+        : agendaSessionHeaderOffsetPx;
 
-      return {
+      placements.push({
         ...placement,
-        topPx: timeAxis.getTopForMinute(talkStartMinutes) - blockTopPx,
-      };
-    });
+        topPx: Math.max(scheduledTopPx, minimumTopPx),
+      });
+      return placements;
+    }, []);
     const lastTalkBottomPx = talkPlacements.reduce(
       (maxBottomPx, placement) =>
         Math.max(maxBottomPx, placement.topPx + placement.heightPx),
