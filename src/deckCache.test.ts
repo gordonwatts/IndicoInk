@@ -31,6 +31,14 @@ const makePowerPointDeck = (): Deck => ({
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 });
 
+const makeGoogleSlidesDeck = (): Deck => ({
+  ...makeDeck(),
+  sourceUrl:
+    'https://docs.google.com/presentation/d/presentation-123/edit?usp=sharing',
+  displayName: 'Google Slides',
+  mimeType: 'application/octet-stream',
+});
+
 const makeDownloadResponse = (
   overrides: {
     ok?: boolean;
@@ -167,27 +175,33 @@ describe('deck cache manager', () => {
 
   it('notifies progress after each downloaded chunk', async () => {
     const cacheRoot = createTempDir('deck-cache-progress-events');
-    const chunks = [
-      new Uint8Array([1, 2]),
-      new Uint8Array([3, 4]),
-    ];
-    const read = vi.fn()
+    const chunks = [new Uint8Array([1, 2]), new Uint8Array([3, 4])];
+    const read = vi
+      .fn()
       .mockResolvedValueOnce({ value: chunks[0], done: false })
       .mockResolvedValueOnce({ value: chunks[1], done: false })
       .mockResolvedValueOnce({ value: undefined, done: true });
     const fetchDeckBytes = vi.fn().mockResolvedValue(
       makeDownloadResponse({
-        body: { getReader: () => ({ read }) as unknown as ReadableStreamDefaultReader<Uint8Array> },
+        body: {
+          getReader: () =>
+            ({ read }) as unknown as ReadableStreamDefaultReader<Uint8Array>,
+        },
       }),
     );
-    const progressStatuses: Array<{ bytesDownloaded: number; kind: string }> = [];
+    const progressStatuses: Array<{ bytesDownloaded: number; kind: string }> =
+      [];
     const manager = new DeckCacheManager(
       cacheRoot,
       fetchDeckBytes,
       undefined,
       undefined,
       undefined,
-      (status) => progressStatuses.push({ bytesDownloaded: status.bytesDownloaded, kind: status.kind }),
+      (status) =>
+        progressStatuses.push({
+          bytesDownloaded: status.bytesDownloaded,
+          kind: status.kind,
+        }),
     );
 
     const result = await manager.openDeck(makeDeck());
@@ -201,7 +215,12 @@ describe('deck cache manager', () => {
     });
 
     expect(
-      progressStatuses.filter(({ bytesDownloaded, kind }) => kind === 'downloading' && bytesDownloaded > 0).map(({ bytesDownloaded }) => bytesDownloaded),
+      progressStatuses
+        .filter(
+          ({ bytesDownloaded, kind }) =>
+            kind === 'downloading' && bytesDownloaded > 0,
+        )
+        .map(({ bytesDownloaded }) => bytesDownloaded),
     ).toEqual([2, 4]);
     expect(progressStatuses.at(-1)?.kind).toBe('ready');
   });
@@ -320,6 +339,29 @@ describe('deck cache manager', () => {
       expect.stringMatching(/\.pptx$/),
       expect.stringMatching(/\.converted\.pdf$/),
       expect.any(Function),
+    );
+    expect(
+      readFileSync(
+        manager.getCacheFilePath(deck.conferenceId, deck.id),
+        'utf8',
+      ),
+    ).toContain('%PDF-1.4');
+  });
+
+  it('downloads Google Slides through the public PDF export endpoint', async () => {
+    const cacheRoot = createTempDir('deck-cache-google-slides');
+    const fetchDeckBytes = vi.fn().mockResolvedValue(makeDownloadResponse());
+    const manager = new DeckCacheManager(cacheRoot, fetchDeckBytes);
+    const deck = makeGoogleSlidesDeck();
+
+    await expect(manager.ensureDeckAvailable(deck)).resolves.toEqual({
+      kind: 'ready',
+      restored: true,
+      filePath: manager.getCacheFilePath(deck.conferenceId, deck.id),
+    });
+
+    expect(fetchDeckBytes.mock.calls[0]?.[0]).toBe(
+      'https://docs.google.com/presentation/d/presentation-123/export/pdf',
     );
     expect(
       readFileSync(

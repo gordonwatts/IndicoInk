@@ -19,6 +19,49 @@ const hasLegacyPowerPointExtension = (value: string) =>
 
 const hasPdfExtension = (value: string) => /\.pdf($|[?#])/i.test(value);
 
+const googleSlidesPathPattern = /^\/presentation\/d\/([^/?#]+)/i;
+
+/** Return true for a public Google Slides presentation URL. */
+export const isGoogleSlidesDeck = (sourceUrl: string) => {
+  try {
+    const url = new URL(sourceUrl);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname.toLowerCase() === 'docs.google.com' &&
+      googleSlidesPathPattern.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+};
+
+/** Convert a Google Slides editor/share URL to its PDF export endpoint. */
+export const getGoogleSlidesPdfUrl = (sourceUrl: string) => {
+  let url: URL;
+  try {
+    url = new URL(sourceUrl);
+  } catch {
+    return sourceUrl;
+  }
+
+  const match = url.pathname.match(googleSlidesPathPattern);
+  if (
+    url.protocol !== 'https:' ||
+    url.hostname.toLowerCase() !== 'docs.google.com' ||
+    !match?.[1]
+  ) {
+    return sourceUrl;
+  }
+
+  url.pathname = `/presentation/d/${match[1]}/export/pdf`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+};
+
+export const getSlideDeckDownloadUrl = (sourceUrl = '') =>
+  isGoogleSlidesDeck(sourceUrl) ? getGoogleSlidesPdfUrl(sourceUrl) : sourceUrl;
+
 export const isPowerPointDeck = (
   mimeType: string,
   sourceUrl = '',
@@ -37,7 +80,8 @@ export const isPowerPointDeck = (
 export const isPdfDeck = (mimeType: string, sourceUrl = '', displayName = '') =>
   normalizedMimeType(mimeType).includes('pdf') ||
   hasPdfExtension(sourceUrl) ||
-  hasPdfExtension(displayName);
+  hasPdfExtension(displayName) ||
+  isGoogleSlidesDeck(sourceUrl);
 
 export const isSlideDeck = (
   mimeType: string,

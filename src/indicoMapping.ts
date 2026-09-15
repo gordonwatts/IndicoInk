@@ -9,7 +9,7 @@ import type { Conference } from './persistenceModels';
 import type { IndicoEventIdentity } from './indicoEvent';
 import { sha1Hex } from './stableHash';
 import { parseWallClockTimeInZone } from './agendaTime';
-import { isSlideDeck } from './slideDeck';
+import { isGoogleSlidesDeck, isSlideDeck } from './slideDeck';
 
 type IndicoDateValue = {
   date?: string;
@@ -226,8 +226,14 @@ const getMaterialTitle = (
   getString(material.name) ||
   `Material ${fallbackIndex + 1}`;
 
-const getMaterialUrl = (material: IndicoMaterialValue) =>
-  getString(material.url) || getString(material.download_url);
+const getMaterialUrl = (material: IndicoMaterialValue) => {
+  const linkUrl = getString(material.link_url);
+  if (isGoogleSlidesDeck(linkUrl)) {
+    return linkUrl;
+  }
+
+  return getString(material.url) || getString(material.download_url) || linkUrl;
+};
 
 const getLinkedAgendaUrl = (session: IndicoSessionValue) => {
   const folders = [

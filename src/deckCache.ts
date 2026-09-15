@@ -13,7 +13,11 @@ import type {
   DeckCacheDownloadStatus,
   DeckCacheOpenResult,
 } from './shared/deckCache';
-import { getPowerPointExtension, isPowerPointDeck } from './slideDeck';
+import {
+  getPowerPointExtension,
+  getSlideDeckDownloadUrl,
+  isPowerPointDeck,
+} from './slideDeck';
 import { convertPowerPointToPdf } from './powerpoint';
 
 type DeckCacheFetchResponse = {
@@ -120,8 +124,9 @@ export class DeckCacheManager {
 
     const operationId = randomUUID();
     const controller = new AbortController();
-    const apiKey = await this.getApiKeyForUrl(deck.sourceUrl);
-    const request = createIndicoAuthenticatedRequest(deck.sourceUrl, apiKey);
+    const downloadUrl = getSlideDeckDownloadUrl(deck.sourceUrl);
+    const apiKey = await this.getApiKeyForUrl(downloadUrl);
+    const request = createIndicoAuthenticatedRequest(downloadUrl, apiKey);
 
     let response: DeckCacheFetchResponse;
     try {
