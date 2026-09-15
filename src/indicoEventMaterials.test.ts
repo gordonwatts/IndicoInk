@@ -13,6 +13,52 @@ if (!identity) {
 }
 
 describe('Indico event and session materials', () => {
+  it('maps Google Slides link attachments as annotatable slide decks', () => {
+    const mapped = mapIndicoExportEnvelope(
+      {
+        results: [
+          {
+            title: 'Google Slides event',
+            sessions: [
+              {
+                id: 'session-google-slides',
+                contributions: [
+                  {
+                    id: 'talk-google-slides',
+                    title: 'Google Slides talk',
+                    folders: [
+                      {
+                        attachments: [
+                          {
+                            title: 'Shared deck',
+                            type: 'link',
+                            download_url:
+                              'https://indico.example.org/event/153/attachments/1/go',
+                            link_url:
+                              'https://docs.google.com/presentation/d/google-slides-123/edit?usp=sharing',
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      identity,
+    );
+
+    expect(mapped.talks[0]?.materials).toEqual([
+      expect.objectContaining({
+        title: 'Shared deck',
+        url: 'https://docs.google.com/presentation/d/google-slides-123/edit?usp=sharing',
+        kind: 'pdf',
+      }),
+    ]);
+  });
+
   it('includes session and conference attachments for each session talk', () => {
     const mapped = mapIndicoExportEnvelope(
       {
