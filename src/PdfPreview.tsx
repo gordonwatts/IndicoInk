@@ -635,6 +635,23 @@ type PdfPreviewProps = {
   onToggleFullscreen?: () => void | Promise<void>;
 };
 
+export function filterVisiblePageNumbers({
+  pageCount,
+  collapsedPageNumbers,
+  annotatedPageNumbers,
+  showOnlyAnnotatedSlides,
+}: {
+  pageCount: number;
+  collapsedPageNumbers: ReadonlySet<number>;
+  annotatedPageNumbers: ReadonlySet<number>;
+  showOnlyAnnotatedSlides: boolean;
+}): number[] {
+  return Array.from({ length: pageCount }, (_, index) => index + 1).filter(
+    (pageNumber) =>
+      !collapsedPageNumbers.has(pageNumber) &&
+      (!showOnlyAnnotatedSlides || annotatedPageNumbers.has(pageNumber)),
+  );
+}
 export const PEN_POINTER_MARKER_RADIUS = 2.5;
 
 export function PdfPreview({
@@ -844,10 +861,13 @@ export function PdfPreview({
   const [incrementalBuildPageNumbers, setIncrementalBuildPageNumbers] =
     React.useState<number[]>([]);
   const [showAllSlides, setShowAllSlides] = React.useState(false);
+  const [showOnlyAnnotatedSlides, setShowOnlyAnnotatedSlides] =
+    React.useState(false);
 
   React.useEffect(() => {
     setIncrementalBuildPageNumbers([]);
     setShowAllSlides(false);
+    setShowOnlyAnnotatedSlides(false);
   }, [filePath]);
 
   const clearLinkPopoverHideTimer = React.useCallback(() => {
@@ -1407,10 +1427,18 @@ export function PdfPreview({
   }, [annotatedPageNumbers, incrementalBuildPageNumbers, showAllSlides]);
   const visiblePageNumbers = React.useMemo(
     () =>
-      Array.from({ length: currentPageCount }, (_, index) => index + 1).filter(
-        (pageNumber) => !collapsedPageNumbers.has(pageNumber),
-      ),
-    [collapsedPageNumbers, currentPageCount],
+      filterVisiblePageNumbers({
+        pageCount: currentPageCount,
+        collapsedPageNumbers,
+        annotatedPageNumbers: new Set(annotatedPageNumbers),
+        showOnlyAnnotatedSlides,
+      }),
+    [
+      annotatedPageNumbers,
+      collapsedPageNumbers,
+      currentPageCount,
+      showOnlyAnnotatedSlides,
+    ],
   );
   const persistedPageCount = blankPageMode
     ? Math.max(
@@ -3959,6 +3987,18 @@ export function PdfPreview({
             )}
           </span>
         </summary>
+        <div className="pdf-preview-navigator-filters">
+          <label>
+            <input
+              type="checkbox"
+              checked={showOnlyAnnotatedSlides}
+              onChange={(event) =>
+                setShowOnlyAnnotatedSlides(event.target.checked)
+              }
+            />
+            <span>Show only annotated slides</span>
+          </label>
+        </div>
         {incrementalBuildPageNumbers.length ? (
           <div className="pdf-preview-navigator-builds">
             <span>

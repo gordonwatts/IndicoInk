@@ -11,11 +11,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   PdfPreview,
+  filterVisiblePageNumbers,
   getCoalescedPagePoints,
   getPredictedPagePoints,
   isLikelyDownloadableUrl,
   PEN_POINTER_MARKER_RADIUS,
 } from './PdfPreview';
+
+describe('filterVisiblePageNumbers', () => {
+  it('filters to annotated pages while preserving collapsed-page exclusions', () => {
+    expect(
+      filterVisiblePageNumbers({
+        pageCount: 5,
+        collapsedPageNumbers: new Set([2]),
+        annotatedPageNumbers: new Set([1, 4]),
+        showOnlyAnnotatedSlides: false,
+      }),
+    ).toEqual([1, 3, 4, 5]);
+
+    expect(
+      filterVisiblePageNumbers({
+        pageCount: 5,
+        collapsedPageNumbers: new Set([2]),
+        annotatedPageNumbers: new Set([1, 4]),
+        showOnlyAnnotatedSlides: true,
+      }),
+    ).toEqual([1, 4]);
+  });
+});
 
 describe('PdfPreview', () => {
   beforeEach(() => {

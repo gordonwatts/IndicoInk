@@ -1273,6 +1273,25 @@ input:focus-visible {
   color: var(--text-secondary);
 }
 
+.pdf-preview-navigator-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: var(--font-size-supporting);
+}
+
+.pdf-preview-navigator-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.pdf-preview-navigator-filters input {
+  margin: 0;
+}
 .pdf-preview-navigator-builds {
   display: flex;
   flex-wrap: wrap;
