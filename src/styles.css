@@ -2353,6 +2353,11 @@ input:focus-visible {
   gap: 16px;
 }
 
+.agenda-talk-material-dialog-backdrop .dialog-surface {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
 .agenda-talk-material-dialog .agenda-talk-materials {
   gap: 10px;
 }
