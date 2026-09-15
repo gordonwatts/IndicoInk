@@ -195,6 +195,23 @@ describe('PdfPreview', () => {
     });
     Object.defineProperty(pointerDown, 'pointerType', { value: 'pen' });
     fireEvent(sheet, pointerDown);
+
+    const pointerMove = createEvent.pointerMove(sheet, {
+      buttons: 0,
+      button: -1,
+      clientX: 80,
+      clientY: 110,
+      pointerId: 1,
+      pressure: 0,
+    });
+    Object.defineProperty(pointerMove, 'pointerType', { value: 'pen' });
+    fireEvent(sheet, pointerMove);
+    expect(
+      document
+        .querySelector<HTMLElement>('.pdf-preview-pointer-marker')
+        ?.style.getPropertyValue('--pointer-marker-color'),
+    ).toBe('#d13438');
+
     const pointerUp = createEvent.pointerUp(sheet, {
       buttons: 0,
       button: 0,
