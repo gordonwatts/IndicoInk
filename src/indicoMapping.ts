@@ -348,13 +348,56 @@ const getContributionSessionTitle = (
   return fallback;
 };
 
+const createParentFallbackContribution = (
+  contribution: IndicoContributionValue,
+  parent: IndicoContributionValue,
+) => {
+  const next: IndicoContributionValue = { ...contribution };
+
+  if (contribution.startDate === undefined && parent.startDate) {
+    next.startDate = parent.startDate;
+  }
+
+  if (contribution.endDate === undefined && parent.endDate) {
+    next.endDate = parent.endDate;
+  }
+
+  if (contribution.session == null && parent.session != null) {
+    next.session = parent.session;
+  }
+
+  if (contribution.roomFullname === undefined && parent.roomFullname) {
+    next.roomFullname = parent.roomFullname;
+  }
+
+  if (contribution.room === undefined && parent.room) {
+    next.room = parent.room;
+  }
+
+  if (contribution.location === undefined && parent.location) {
+    next.location = parent.location;
+  }
+
+  return next;
+};
+
 const collectNestedContributions = (
   contributions: IndicoContributionValue[] | undefined,
+  parent?: IndicoContributionValue,
 ): IndicoContributionValue[] =>
-  contributions?.flatMap((contribution) => [
-    contribution,
-    ...collectNestedContributions(contribution.subContributions),
-  ]) ?? [];
+  contributions?.flatMap((contribution) => {
+    const mappedContribution = parent
+      ? createParentFallbackContribution(contribution, parent)
+      : contribution;
+
+    return [
+      mappedContribution,
+      ...collectNestedContributions(
+        mappedContribution.subContributions,
+        mappedContribution,
+      ),
+    ];
+  }) ?? [];
 
 const createSessionFallbackContribution = (
   session: IndicoSessionValue,
