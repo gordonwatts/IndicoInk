@@ -635,7 +635,7 @@ const rowToDeck = (row: Record<string, unknown>): Deck => ({
   selected: toBoolean(row.selected),
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
-  kind: String(row.kind ?? 'pdf') as 'pdf' | 'notebook',
+  kind: String(row.kind ?? 'pdf') as 'pdf' | 'other' | 'notebook',
   upstreamStatus: String(row.upstream_status ?? 'present') as
     | 'present'
     | 'changed'

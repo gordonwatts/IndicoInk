@@ -41,13 +41,15 @@ export const persistImportedAgenda = async (
         updatedAt: now,
       });
 
-      const pdfMaterials = talk.materials.filter(
+      const slideMaterials = talk.materials.filter(
         (material) => material.kind === 'pdf',
       );
-      const selectedMaterial = choosePreferredSlideDeck(pdfMaterials);
+      const selectedMaterial = choosePreferredSlideDeck(slideMaterials);
 
-      for (const material of pdfMaterials) {
-        deckCount += 1;
+      for (const material of talk.materials) {
+        if (material.kind === 'pdf') {
+          deckCount += 1;
+        }
         await transactionStore.upsertDeck({
           id: createDeckId(talkId, material.url),
           conferenceId,
@@ -56,8 +58,9 @@ export const persistImportedAgenda = async (
           displayName: material.title,
           mimeType: material.mimeType,
           selected: selectedMaterial
-            ? material.url === selectedMaterial.url
+            ? material.kind === 'pdf' && material.url === selectedMaterial.url
             : false,
+          kind: material.kind,
           createdAt: now,
           updatedAt: now,
         });

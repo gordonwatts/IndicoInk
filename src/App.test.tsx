@@ -2109,6 +2109,14 @@ describe('App', () => {
     expect(screen.getByText('Main deck · 10 pages')).toBeTruthy();
     expect(screen.getByText('Alternate deck · 6 pages')).toBeTruthy();
     expect(screen.getByText('Speaker notes · text/plain')).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Open Speaker notes',
+      }),
+    );
+    expect(window.indicoInk.openExternalUrl).toHaveBeenLastCalledWith(
+      'https://indico.example.org/materials/notes.txt',
+    );
     expect(
       (
         screen.getByRole('button', {

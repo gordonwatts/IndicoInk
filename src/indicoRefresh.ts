@@ -29,10 +29,7 @@ const getConferenceDecksByTalk = async (
   store: PersistenceStore,
   talkId: string,
 ) => {
-  const decks = await store.listDecksByTalk(talkId);
-  return decks.filter((deck) =>
-    isSlideDeck(deck.mimeType, deck.sourceUrl, deck.displayName),
-  );
+  return store.listDecksByTalk(talkId);
 };
 
 const compareTalk = (current: Talk, next: Talk) =>
@@ -180,10 +177,11 @@ export const reconcileMappedAgenda = async (
     }
 
     const currentDecks = await getConferenceDecksByTalk(store, currentTalk.id);
-    const incomingDecks = incomingTalk.materials.filter(
+    const incomingDecks = incomingTalk.materials;
+    const incomingSlideDecks = incomingDecks.filter(
       (material) => material.kind === 'pdf',
     );
-    const preferredIncomingDeck = choosePreferredSlideDeck(incomingDecks);
+    const preferredIncomingDeck = choosePreferredSlideDeck(incomingSlideDecks);
     const incomingDeckBySourceUrl = new Map(
       incomingDecks.map((material) => [material.url, material] as const),
     );
@@ -223,7 +221,10 @@ export const reconcileMappedAgenda = async (
         sourceUrl: incomingDeck.url,
         displayName: incomingDeck.title,
         mimeType: incomingDeck.mimeType,
-        selected: preferredIncomingDeck?.url === incomingDeck.url,
+        selected:
+          incomingDeck.kind === 'pdf' &&
+          preferredIncomingDeck?.url === incomingDeck.url,
+        kind: incomingDeck.kind,
         createdAt: currentDeck.createdAt,
         updatedAt: currentDeck.updatedAt,
         upstreamStatus: 'present',
@@ -232,6 +233,11 @@ export const reconcileMappedAgenda = async (
       const deckHasAnnotations =
         (await getDeckAnnotationCount(store, currentDeck.id)) > 0;
       if (
+        isSlideDeck(
+          currentDeck.mimeType,
+          currentDeck.sourceUrl,
+          currentDeck.displayName,
+        ) &&
         deckHasAnnotations &&
         compareDeckContent(currentDeck, nextDeck) &&
         options.decision !== 'replace'
@@ -319,10 +325,12 @@ export const reconcileMappedAgenda = async (
       const currentDeckBySourceUrl = new Map(
         currentDecks.map((deck) => [deck.sourceUrl, deck] as const),
       );
-      const incomingDecks = incomingTalk.materials.filter(
+      const incomingDecks = incomingTalk.materials;
+      const incomingSlideDecks = incomingDecks.filter(
         (material) => material.kind === 'pdf',
       );
-      const preferredIncomingDeck = choosePreferredSlideDeck(incomingDecks);
+      const preferredIncomingDeck =
+        choosePreferredSlideDeck(incomingSlideDecks);
 
       for (const incomingMaterial of incomingDecks) {
         const currentDeck = currentDeckBySourceUrl.get(incomingMaterial.url);
@@ -334,7 +342,10 @@ export const reconcileMappedAgenda = async (
           sourceUrl: incomingMaterial.url,
           displayName: incomingMaterial.title,
           mimeType: incomingMaterial.mimeType,
-          selected: preferredIncomingDeck?.url === incomingMaterial.url,
+          selected:
+            incomingMaterial.kind === 'pdf' &&
+            preferredIncomingDeck?.url === incomingMaterial.url,
+          kind: incomingMaterial.kind,
           createdAt: currentDeck?.createdAt ?? Date.now(),
           updatedAt: Date.now(),
           upstreamStatus: currentDeck
@@ -354,7 +365,7 @@ export const reconcileMappedAgenda = async (
             : 'present',
         };
 
-        if (!currentDeck) {
+        if (!currentDeck && incomingMaterial.kind === 'pdf') {
           newlyAvailableDeckCount += 1;
         }
 
@@ -377,14 +388,15 @@ export const reconcileMappedAgenda = async (
         }
 
         await transactionStore.upsertDeck(nextDeck);
-        deckCount += 1;
+        if (incomingMaterial.kind === 'pdf') {
+          deckCount += 1;
+        }
       }
 
       for (const currentDeck of currentDecks) {
         if (
           incomingTalk.materials.some(
-            (material) =>
-              material.kind === 'pdf' && material.url === currentDeck.sourceUrl,
+            (material) => material.url === currentDeck.sourceUrl,
           )
         ) {
           continue;

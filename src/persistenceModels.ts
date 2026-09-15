@@ -67,7 +67,7 @@ export type Deck = {
   selected: boolean;
   createdAt: number;
   updatedAt: number;
-  kind?: 'pdf' | 'notebook';
+  kind?: 'pdf' | 'other' | 'notebook';
   upstreamStatus?: 'present' | 'changed' | 'missing';
 };
 

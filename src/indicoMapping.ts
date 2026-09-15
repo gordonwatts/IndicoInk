@@ -102,6 +102,7 @@ type IndicoEventValue = {
   organizer?: string;
   keywords?: string[];
   material?: IndicoMaterialValue[];
+  folders?: IndicoFolderValue[];
   contributions?: IndicoContributionValue[];
   sessions?: IndicoSessionValue[];
 };
@@ -109,6 +110,7 @@ type IndicoEventValue = {
 type IndicoContributionSource = {
   contribution?: IndicoContributionValue;
   linkedAgenda?: IndicoSessionValue;
+  session?: IndicoSessionValue;
 };
 
 export type IndicoHierarchyDay = AgendaHierarchyDay;
@@ -258,6 +260,26 @@ const collectMaterials = (
   ),
 ];
 
+const collectSessionMaterials = (session?: IndicoSessionValue) =>
+  session
+    ? collectMaterials(session.material, session.folders).concat(
+        collectMaterials(session.session?.material, session.session?.folders),
+      )
+    : [];
+
+const collectUniqueMaterials = (...groups: IndicoMaterialValue[][]) => {
+  const seenUrls = new Set<string>();
+  return groups.flat().filter((material) => {
+    const url = getMaterialUrl(material);
+    if (!url || seenUrls.has(url)) {
+      return false;
+    }
+
+    seenUrls.add(url);
+    return true;
+  });
+};
+
 const createMaterialId = (
   contributionId: string,
   url: string,
@@ -367,6 +389,7 @@ const collectContributionSources = (
     (session) =>
       collectNestedContributions(session.contributions).map((contribution) => ({
         contribution: createSessionFallbackContribution(session, contribution),
+        session,
       })),
   );
 
@@ -428,6 +451,8 @@ const mapContribution = (
   contribution: IndicoContributionValue,
   index: number,
   timeZone: string,
+  session?: IndicoSessionValue,
+  eventMaterials: IndicoMaterialValue[] = [],
 ) => {
   const contributionId = getContributionId(contribution, index);
   const speakerEntities = asArray<IndicoPersonValue>(contribution.speakers).map(
@@ -440,9 +465,10 @@ const mapContribution = (
   const speakers = speakerEntities
     .map((speaker) => speaker.name)
     .filter(Boolean);
-  const materials = collectMaterials(
-    contribution.material,
-    contribution.folders,
+  const materials = collectUniqueMaterials(
+    collectMaterials(contribution.material, contribution.folders),
+    collectSessionMaterials(session),
+    eventMaterials,
   )
     .map((material, materialIndex) =>
       mapMaterial(contributionId, material, materialIndex),
@@ -475,6 +501,7 @@ const mapLinkedAgenda = (
   index: number,
   linkedAgendaUrl: string,
   timeZone: string,
+  eventMaterials: IndicoMaterialValue[] = [],
 ) => {
   const contributionId =
     getNumberLike(session.id) || `linked-agenda-${index + 1}`;
@@ -492,7 +519,16 @@ const mapLinkedAgenda = (
       getString(session.location) ||
       'Room unavailable',
     contributionUrl: getString(session.url),
-    materials: [],
+    materials: collectUniqueMaterials(
+      collectSessionMaterials(session),
+      eventMaterials,
+    )
+      .map((material, materialIndex) =>
+        mapMaterial(contributionId, material, materialIndex),
+      )
+      .filter((material): material is IndicoMaterialEntity =>
+        Boolean(material),
+      ),
     bookmarked: false,
     entryKind: 'linked-agenda' as const,
     linkedAgendaUrl,
@@ -508,6 +544,7 @@ export const mapIndicoExportEnvelope = (
   const eventTimeZone =
     getString(event?.timezone) || getString(event?.startDate?.tz, 'UTC');
   const sessions = asArray<IndicoSessionValue>(event?.sessions);
+  const eventMaterials = collectMaterials(event?.material, event?.folders);
   const contributionSources = collectContributionSources(event ?? {});
   const talks = contributionSources.map((source, index) =>
     source.linkedAgenda
@@ -516,8 +553,16 @@ export const mapIndicoExportEnvelope = (
           index,
           getLinkedAgendaUrl(source.linkedAgenda),
           eventTimeZone,
+          eventMaterials,
         )
-      : mapContribution(identity, source.contribution!, index, eventTimeZone),
+      : mapContribution(
+          identity,
+          source.contribution!,
+          index,
+          eventTimeZone,
+          source.session,
+          eventMaterials,
+        ),
   );
 
   const talkByContributionId = new Map(
