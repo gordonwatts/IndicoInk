@@ -5,12 +5,16 @@ const { join } = require('node:path');
 
 const electronCacheRoot = join(__dirname, '.electron-cache');
 const installerIcon = join(__dirname, 'assets', 'icons', 'indicoink.ico');
-const installerLoadingGif = join(
-  __dirname,
-  'assets',
-  'installer',
-  'indicoink-install.gif',
-);
+const msixAssets = join(__dirname, 'assets', 'msix');
+const msixPublisher = process.env.INDICOINK_MSIX_PUBLISHER?.trim();
+const msixCertificate = process.env.INDICOINK_MSIX_CERTIFICATE?.trim();
+const msixCertificatePassword = process.env.INDICOINK_MSIX_CERTIFICATE_PASSWORD;
+
+if (Boolean(msixPublisher) !== Boolean(msixCertificate)) {
+  throw new Error(
+    'MSIX release signing requires both INDICOINK_MSIX_PUBLISHER and INDICOINK_MSIX_CERTIFICATE.',
+  );
+}
 const electronZipDir = existsSync(electronCacheRoot)
   ? readdirSync(electronCacheRoot, {
       withFileTypes: true,
@@ -29,11 +33,26 @@ module.exports = {
   rebuildConfig: {},
   makers: [
     {
-      name: '@electron-forge/maker-squirrel',
+      name: '@electron-forge/maker-msix',
       config: {
-        loadingGif: installerLoadingGif,
-        noMsi: true,
-        setupIcon: installerIcon,
+        packageAssets: msixAssets,
+        sign: true,
+        manifestVariables: {
+          packageIdentity: 'IndicoInk',
+          packageDisplayName: 'IndicoInk',
+          appDisplayName: 'IndicoInk',
+          publisher: msixPublisher || 'CN=IndicoInk Development',
+          publisherDisplayName: 'IndicoInk',
+          packageBackgroundColor: '#FFFFFF',
+          packageMinOSVersion: '10.0.19041.0',
+          packageMaxOSVersionTested: '10.0.26100.0',
+        },
+        windowsSignOptions: msixCertificate
+          ? {
+              certificateFile: msixCertificate,
+              certificatePassword: msixCertificatePassword,
+            }
+          : undefined,
       },
     },
     { name: '@electron-forge/maker-zip', platforms: ['darwin'] },
