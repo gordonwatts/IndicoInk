@@ -123,6 +123,23 @@ describe('incremental slide detection', () => {
       isIncrementalSlideBuild(createGradientPage(0), createGradientPage(160)),
     ).toBe(false);
   });
+
+  it('recognizes an additive build when new content changes just over half the page', () => {
+    const width = 100;
+    const height = 100;
+    const addedContent = Array.from({ length: 90 * 66 }, (_, index) => ({
+      x: 5 + (index % 90),
+      y: 5 + Math.floor(index / 90),
+    }));
+
+    expect(
+      isIncrementalSlideBuild(
+        createPage(width, height),
+        createPage(width, height, addedContent),
+      ),
+    ).toBe(true);
+  });
+
   it('collapses every intermediate page in a multi-step build', () => {
     const thirdLine = [
       { x: 2, y: 6 },
