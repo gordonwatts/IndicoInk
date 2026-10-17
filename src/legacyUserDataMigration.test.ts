@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -96,6 +97,83 @@ describe('migrateLegacySquirrelUserData', () => {
         'utf8',
       ),
     ).toBe('legacy pdf');
+  });
+
+  it('does not publish a truncated SQLite copy and retries without a marker', () => {
+    const appDataRoot = createTemporaryDirectory();
+    const legacyRoot = join(appDataRoot, 'IndicoInk');
+    const destinationRoot = createTemporaryDirectory();
+    mkdirSync(legacyRoot, { recursive: true });
+    const sourceDatabase = join(legacyRoot, 'indicoink-persistence.sqlite3');
+    const destinationDatabase = join(
+      destinationRoot,
+      'indicoink-persistence.sqlite3',
+    );
+    writeFileSync(sourceDatabase, 'complete sqlite database');
+
+    const interrupted = migrateLegacySquirrelUserData(
+      appDataRoot,
+      destinationRoot,
+      {
+        copyFile: (_source, stagingPath) =>
+          writeFileSync(stagingPath, 'truncated'),
+      },
+    );
+
+    expect(interrupted.status).toBe('failed');
+    expect(existsSync(destinationDatabase)).toBe(false);
+    expect(
+      existsSync(join(destinationRoot, 'squirrel-user-data-migrated.json')),
+    ).toBe(false);
+
+    const retried = migrateLegacySquirrelUserData(appDataRoot, destinationRoot);
+
+    expect(retried.status).toBe('migrated');
+    expect(readFileSync(destinationDatabase, 'utf8')).toBe(
+      'complete sqlite database',
+    );
+    expect(
+      existsSync(join(destinationRoot, 'squirrel-user-data-migrated.json')),
+    ).toBe(true);
+  });
+
+  it('leaves interrupted deck-cache files unpublished and retries them', () => {
+    const appDataRoot = createTemporaryDirectory();
+    const legacyRoot = join(appDataRoot, 'IndicoInk');
+    const destinationRoot = createTemporaryDirectory();
+    const sourceDeck = join(legacyRoot, 'deck-cache', 'event-1', 'slides.pdf');
+    const destinationDeck = join(
+      destinationRoot,
+      'deck-cache',
+      'event-1',
+      'slides.pdf',
+    );
+    mkdirSync(join(legacyRoot, 'deck-cache', 'event-1'), { recursive: true });
+    writeFileSync(sourceDeck, 'complete deck cache content');
+
+    const interrupted = migrateLegacySquirrelUserData(
+      appDataRoot,
+      destinationRoot,
+      {
+        copyFile: (_source, stagingPath) => {
+          writeFileSync(stagingPath, 'partial');
+          throw new Error('simulated interrupted copy');
+        },
+      },
+    );
+
+    expect(interrupted.status).toBe('failed');
+    expect(existsSync(destinationDeck)).toBe(false);
+    expect(
+      existsSync(join(destinationRoot, 'squirrel-user-data-migrated.json')),
+    ).toBe(false);
+
+    const retried = migrateLegacySquirrelUserData(appDataRoot, destinationRoot);
+
+    expect(retried.status).toBe('migrated');
+    expect(readFileSync(destinationDeck, 'utf8')).toBe(
+      'complete deck cache content',
+    );
   });
 
   it('skips when there is no legacy profile or source path', () => {

@@ -11,6 +11,10 @@ App Actions capabilities; App Actions remain out of scope for issue #170.
 The Windows 10/11 SDK is required to build MSIX packages. Run `npm run make`
 on Windows for the current machine architecture, or pass `-- --arch=x64` or
 `-- --arch=arm64`. The generated package is under `out/make/msix/<arch>/`.
+Release CI uses the `windows-2025` runner and Windows Kit `10.0.26100.0`; the
+manifest minimum remains Windows `10.0.19041.0`. The maker's
+`windowsKitVersion` option expects the SDK kit directory version, such as
+`10.0.26100.0`.
 `npm run generate:msix-assets` regenerates the manifest's PNG tiles from the
 checked-in IndicoInk light icon.
 
@@ -34,9 +38,13 @@ release can be published. The publisher identity is intentionally supplied
 by repository configuration so this code does not claim an unverified legal
 or Store identity.
 
-The package version is derived from the GitHub release tag. Windows MSIX
-versioning uses a four-part numeric version; the maker normalizes the
-repository's semantic version for the manifest.
+The package version is derived from the GitHub release tag. Supported tags
+must have the form `vMAJOR.MINOR.PATCH` (or `MAJOR.MINOR.PATCH`), with numeric
+components from `0` through `65535` and no leading zeroes except for `0`.
+Prerelease and build metadata tags are rejected before packaging. The tag is
+mapped directly to the four-part MSIX version `MAJOR.MINOR.PATCH.0`, so every
+accepted increase in the three-part release version produces a strictly
+increasing MSIX version without prerelease collisions.
 
 ## Existing Squirrel user data
 
@@ -56,8 +64,9 @@ DPAPI/safeStorage remaining usable for the same Windows user. Migration is
 logged in `startup.log` when it runs or fails. The old profile is retained;
 the migration does not uninstall the Squirrel application.
 
-Unit tests cover copy, existing destination precedence, missing source, and
-one-time behavior. A real Squirrel-to-MSIX upgrade has not been accepted yet.
+Unit tests cover copy, existing destination precedence, missing source,
+one-time behavior, and interrupted/truncated SQLite and deck-cache copies. A
+real Squirrel-to-MSIX upgrade has not been accepted yet.
 The source `%APPDATA%` path and credentials must be confirmed with the actual
 signed package on a clean Windows account; keep the Squirrel install and
 source profile intact until that acceptance is recorded.

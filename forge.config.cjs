@@ -9,6 +9,7 @@ const msixAssets = join(__dirname, 'assets', 'msix');
 const msixPublisher = process.env.INDICOINK_MSIX_PUBLISHER?.trim();
 const msixCertificate = process.env.INDICOINK_MSIX_CERTIFICATE?.trim();
 const msixCertificatePassword = process.env.INDICOINK_MSIX_CERTIFICATE_PASSWORD;
+const msixPackageVersion = process.env.INDICOINK_MSIX_VERSION?.trim();
 
 if (Boolean(msixPublisher) !== Boolean(msixCertificate)) {
   throw new Error(
@@ -37,12 +38,16 @@ module.exports = {
       config: {
         packageAssets: msixAssets,
         sign: true,
+        windowsKitVersion: '10.0.26100.0',
         manifestVariables: {
           packageIdentity: 'IndicoInk',
           packageDisplayName: 'IndicoInk',
           appDisplayName: 'IndicoInk',
           publisher: msixPublisher || 'CN=IndicoInk Development',
           publisherDisplayName: 'IndicoInk',
+          ...(msixPackageVersion
+            ? { packageVersion: msixPackageVersion }
+            : {}),
           packageBackgroundColor: '#FFFFFF',
           packageMinOSVersion: '10.0.19041.0',
           packageMaxOSVersionTested: '10.0.26100.0',

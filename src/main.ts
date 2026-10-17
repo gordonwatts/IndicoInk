@@ -106,7 +106,12 @@ if (app.isPackaged && !shouldUseIsolatedUserData()) {
     appendStartupLogEntry(
       app.getPath('userData'),
       'user-data:squirrel-migration',
-      JSON.stringify(migration),
+      {
+        status: migration.status,
+        copiedEntryCount: migration.copiedEntries.length,
+        errorCode: migration.error,
+      },
+      { force: true },
     );
   }
 }
