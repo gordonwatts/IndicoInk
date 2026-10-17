@@ -7,7 +7,6 @@ import {
   safeStorage,
   session,
 } from 'electron';
-import squirrelStartup from 'electron-squirrel-startup';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -78,10 +77,7 @@ import {
   loadAppSettings,
   saveAppSettings,
 } from './appSettings';
-
-if (squirrelStartup) {
-  process.exit(0);
-}
+import { migrateLegacySquirrelUserData } from './legacyUserDataMigration';
 
 let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
@@ -99,6 +95,25 @@ if (shouldDisableGpu()) {
 
 if (shouldUseIsolatedUserData()) {
   app.setPath('userData', getIsolatedUserDataPath('IndicoInk'));
+}
+
+if (app.isPackaged && !shouldUseIsolatedUserData()) {
+  const migration = migrateLegacySquirrelUserData(
+    process.env.APPDATA,
+    app.getPath('userData'),
+  );
+  if (migration.status !== 'skipped') {
+    appendStartupLogEntry(
+      app.getPath('userData'),
+      'user-data:squirrel-migration',
+      {
+        status: migration.status,
+        copiedEntryCount: migration.copiedEntries.length,
+        errorCode: migration.error,
+      },
+      { force: true },
+    );
+  }
 }
 
 const getMainWindowDevServerUrl = () =>

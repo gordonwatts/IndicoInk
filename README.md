@@ -45,9 +45,17 @@ npm run build
 npm run make
 ```
 
-The make command regenerates the branded Squirrel loading panel before
-building the installer. Release CI runs the same command for both x64 and
-arm64 installers.
+The make command generates the branded MSIX tiles and builds a package for
+the selected Windows architecture. Local builds use a development signing
+certificate and are only suitable for test machines that trust that
+certificate. Release CI requires the signing certificate and publisher
+identity documented in [Windows MSIX distribution](docs/windows-msix.md), and
+publishes signed x64 and arm64 packages.
+
+The first packaged launch checks for a per-user Squirrel profile and copies
+the database, settings, credentials, and deck cache into the MSIX user-data
+directory without replacing files already present there. See the distribution
+guide for the migration boundary and Windows acceptance still required.
 
 ## Test
 

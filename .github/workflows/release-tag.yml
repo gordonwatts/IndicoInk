@@ -1,4 +1,4 @@
-name: Build Windows installers
+name: Build signed Windows MSIX packages
 
 on:
   release:
@@ -9,9 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  build-windows-installers:
-    runs-on: windows-latest
+  build-windows-msix:
+    runs-on: windows-2025
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, arm64]
 
@@ -25,24 +26,36 @@ jobs:
           node-version: '24'
           cache: npm
 
+      - name: Prepare signing certificate
+        shell: pwsh
+        env:
+          MSIX_CERTIFICATE_BASE64: ${{ secrets.INDICOINK_MSIX_CERTIFICATE_BASE64 }}
+          MSIX_CERTIFICATE_PASSWORD: ${{ secrets.INDICOINK_MSIX_CERTIFICATE_PASSWORD }}
+          INDICOINK_MSIX_PUBLISHER: ${{ vars.INDICOINK_MSIX_PUBLISHER }}
+        run: |
+          if (-not $env:MSIX_CERTIFICATE_BASE64 -or -not $env:MSIX_CERTIFICATE_PASSWORD -or -not $env:INDICOINK_MSIX_PUBLISHER) {
+            throw 'Configure INDICOINK_MSIX_CERTIFICATE_BASE64, INDICOINK_MSIX_CERTIFICATE_PASSWORD, and the INDICOINK_MSIX_PUBLISHER repository variable before publishing a release.'
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'indicoink-release.pfx'
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:MSIX_CERTIFICATE_BASE64))
+          "INDICOINK_MSIX_CERTIFICATE=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "INDICOINK_MSIX_CERTIFICATE_PASSWORD=$env:MSIX_CERTIFICATE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "INDICOINK_MSIX_PUBLISHER=$env:INDICOINK_MSIX_PUBLISHER" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Set release version
         shell: pwsh
         run: |
           $tag = "${{ github.event.release.tag_name }}".Trim()
-          if ($tag.StartsWith('v')) {
-            $tag = $tag.Substring(1)
+          $msixVersion = node scripts/msix-version.cjs $tag
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release tag '$tag' is not supported for MSIX packaging."
           }
-
-          $version = $tag
-          if ($version -match '^(?<core>\d+\.\d+\.\d+)(?<suffix>[A-Za-z]+)(?<num>\d+)$') {
-            $version = "$($Matches.core)-$($Matches.suffix.ToLower())$($Matches.num)"
+          $packageVersion = $msixVersion.Substring(0, $msixVersion.LastIndexOf('.'))
+          npm version --no-git-tag-version --allow-same-version $packageVersion
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not set the package version from the release tag.'
           }
-
-          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
-            throw "Release tag '$tag' could not be converted to a valid package version."
-          }
-
-          npm version --no-git-tag-version --allow-same-version $version
+          "INDICOINK_MSIX_VERSION=$msixVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install dependencies
         run: npm install --cache .npm-cache
@@ -50,64 +63,60 @@ jobs:
           ELECTRON_INSTALL_ARCH: ${{ matrix.arch }}
           npm_config_arch: ${{ matrix.arch }}
 
-      - name: Build installers
+      - name: Build signed MSIX
         run: npm run make -- --arch=${{ matrix.arch }}
         env:
           ELECTRON_INSTALL_ARCH: ${{ matrix.arch }}
           npm_config_arch: ${{ matrix.arch }}
 
-      - name: Show installer output
+      - name: Verify package signature and stage release asset
         shell: pwsh
+        env:
+          ARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if (Test-Path out) {
-            Get-ChildItem -Path out -Recurse | Select-Object FullName, Length
-          } else {
-            Write-Host 'No out directory was created.'
+          $packageDirectory = Join-Path $env:GITHUB_WORKSPACE "out/make/msix/$env:ARCH"
+          $packages = @(Get-ChildItem -LiteralPath $packageDirectory -Filter '*.msix' -File -ErrorAction SilentlyContinue)
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one MSIX package in $packageDirectory; found $($packages.Count)."
           }
+          $packagePath = $packages[0].FullName
+          $signtool = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter signtool.exe -Recurse -File | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) {
+            throw 'Windows SDK signtool.exe was not found.'
+          }
+          & $signtool.FullName verify /pa /v $packagePath
+          if ($LASTEXITCODE -ne 0) {
+            throw 'MSIX signature verification failed.'
+          }
+          $stagingDirectory = Join-Path $env:GITHUB_WORKSPACE 'release-assets'
+          New-Item -ItemType Directory -Force -Path $stagingDirectory | Out-Null
+          Copy-Item -LiteralPath $packagePath -Destination (Join-Path $stagingDirectory "IndicoInk-$env:RELEASE_TAG-$env:ARCH.msix")
 
-      - name: Upload installers
+      - name: Upload MSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: indicoink-windows-installers-${{ matrix.arch }}
-          path: out/make/squirrel.windows/${{ matrix.arch }}/*
+          name: indicoink-windows-msix-${{ matrix.arch }}
+          path: release-assets/*.msix
           if-no-files-found: error
 
   publish-release-assets:
-    runs-on: windows-latest
-    needs: build-windows-installers
+    runs-on: windows-2025
+    needs: build-windows-msix
     permissions:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download installers
+      - name: Download MSIX packages
         uses: actions/download-artifact@v4
         with:
-          pattern: indicoink-windows-installers-*
+          pattern: indicoink-windows-msix-*
           path: release-assets
+          merge-multiple: true
 
-      - name: Package installers for release
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path release-assets/published | Out-Null
-          $tag = "${{ github.event.release.tag_name }}"
-
-          Get-ChildItem -Path release-assets -Directory |
-            Where-Object { $_.Name -like 'indicoink-windows-installers-*' } |
-            ForEach-Object {
-              $arch = $_.Name.Replace('indicoink-windows-installers-', '')
-              $setupExe = Get-ChildItem -Path $_.FullName -Filter "*.exe" -File | Select-Object -First 1
-              if (-not $setupExe) {
-                throw "Missing setup executable in $($_.FullName)"
-              }
-              Copy-Item -Path $setupExe.FullName -Destination (Join-Path 'release-assets/published' "IndicoInk-$tag-Setup-$arch.exe") -Force
-            }
-
-      - name: Publish release assets
+      - name: Publish MSIX release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
-            release-assets/published/*.exe
+            release-assets/*.msix
