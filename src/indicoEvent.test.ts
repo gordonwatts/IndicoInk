@@ -20,6 +20,23 @@ describe('parseIndicoEventUrl', () => {
     });
   });
 
+  it('normalizes the reported Fermi event URL with a trailing slash', () => {
+    const withoutTrailingSlash = parseIndicoEventUrl(
+      'https://indico.fnal.gov/event/65068',
+    );
+    const withTrailingSlash = parseIndicoEventUrl(
+      'https://indico.fnal.gov/event/65068/',
+    );
+
+    expect(withTrailingSlash).toEqual(withoutTrailingSlash);
+    expect(withTrailingSlash).toMatchObject({
+      eventId: '65068',
+      origin: 'https://indico.fnal.gov',
+      canonicalEventUrl: 'https://indico.fnal.gov/event/65068',
+      conferenceId: createConferenceId('https://indico.fnal.gov/event/65068'),
+    });
+  });
+
   it('rejects invalid or non-https URLs', () => {
     expect(parseIndicoEventUrl('')).toBeNull();
     expect(
