@@ -109,8 +109,7 @@ const hasSameNoteBranchOrigin = (
   left.logicalNoteId === right.logicalNoteId &&
   left.annotation.kind === 'text' &&
   right.annotation.kind === 'text' &&
-  left.branchOfOperationId === null &&
-  right.branchOfOperationId === null;
+  left.branchOfOperationId === right.branchOfOperationId;
 
 const originalBranchOperationId = (
   operation: SyncOperation,
@@ -171,10 +170,7 @@ export const mergeAnnotationOperations = (
   for (const operation of operations) {
     if (operation.kind !== 'annotation.put') continue;
     const payload = annotationPayload(operation);
-    if (
-      payload.annotation.kind === 'text' &&
-      payload.branchOfOperationId === null
-    ) {
+    if (payload.annotation.kind === 'text') {
       const observed = causalMaxima(
         operations.filter(
           (candidate) =>
@@ -213,6 +209,32 @@ export const mergeAnnotationOperations = (
         );
       }
       resolvedOperationIds.add(operationId);
+    }
+    for (const annotationId of new Set(
+      payload.resolves.map((operationId) =>
+        annotationIdOf(byOperationId.get(operationId)!),
+      ),
+    )) {
+      const observed = causalMaxima(
+        operations.filter(
+          (candidate) =>
+            candidate.kind === 'annotation.put' &&
+            candidate.operationId !== operation.operationId &&
+            annotationIdOf(candidate) === annotationId &&
+            documentVersionOf(candidate) === payload.documentVersion &&
+            operationDominates(operation, candidate),
+        ),
+      );
+      if (
+        observed.length > 1 &&
+        observed.some(
+          (candidate) => !payload.resolves.includes(candidate.operationId),
+        )
+      ) {
+        throw new Error(
+          'A text resolution must explicitly resolve every observed alternative of a source annotation.',
+        );
+      }
     }
   }
 
@@ -269,6 +291,7 @@ export const mergeAnnotationOperations = (
         erases.length === 0 &&
         putPayloads.length === maxima.length &&
         putPayloads.length > 1 &&
+        putPayloads.every(({ payload }) => payload.resolves.length === 0) &&
         putPayloads.every(({ payload }) =>
           hasSameNoteBranchOrigin(payload, putPayloads[0]!.payload),
         );
@@ -277,14 +300,18 @@ export const mergeAnnotationOperations = (
         const logicalNoteId = putPayloads[0]!.payload.logicalNoteId!;
         const key = canonicalJson([documentVersion, logicalNoteId]);
         const branches = keepBothNotes.get(key) ?? [];
+        const editsToMaterializedBranch =
+          putPayloads[0]!.payload.branchOfOperationId !== null;
         branches.push(
           ...putPayloads.map(({ operation, payload }) => ({
             operation,
             payload,
-            branchOfOperationId: originalBranchOperationId(
-              operation,
-              candidates,
-            ),
+            // When an already materialized branch is concurrently edited,
+            // each new edit becomes its own branch. Before initial
+            // materialization, retain the original causal root instead.
+            branchOfOperationId: editsToMaterializedBranch
+              ? operation.operationId
+              : originalBranchOperationId(operation, candidates),
           })),
         );
         keepBothNotes.set(key, branches);
@@ -414,7 +441,15 @@ export const mergeMetadataRefreshes = (refreshes: MetadataRefresh[]) => {
   const revisions = new Set(
     candidates.map(({ upstreamRevision }) => upstreamRevision),
   );
-  if (revisions.size === 1) {
+  if (
+    revisions.size === 1 &&
+    candidates[0]!.upstreamRevision !== null &&
+    candidates.every(
+      (candidate) =>
+        canonicalJson(candidate.records) ===
+        canonicalJson(candidates[0]!.records),
+    )
+  ) {
     return {
       refresh: [...candidates].sort((a, b) =>
         compareOperation(a.operation, b.operation),
