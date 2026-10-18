@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createSlideId } from './persistenceModels';
 import { PersistenceStore } from './persistenceStore';
+import type { PdfWorkspaceChangeBatch } from './shared/pdfWorkspace';
 import { createWorkspaceHistory } from './workspaceHistory';
 
 const createTempDbPath = (name: string) =>
@@ -75,6 +76,199 @@ describe('persistence store', () => {
     ]) {
       expect(tableNames.has(table), `${table} migration`).toBe(true);
     }
+  });
+
+  it('commits local annotation changes with a durable library-scoped outbox operation', async () => {
+    const dbPath = createTempDbPath('sync-outbox');
+    let store = new PersistenceStore(dbPath, () => 1700000000000);
+    const profile = await store.getSyncProfile();
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    await store.upsertConference({
+      id: 'conference-sync',
+      sourceUrl: 'https://example.org/event',
+      title: 'Sync Event',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertTalk({
+      id: 'talk-sync',
+      conferenceId: 'conference-sync',
+      contributionId: 'talk-1',
+      contributionUrl: 'https://example.org/event/talk-1',
+      title: 'Sync Talk',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertDeck({
+      id: 'deck_sync',
+      conferenceId: 'conference-sync',
+      talkId: 'talk-sync',
+      sourceUrl: 'https://example.org/event/talk-1/slides.pdf',
+      displayName: 'Slides',
+      mimeType: 'application/pdf',
+      selected: true,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+
+    const save = (
+      revision: number,
+      changes: PdfWorkspaceChangeBatch['changes'],
+    ) =>
+      store.saveDeckPdfWorkspaceChanges({
+        sourceUrl: 'https://example.org/event/talk-1/slides.pdf',
+        conferenceId: 'conference-sync',
+        talkId: 'talk-sync',
+        deckId: 'deck_sync',
+        pageCount: 1,
+        revision,
+        changes,
+        history: createWorkspaceHistory(),
+        currentSlideNumber: 1,
+        scrollLeft: 0,
+        scrollTop: 0,
+        zoom: 1,
+      });
+
+    const note = {
+      id: 'note-sync',
+      conferenceId: 'conference-sync',
+      talkId: 'talk-sync',
+      deckId: 'deck_sync',
+      slideId: createSlideId('deck_sync', 1),
+      x: 0.25,
+      y: 0.5,
+      width: 240,
+      text: 'Saved before sync',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    };
+    await save(1, [{ kind: 'upsert-text-note', pageIndex: 0, note }]);
+
+    const [pending] = await store.listPendingSyncOutbox();
+    expect(pending?.operation).toMatchObject({
+      workspaceId,
+      streamId: 'deck:deck_sync',
+      deviceId: profile.deviceId,
+      sequence: 1,
+      kind: 'annotation.put',
+      payload: {
+        documentVersion: null,
+        logicalNoteId: 'note-sync',
+        resolves: [],
+      },
+    });
+    expect(await store.getAnnotation('note-sync')).toMatchObject({
+      text: 'Saved before sync',
+    });
+
+    await store.close();
+    const measuredDb = new DatabaseSync(dbPath);
+    measuredDb
+      .prepare(
+        `UPDATE sync_document_versions
+         SET document_version = ?, version_state = 'known'
+         WHERE deck_id = ?`,
+      )
+      .run('a'.repeat(64), 'deck_sync');
+    measuredDb.close();
+    store = new PersistenceStore(dbPath, () => 1700000000000);
+
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: false,
+    });
+    await save(2, [
+      {
+        kind: 'upsert-text-note',
+        pageIndex: 0,
+        note: { ...note, text: 'Edited while paused' },
+      },
+    ]);
+    await expect(store.listPendingSyncOutbox()).resolves.toEqual([]);
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const resumed = await store.listPendingSyncOutbox();
+    expect(resumed.map((entry) => entry.operation.sequence)).toEqual([1, 2]);
+    expect(resumed[1]?.operation.payload).toMatchObject({
+      documentVersion: null,
+    });
+
+    await store.setSyncConfiguration({
+      workspaceId: null,
+      folderPath: null,
+      enabled: false,
+    });
+    await save(3, [
+      {
+        kind: 'upsert-text-note',
+        pageIndex: 0,
+        note: { ...note, text: 'Edited after disconnect' },
+      },
+    ]);
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    expect(await store.listPendingSyncOutbox()).toHaveLength(2);
+
+    await store.setSyncConfiguration({
+      workspaceId: '8b9e7cb4-8335-4a1a-9f4d-04a5986cc02d',
+      folderPath: 'C:\\other-library',
+      enabled: true,
+    });
+    await expect(store.listPendingSyncOutbox()).resolves.toEqual([]);
+
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    await expect(store.listPendingSyncOutbox()).resolves.toHaveLength(2);
+    await store.markSyncOperationPublished(pending!.operation.operationId);
+    await expect(store.listPendingSyncOutbox()).resolves.toHaveLength(1);
+
+    await expect(
+      save(4, [
+        {
+          kind: 'upsert-text-note',
+          pageIndex: 0,
+          note: { ...note, text: 'x'.repeat(16_385) },
+        },
+      ]),
+    ).rejects.toThrow();
+    expect(await store.getAnnotation('note-sync')).toMatchObject({
+      text: 'Edited after disconnect',
+    });
+    await expect(store.listPendingSyncOutbox()).resolves.toHaveLength(1);
+    await store.close();
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      db
+        .prepare('SELECT revision FROM workspace_revision WHERE deck_id = ?')
+        .get('deck_sync'),
+    ).toMatchObject({ revision: 3 });
+    db.close();
   });
 
   it('upgrades a version 9 library without replacing its existing records', async () => {
