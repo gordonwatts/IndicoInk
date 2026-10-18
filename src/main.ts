@@ -78,6 +78,7 @@ import {
   loadAppSettings,
   saveAppSettings,
 } from './appSettings';
+import { SyncWorkerClient } from './syncWorkerClient';
 
 if (squirrelStartup) {
   process.exit(0);
@@ -88,6 +89,7 @@ let persistenceStore: PersistenceStore | null = null;
 let credentialStore: IndicoCredentialStore | null = null;
 let deckCacheManager: DeckCacheManager | null = null;
 let agendaDownloadManager: AgendaDownloadManager | null = null;
+let syncWorkerClient: SyncWorkerClient | null = null;
 let appSettings: AppSettings | null = null;
 const importFixtureName = getImportFixtureName(process.argv);
 
@@ -149,6 +151,24 @@ const getPersistenceStore = () =>
   (persistenceStore = new PersistenceStore(
     getPersistenceDbPath(app.getPath('userData')),
   ));
+
+const getSyncWorkerClient = () => (syncWorkerClient ??= new SyncWorkerClient());
+
+const resumeConfiguredSyncWorker = async () => {
+  try {
+    const profile = await getPersistenceStore().getSyncProfile();
+    if (profile.enabled && profile.folderPath) {
+      await getSyncWorkerClient().initialize(
+        profile.folderPath,
+        profile.deviceId,
+      );
+    }
+  } catch (error) {
+    appendStartupLogEntry(getUserDataPath(), 'sync:worker-startup', error, {
+      enabled: ensureAppSettings().recordLogging,
+    });
+  }
+};
 
 const getCredentialStore = () =>
   credentialStore ??
@@ -1038,6 +1058,7 @@ ipcMain.handle(
 );
 
 app.whenReady().then(() => {
+  void resumeConfiguredSyncWorker();
   if (importFixtureName) {
     if (!(importFixtureName in conferenceFixtures)) {
       appendStartupLogEntry(
@@ -1087,6 +1108,11 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on('will-quit', () => {
+  syncWorkerClient?.close();
+  syncWorkerClient = null;
 });
 
 app.on('window-all-closed', () => {

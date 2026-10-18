@@ -12,6 +12,7 @@ export const getLaunchArtifacts = (
 ): LaunchArtifact[] => [
   { label: 'main bundle', path: join(buildDir, 'main.js') },
   { label: 'preload bundle', path: join(buildDir, 'preload.js') },
+  { label: 'sync worker bundle', path: join(buildDir, 'syncWorker.js') },
   {
     label: 'renderer HTML',
     path: join(buildDir, `../renderer/${rendererName}/index.html`),
