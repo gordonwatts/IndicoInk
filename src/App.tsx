@@ -13,6 +13,8 @@ import {
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
 import { DEFAULT_PEN_COLORS } from './shared/appSettings';
+import type { SyncStatus } from './shared/sync';
+import { initialSyncStatus } from './shared/sync';
 import { DEFAULT_PEN_THICKNESS } from './strokeTools';
 import type {
   AgendaTalkMaterialSummary,
@@ -1191,6 +1193,8 @@ export function App() {
   const [appSettings, setAppSettings] = React.useState<AppSettings | null>(
     null,
   );
+  const [syncStatus, setSyncStatus] =
+    React.useState<SyncStatus>(initialSyncStatus);
   const [isSavingAppSettings, setIsSavingAppSettings] = React.useState(false);
   const [appSettingsError, setAppSettingsError] = React.useState<string | null>(
     null,
@@ -1279,6 +1283,22 @@ export function App() {
 
   React.useEffect(() => {
     void window.indicoInk.getAppInfo().then(setInfo);
+  }, []);
+
+  React.useEffect(() => {
+    const unsubscribe = window.indicoInk.onSyncStatusChanged(setSyncStatus);
+    void window.indicoInk
+      .startSync()
+      .then(setSyncStatus)
+      .catch((error: unknown) =>
+        setSyncStatus({
+          ...initialSyncStatus,
+          state: 'needs-attention',
+          message:
+            error instanceof Error ? error.message : 'Sync could not start.',
+        }),
+      );
+    return unsubscribe;
   }, []);
 
   React.useEffect(() => {
@@ -1628,8 +1648,7 @@ export function App() {
 
     const elapsedMilliseconds = Math.max(
       0,
-      activeSlideDownloadStatus.updatedAt -
-        activeSlideDownloadStatus.startedAt,
+      activeSlideDownloadStatus.updatedAt - activeSlideDownloadStatus.startedAt,
     );
     const bytesPerSecond =
       elapsedMilliseconds > 0
@@ -1639,8 +1658,7 @@ export function App() {
 
     setSlideDownloadRateSample((currentSample) => {
       if (
-        currentSample?.operationId ===
-          activeSlideDownloadStatus.operationId &&
+        currentSample?.operationId === activeSlideDownloadStatus.operationId &&
         activeSlideDownloadStatus.updatedAt - currentSample.updatedAt <
           SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS
       ) {
@@ -1674,6 +1692,11 @@ export function App() {
     slideViewerState.kind === 'closed' ? null : slideViewerState.talkId;
   const activeSlideDeckId =
     slideViewerState.kind === 'closed' ? null : slideViewerState.deckId;
+  React.useEffect(() => {
+    void window.indicoInk.setSyncActiveDeck(
+      destination === 'slides' ? activeSlideDeckId : null,
+    );
+  }, [activeSlideDeckId, destination]);
   const activeSlideDownloadProgress =
     activeSlideDownloadStatus?.kind === 'downloading'
       ? (() => {
@@ -3055,7 +3078,6 @@ export function App() {
     });
   }, []);
 
-
   React.useEffect(() => {
     const operationId = agendaDownloadStatus?.operationId;
     if (
@@ -3484,7 +3506,27 @@ export function App() {
                 />
               )
             }
-            actions={commandBarActions}
+            actions={
+              <>
+                {commandBarActions}
+                <IconButton
+                  label={`Sync status: ${syncStatus.message}. Open sync settings.`}
+                  title={syncStatus.message}
+                  icon={
+                    syncStatus.state === 'needs-attention'
+                      ? 'info'
+                      : syncStatus.state === 'paused'
+                        ? 'pause'
+                        : syncStatus.state === 'publishing' ||
+                            syncStatus.state === 'checking' ||
+                            syncStatus.state === 'receiving'
+                          ? 'refresh'
+                          : 'cloud'
+                  }
+                  onClick={() => setDestination('settings')}
+                />
+              </>
+            }
           />
         )}
 
@@ -4688,7 +4730,7 @@ export function App() {
                                 <StatusLabel
                                   label={talk.contributionId}
                                   tone="neutral"
-                                  icon="info"
+                                  icon="pause"
                                 />
                                 <StatusLabel
                                   label={talk.sessionTitle}
@@ -4786,6 +4828,147 @@ export function App() {
           {destination === 'settings' && (
             <section className="page-stack">
               <div className="settings-panel">
+                <DetailsSurface
+                  title="Folder sync"
+                  subtitle="Your library stays available locally while devices exchange changes through a shared folder."
+                >
+                  <div className="settings-list">
+                    <div className="settings-row settings-row-column">
+                      <span>Sync status</span>
+                      <div className="settings-row-stack settings-row-stack-wide">
+                        <strong>{syncStatus.message}</strong>
+                        {syncStatus.pendingChanges > 0 ? (
+                          <span className="settings-row-hint">
+                            {syncStatus.pendingChanges} local change
+                            {syncStatus.pendingChanges === 1 ? '' : 's'}{' '}
+                            waiting.
+                          </span>
+                        ) : null}
+                        <div className="settings-row-actions">
+                          {syncStatus.state === 'not-configured' ? (
+                            <PrimaryButton
+                              icon="open"
+                              onClick={() => {
+                                void window.indicoInk
+                                  .configureSync()
+                                  .then(setSyncStatus)
+                                  .catch((error: unknown) =>
+                                    setSyncStatus({
+                                      ...initialSyncStatus,
+                                      state: 'needs-attention',
+                                      message:
+                                        error instanceof Error
+                                          ? error.message
+                                          : 'Sync setup failed.',
+                                    }),
+                                  );
+                              }}
+                            >
+                              Choose shared folder
+                            </PrimaryButton>
+                          ) : (
+                            <>
+                              <PrimaryButton
+                                icon="refresh"
+                                onClick={() => {
+                                  const action =
+                                    syncStatus.state === 'paused'
+                                      ? window.indicoInk.resumeSync()
+                                      : window.indicoInk.retrySync();
+                                  void action.then(setSyncStatus);
+                                }}
+                              >
+                                {syncStatus.state === 'paused'
+                                  ? 'Resume sync'
+                                  : 'Sync now'}
+                              </PrimaryButton>
+                              <PrimaryButton
+                                icon="open"
+                                onClick={() => {
+                                  void window.indicoInk
+                                    .configureSync()
+                                    .then(setSyncStatus)
+                                    .catch((error: unknown) =>
+                                      setSyncStatus({
+                                        ...initialSyncStatus,
+                                        state: 'needs-attention',
+                                        message:
+                                          error instanceof Error
+                                            ? error.message
+                                            : 'Sync folder change failed.',
+                                      }),
+                                    );
+                                }}
+                              >
+                                Change folder
+                              </PrimaryButton>
+                              {syncStatus.state === 'paused' ? null : (
+                                <IconButton
+                                  label="Pause sync"
+                                  title="Pause sync"
+                                  icon="info"
+                                  onClick={() => {
+                                    void window.indicoInk
+                                      .pauseSync()
+                                      .then(setSyncStatus);
+                                  }}
+                                />
+                              )}
+                              <IconButton
+                                label="Disconnect sync"
+                                title="Disconnect this device from the shared folder"
+                                icon="close"
+                                onClick={() => {
+                                  void window.indicoInk
+                                    .disconnectSync()
+                                    .then(setSyncStatus);
+                                }}
+                              />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {syncStatus.folderPath ? (
+                      <div className="settings-row settings-row-column">
+                        <span>Shared folder path</span>
+                        <strong>{syncStatus.folderPath}</strong>
+                      </div>
+                    ) : null}
+                    {syncStatus.state !== 'not-configured' ? (
+                      <div className="settings-row">
+                        <span>Cloud delivery</span>
+                        <strong>Unconfirmed by local folder sync</strong>
+                      </div>
+                    ) : null}
+                    {syncStatus.lastPublishedAt ? (
+                      <div className="settings-row">
+                        <span>Last published</span>
+                        <strong>
+                          {new Date(
+                            syncStatus.lastPublishedAt,
+                          ).toLocaleString()}
+                        </strong>
+                      </div>
+                    ) : null}
+                    {syncStatus.lastCheckedAt ? (
+                      <div className="settings-row">
+                        <span>Last checked</span>
+                        <strong>
+                          {new Date(syncStatus.lastCheckedAt).toLocaleString()}
+                        </strong>
+                      </div>
+                    ) : null}
+                    {syncStatus.peerReceivedAt ? (
+                      <div className="settings-row">
+                        <span>Last peer changes received</span>
+                        <strong>
+                          {new Date(syncStatus.peerReceivedAt).toLocaleString()}
+                        </strong>
+                      </div>
+                    ) : null}
+                  </div>
+                </DetailsSurface>
                 <DetailsSurface
                   title="Application settings"
                   subtitle="Local data access."

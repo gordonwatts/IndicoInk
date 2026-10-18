@@ -4,6 +4,7 @@ type WorkerRequest = {
   requestId: string;
   command:
     | 'initialize'
+    | 'beginScan'
     | 'pause'
     | 'resume'
     | 'publish'
@@ -40,6 +41,9 @@ parentPort.on('message', async (event) => {
           String(request.payload.rootPath ?? ''),
           String(request.payload.deviceId ?? ''),
         );
+        break;
+      case 'beginScan':
+        result = core.beginScan();
         break;
       case 'pause':
         result = core.pause();

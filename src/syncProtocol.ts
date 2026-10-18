@@ -7,6 +7,24 @@ import {
 
 export type SyncVector = Record<string, number>;
 
+export type SyncCatalog = {
+  format: 'indicoink-catalog';
+  version: 1;
+  workspaceId: string;
+  deviceId: string;
+  generation: number;
+  updatedAt: number;
+  conferences: Array<{
+    conferenceId: string;
+    sourceKind: 'indico' | 'web';
+    sourceUrl: string;
+    title: string;
+    dates: string;
+    host: string;
+    metadataSnapshotId: string | null;
+  }>;
+};
+
 export type SyncOperation = {
   format: 'indicoink-operation';
   version: 1;
@@ -26,6 +44,9 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const PATH_COMPONENT_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+// Prevent an otherwise tiny incomplete operation from causing an unbounded
+// allocation while a metadata batch is assembled.
+export const MAX_METADATA_PARTS = 4096;
 
 function fail(message: string): never {
   throw new Error(`Invalid sync record: ${message}`);
@@ -575,7 +596,8 @@ const validateMetadataEntity = (
   if (kind === 'conference') {
     if (
       !isSafePathComponent(value.id) ||
-      !isNonEmptyString(value.sourceUrl) ||
+      typeof value.sourceUrl !== 'string' ||
+      !isShareableSourceUrl(value.sourceUrl) ||
       value.id !== createConferenceId(value.sourceUrl) ||
       (value.sourceKind !== 'indico' && value.sourceKind !== 'web') ||
       (value.timeZone !== undefined &&
@@ -593,6 +615,9 @@ const validateMetadataEntity = (
     if (
       !isSafePathComponent(value.id) ||
       !isNonEmptyString(value.contributionId) ||
+      !isCredentialFreeMetadataUrl(value.contributionId) ||
+      typeof value.contributionUrl !== 'string' ||
+      !isCredentialFreeMetadataUrl(value.contributionUrl) ||
       value.id !== createTalkId(conferenceId, value.contributionId) ||
       (value.startsAt !== null && !isSafeInteger(value.startsAt)) ||
       (value.endsAt !== null && !isSafeInteger(value.endsAt)) ||
@@ -604,7 +629,8 @@ const validateMetadataEntity = (
         value.entryKind !== 'talk' &&
         value.entryKind !== 'linked-agenda') ||
       (value.linkedAgendaUrl !== undefined &&
-        typeof value.linkedAgendaUrl !== 'string')
+        (typeof value.linkedAgendaUrl !== 'string' ||
+          !isCredentialFreeMetadataUrl(value.linkedAgendaUrl)))
     ) {
       fail('talk metadata fields are invalid');
     }
@@ -614,6 +640,8 @@ const validateMetadataEntity = (
     !isSafePathComponent(value.id) ||
     !isNonEmptyString(value.talkId) ||
     !isNonEmptyString(value.sourceUrl) ||
+    typeof value.sourceUrl !== 'string' ||
+    !isShareableSourceUrl(value.sourceUrl) ||
     value.id !== createDeckId(value.talkId, value.sourceUrl) ||
     (value.kind !== 'pdf' && value.kind !== 'other') ||
     (value.upstreamStatus !== undefined &&
@@ -777,6 +805,7 @@ const validatePayload = (
       !isUuid(payload.batchId) ||
       !isSafeInteger(payload.partIndex) ||
       !isSafeInteger(payload.partCount, 1) ||
+      payload.partCount > MAX_METADATA_PARTS ||
       payload.partIndex >= payload.partCount ||
       (payload.partIndex === 0) !== (payload.conference !== null) ||
       !Array.isArray(payload.talks) ||
@@ -921,6 +950,131 @@ export const validateOperation = (value: unknown): SyncOperation => {
     fail('operation integrity check failed');
   }
   return value as unknown as SyncOperation;
+};
+
+const CREDENTIAL_QUERY_KEY =
+  /^(?:access[_-]?token|api[_-]?key|auth|authorization|client[_-]?secret|key|password|passwd|secret|sig|signature|token|x-amz-(?:credential|security-token|signature)|x-goog-(?:credential|signature))$/i;
+
+export const isCredentialFreeMetadataUrl = (value: string) => {
+  if (/^(?:file:|[a-z]:[\\/]|\\\\)/i.test(value)) return false;
+  const absoluteUrl = /^[a-z][a-z\d+.-]*:\/\//i.test(value);
+  const protocolRelativeUrl = value.startsWith('//');
+  if (!absoluteUrl && !protocolRelativeUrl) return true;
+  try {
+    const parsed = new URL(protocolRelativeUrl ? `https:${value}` : value);
+    const fragmentParams = new URLSearchParams(parsed.hash.slice(1));
+    return (
+      !parsed.username &&
+      !parsed.password &&
+      ![...parsed.searchParams.keys(), ...fragmentParams.keys()].some((key) =>
+        CREDENTIAL_QUERY_KEY.test(key),
+      )
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const isShareableSourceUrl = (sourceUrl: string) => {
+  if (!/^https?:\/\//i.test(sourceUrl)) return false;
+  try {
+    const parsed = new URL(sourceUrl);
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      Boolean(parsed.hostname) &&
+      isCredentialFreeMetadataUrl(sourceUrl)
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const validateCatalog = (value: unknown): SyncCatalog => {
+  if (!isRecord(value)) fail('catalog must be an object');
+  exactKeys(value, [
+    'format',
+    'version',
+    'workspaceId',
+    'deviceId',
+    'generation',
+    'updatedAt',
+    'conferences',
+  ]);
+  if (
+    value.format !== 'indicoink-catalog' ||
+    value.version !== 1 ||
+    !isUuid(value.workspaceId) ||
+    !isUuid(value.deviceId) ||
+    !isSafeInteger(value.generation, 1) ||
+    !isSafeInteger(value.updatedAt) ||
+    !Array.isArray(value.conferences) ||
+    value.conferences.length > 10_000
+  ) {
+    fail('catalog identity, generation, or bounds are invalid');
+  }
+  const seen = new Set<string>();
+  const conferences = value.conferences.map((entry) => {
+    if (!isRecord(entry)) fail('catalog conference must be an object');
+    exactKeys(entry, [
+      'conferenceId',
+      'sourceKind',
+      'sourceUrl',
+      'title',
+      'dates',
+      'host',
+      'metadataSnapshotId',
+    ]);
+    if (
+      !isNonEmptyString(entry.conferenceId) ||
+      !isNonEmptyString(entry.sourceUrl) ||
+      !isShareableSourceUrl(entry.sourceUrl) ||
+      typeof entry.title !== 'string' ||
+      typeof entry.dates !== 'string' ||
+      typeof entry.host !== 'string' ||
+      (entry.sourceKind !== 'indico' && entry.sourceKind !== 'web') ||
+      (entry.metadataSnapshotId !== null &&
+        !isUuid(entry.metadataSnapshotId)) ||
+      seen.has(entry.conferenceId)
+    ) {
+      fail('catalog conference record is invalid or duplicated');
+    }
+    let expectedId: string;
+    try {
+      expectedId = createConferenceId(entry.sourceUrl);
+    } catch {
+      return fail('catalog conference source URL is invalid');
+    }
+    if (expectedId !== entry.conferenceId) {
+      fail('catalog conference ID does not match its source URL');
+    }
+    seen.add(entry.conferenceId);
+    return {
+      conferenceId: entry.conferenceId,
+      sourceKind: entry.sourceKind as 'indico' | 'web',
+      sourceUrl: entry.sourceUrl,
+      title: entry.title,
+      dates: entry.dates,
+      host: entry.host,
+      metadataSnapshotId: entry.metadataSnapshotId,
+    };
+  });
+  if (
+    conferences.some(
+      (entry, index) =>
+        index > 0 && conferences[index - 1]!.conferenceId > entry.conferenceId,
+    )
+  ) {
+    fail('catalog conferences are not sorted by ID');
+  }
+  return {
+    format: 'indicoink-catalog',
+    version: 1,
+    workspaceId: value.workspaceId,
+    deviceId: value.deviceId,
+    generation: value.generation,
+    updatedAt: value.updatedAt,
+    conferences,
+  };
 };
 
 export const operationHappensBefore = (

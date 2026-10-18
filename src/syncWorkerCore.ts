@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { constants, type Dirent } from 'node:fs';
+import { constants, type Dir, type Dirent } from 'node:fs';
 import {
   type FileHandle,
   lstat,
@@ -48,6 +48,14 @@ const DEFAULT_LIMITS: SyncWorkerLimits = {
   maxReadBytes: 8 * 1024 * 1024,
   maxElapsedMs: 10_000,
 };
+const MAX_SYNC_DIRECTORY_ENTRIES = 10_000;
+
+type DirectoryIndex = {
+  directory: Dir;
+  entries: Array<{ name: string; kind: 'file' | 'directory' }>;
+  complete: boolean;
+  pendingEntry: Dirent | null;
+};
 
 const assertSafeRelativePath = (path: string) => {
   if (
@@ -83,6 +91,7 @@ export class SyncWorkerCore {
   private rootPath: string | null = null;
   private deviceId: string | null = null;
   private paused = false;
+  private readonly directoryIndex = new Map<string, DirectoryIndex>();
 
   async initialize(rootPath: string, deviceId: string) {
     if (!isAbsolute(rootPath) || !isUuid(deviceId)) {
@@ -92,7 +101,11 @@ export class SyncWorkerCore {
     if (!rootStat.isDirectory() || isReparsePoint(rootStat)) {
       throw new Error('Sync folder must be a normal directory, not a link.');
     }
-    this.rootPath = await realpath(rootPath);
+    const resolvedRoot = await realpath(rootPath);
+    if (this.rootPath !== resolvedRoot || this.deviceId !== deviceId) {
+      this.clearDirectoryIndex();
+    }
+    this.rootPath = resolvedRoot;
     this.deviceId = deviceId;
     this.paused = false;
     return { ready: true as const };
@@ -100,7 +113,14 @@ export class SyncWorkerCore {
 
   pause() {
     this.paused = true;
+    this.clearDirectoryIndex();
     return { paused: true as const };
+  }
+
+  beginScan() {
+    this.assertActive();
+    this.clearDirectoryIndex();
+    return { ready: true as const };
   }
 
   resume() {
@@ -204,6 +224,9 @@ export class SyncWorkerCore {
       }
     }
     if (existing) {
+      if (existing.equals(Buffer.from(bytes))) {
+        return { replaced: false as const, byteLength: bytes.byteLength };
+      }
       const previous = parseStrictSyncJson(existing);
       if (
         !previous ||
@@ -265,6 +288,9 @@ export class SyncWorkerCore {
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const openedStat = await handle.stat();
+      if (openedStat.size > maxBytes) {
+        throw new Error('Sync file exceeds its read byte limit.');
+      }
       const beforeReadPath = await realpath(path);
       const beforeReadRelative = relative(this.rootPath!, beforeReadPath);
       if (
@@ -342,50 +368,97 @@ export class SyncWorkerCore {
     if (!directoryStat.isDirectory() || isReparsePoint(directoryStat)) {
       throw new Error('Sync enumeration target must be a normal directory.');
     }
-    const directory = await opendir(directoryPath);
-    const collected: Array<{ name: string; kind: 'file' | 'directory' }> = [];
-    let partial = false;
-    for await (const entry of directory) {
-      if (performance.now() - startedAt > activeLimits.maxElapsedMs) {
-        partial = true;
+    let index = this.directoryIndex.get(cursor.relativeDirectory);
+    if (!index) {
+      index = {
+        directory: await opendir(directoryPath),
+        entries: [],
+        complete: false,
+        pendingEntry: null,
+      };
+      this.directoryIndex.set(cursor.relativeDirectory, index);
+    }
+    let examined = 0;
+    while (
+      !index.complete &&
+      examined < activeLimits.maxDirectoryEntries &&
+      performance.now() - startedAt < activeLimits.maxElapsedMs
+    ) {
+      let entry: Dirent | null;
+      try {
+        entry = index.pendingEntry ?? (await index.directory.read());
+      } catch (error) {
+        this.discardDirectoryIndex(cursor.relativeDirectory, index);
+        throw error;
+      }
+      index.pendingEntry = null;
+      if (!entry) {
+        index.complete = true;
+        await index.directory.close().catch(() => undefined);
+        index.entries.sort((left, right) =>
+          left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+        );
         break;
       }
+      examined += 1;
       if (isReparsePoint(entry)) {
+        this.discardDirectoryIndex(cursor.relativeDirectory, index);
         throw new Error(`Sync folder contains a link: ${entry.name}`);
       }
       if (!entry.isDirectory() && !entry.isFile()) {
+        this.discardDirectoryIndex(cursor.relativeDirectory, index);
         throw new Error(
           `Sync folder contains an unsupported entry: ${entry.name}`,
         );
       }
-      collected.push({
+      index.entries.push({
         name: entry.name,
         kind: entry.isDirectory() ? 'directory' : 'file',
       });
-      if (collected.length > DEFAULT_LIMITS.maxDirectoryEntries) {
-        throw new Error('Sync directory exceeds its bounded entry limit.');
+      if (index.entries.length > MAX_SYNC_DIRECTORY_ENTRIES) {
+        this.discardDirectoryIndex(cursor.relativeDirectory, index);
+        throw new Error(
+          `Sync directory exceeds the ${MAX_SYNC_DIRECTORY_ENTRIES}-entry safety limit.`,
+        );
       }
     }
-    if (partial) {
+    if (
+      !index.complete &&
+      examined === activeLimits.maxDirectoryEntries &&
+      performance.now() - startedAt < activeLimits.maxElapsedMs
+    ) {
+      try {
+        index.pendingEntry = await index.directory.read();
+      } catch (error) {
+        this.discardDirectoryIndex(cursor.relativeDirectory, index);
+        throw error;
+      }
+      if (!index.pendingEntry) {
+        index.complete = true;
+        await index.directory.close().catch(() => undefined);
+        index.entries.sort((left, right) =>
+          left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+        );
+      }
+    }
+    if (!index.complete) {
       return {
         entries: [],
         nextCursor: cursor,
-        examined: collected.length,
+        examined,
         partial: true,
       };
     }
-    collected.sort((left, right) =>
-      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-    );
     const remaining = cursor.lastName
-      ? collected.filter(({ name }) => name > cursor.lastName!)
-      : collected;
+      ? index.entries.filter(({ name }) => name > cursor.lastName!)
+      : index.entries;
     const pageEntries = remaining.slice(0, activeLimits.maxDirectoryEntries);
-    const hasMore = remaining.length > pageEntries.length || partial;
+    const hasMore = remaining.length > pageEntries.length;
     const lastName = pageEntries.at(-1)?.name ?? cursor.lastName;
+    if (!hasMore) this.directoryIndex.delete(cursor.relativeDirectory);
     return {
       entries: pageEntries,
-      examined: collected.length,
+      examined: examined + pageEntries.length,
       partial: hasMore,
       nextCursor: hasMore ? { ...cursor, lastName: lastName ?? null } : null,
     };
@@ -398,6 +471,23 @@ export class SyncWorkerCore {
     if (this.paused) {
       throw new Error('Sync worker is paused.');
     }
+  }
+
+  private clearDirectoryIndex() {
+    for (const index of this.directoryIndex.values()) {
+      if (!index.complete) void index.directory.close().catch(() => undefined);
+    }
+    this.directoryIndex.clear();
+  }
+
+  private discardDirectoryIndex(
+    relativeDirectory: string,
+    index: DirectoryIndex,
+  ) {
+    if (this.directoryIndex.get(relativeDirectory) === index) {
+      this.directoryIndex.delete(relativeDirectory);
+    }
+    if (!index.complete) void index.directory.close().catch(() => undefined);
   }
 
   private async resolvePath(relativePath: string, allowMissing: boolean) {

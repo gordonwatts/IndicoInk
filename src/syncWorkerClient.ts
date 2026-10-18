@@ -6,6 +6,7 @@ import type { DirectoryCursor, DirectoryPage } from './syncWorkerCore';
 
 type WorkerCommand =
   | 'initialize'
+  | 'beginScan'
   | 'pause'
   | 'resume'
   | 'publish'
@@ -77,6 +78,10 @@ export class SyncWorkerClient {
     return this.request<{ paused: false }>('resume', {});
   }
 
+  beginScan() {
+    return this.request<{ ready: true }>('beginScan', {});
+  }
+
   async publishImmutable(relativePath: string, bytes: Uint8Array) {
     return this.request<{ published: true; byteLength: number }>('publish', {
       relativePath,
@@ -85,7 +90,7 @@ export class SyncWorkerClient {
   }
 
   async replaceCatalog(relativePath: string, bytes: Uint8Array) {
-    return this.request<{ replaced: true; byteLength: number }>(
+    return this.request<{ replaced: boolean; byteLength: number }>(
       'replaceCatalog',
       { relativePath, bytes: Uint8Array.from(bytes) },
     );
@@ -108,8 +113,11 @@ export class SyncWorkerClient {
     return result.bytes;
   }
 
-  enumerateDirectory(cursor: DirectoryCursor) {
-    return this.request<DirectoryPage>('enumerate', { cursor });
+  enumerateDirectory(
+    cursor: DirectoryCursor,
+    limits?: { maxDirectoryEntries?: number; maxElapsedMs?: number },
+  ) {
+    return this.request<DirectoryPage>('enumerate', { cursor, limits });
   }
 
   close() {

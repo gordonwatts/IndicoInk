@@ -418,6 +418,107 @@ export const mergeAnnotationOperations = (
 export const mergeBookmarkState = (operations: SyncOperation[]) =>
   mergeBookmarkOperations(operations);
 
+/**
+ * Return only metadata-stream operations that extend the known contiguous
+ * causal frontier. A metadata snapshot batch advances atomically: incomplete,
+ * reordered, or context-dependent batches cannot let later bookmarks or
+ * refreshes leapfrog their missing predecessor.
+ */
+export const causallyReadyMetadataOperations = (
+  operations: SyncOperation[],
+  initialFrontier: Record<string, number>,
+) => {
+  const ordered = [...operations].sort(
+    (left, right) =>
+      left.deviceId.localeCompare(right.deviceId) ||
+      left.sequence - right.sequence,
+  );
+  const frontier = { ...initialFrontier };
+  const ready = new Set<string>();
+  for (const operation of ordered) {
+    if (operation.sequence <= (frontier[operation.deviceId] ?? 0)) {
+      ready.add(operation.operationId);
+    }
+  }
+  const batches = new Map<string, SyncOperation[]>();
+  for (const operation of ordered) {
+    if (operation.kind !== 'conference.metadata') continue;
+    const id = String(operation.payload.batchId);
+    const parts = batches.get(id) ?? [];
+    parts.push(operation);
+    batches.set(id, parts);
+  }
+  const completeBatch = (batch: SyncOperation[]) => {
+    const count = Number(batch[0]?.payload.partCount);
+    if (
+      !Number.isSafeInteger(count) ||
+      count < 1 ||
+      count > 4096 ||
+      batch.length !== count
+    ) {
+      return false;
+    }
+    const indices = new Set(
+      batch.map((part) => Number(part.payload.partIndex)),
+    );
+    return indices.size === count && indices.has(0) && indices.has(count - 1);
+  };
+  const isObserved = (
+    operation: SyncOperation,
+    current: Record<string, number>,
+  ) =>
+    Object.entries(operation.context).every(
+      ([deviceId, sequence]) => sequence <= (current[deviceId] ?? 0),
+    );
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const operation of ordered) {
+      if (ready.has(operation.operationId)) continue;
+      if (operation.kind === 'conference.metadata') {
+        const batch = batches.get(String(operation.payload.batchId))!;
+        if (Number(operation.payload.partIndex) !== 0 || !completeBatch(batch))
+          continue;
+        const parts = [...batch].sort(
+          (left, right) => left.sequence - right.sequence,
+        );
+        const staged = { ...frontier };
+        let next = staged[operation.deviceId] ?? 0;
+        let valid = true;
+        for (const part of parts) {
+          if (
+            part.deviceId !== operation.deviceId ||
+            part.sequence !== ++next ||
+            !isObserved(part, staged)
+          ) {
+            valid = false;
+            break;
+          }
+          staged[part.deviceId] = part.sequence;
+        }
+        if (!valid) continue;
+        for (const part of parts) ready.add(part.operationId);
+        Object.assign(frontier, staged);
+        progressed = true;
+        continue;
+      }
+      if (
+        operation.sequence !== (frontier[operation.deviceId] ?? 0) + 1 ||
+        !isObserved(operation, frontier)
+      ) {
+        continue;
+      }
+      ready.add(operation.operationId);
+      frontier[operation.deviceId] = operation.sequence;
+      progressed = true;
+    }
+  }
+  return {
+    operations: ordered.filter((operation) => ready.has(operation.operationId)),
+    frontier,
+  };
+};
+
 export type MetadataRefresh = {
   operation: SyncOperation;
   upstreamRevision: string | null;
@@ -443,7 +544,6 @@ export const mergeMetadataRefreshes = (refreshes: MetadataRefresh[]) => {
   );
   if (
     revisions.size === 1 &&
-    candidates[0]!.upstreamRevision !== null &&
     candidates.every(
       (candidate) =>
         canonicalJson(candidate.records) ===
