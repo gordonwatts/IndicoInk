@@ -1,5 +1,5 @@
-import { existsSync, mkdtempSync } from 'node:fs';
-import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -73,6 +73,7 @@ describe('persistence store', () => {
       'sync_document_versions',
       'sync_annotation_versions',
       'sync_retirements',
+      'sync_legacy_version_migration',
     ]) {
       expect(tableNames.has(table), `${table} migration`).toBe(true);
     }
@@ -339,6 +340,7 @@ describe('persistence store', () => {
     const priorSchema = new DatabaseSync(dbPath);
     priorSchema.exec(`
       DROP TABLE sync_retirements;
+      DROP TABLE sync_legacy_version_migration;
       DROP TABLE sync_annotation_versions;
       DROP TABLE sync_document_versions;
       DROP TABLE sync_checkpoints;
@@ -375,7 +377,7 @@ describe('persistence store', () => {
           user_version: number;
         }
       ).user_version,
-    ).toBe(10);
+    ).toBe(11);
     expect(
       upgradedDb
         .prepare(
@@ -395,6 +397,268 @@ describe('persistence store', () => {
       version_state: 'unknown',
     });
     upgradedDb.close();
+  });
+
+  it('binds legacy annotations only to the exact cached PDF and supports explicit association', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'indicoink-legacy-pdf-'));
+    const dbPath = join(root, 'persistence.sqlite3');
+    const deckCacheRoot = join(root, 'deck-cache');
+    const store = new PersistenceStore(dbPath, () => 1700000000000);
+    await store.upsertConference({
+      id: 'conference-legacy',
+      sourceUrl: 'https://example.org/event',
+      title: 'Legacy',
+      dates: '',
+      host: 'example.org',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertTalk({
+      id: 'talk-legacy',
+      conferenceId: 'conference-legacy',
+      contributionId: '1',
+      contributionUrl: 'https://example.org/event/1',
+      title: 'Talk',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertDeck({
+      id: 'deck-legacy',
+      conferenceId: 'conference-legacy',
+      talkId: 'talk-legacy',
+      sourceUrl: 'https://example.org/slides.pdf',
+      displayName: 'Slides',
+      mimeType: 'application/pdf',
+      selected: true,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertSlide({
+      id: createSlideId('deck-legacy', 1),
+      conferenceId: 'conference-legacy',
+      talkId: 'talk-legacy',
+      deckId: 'deck-legacy',
+      slideNumber: 1,
+      annotated: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertAnnotation({
+      id: 'note-legacy',
+      conferenceId: 'conference-legacy',
+      talkId: 'talk-legacy',
+      deckId: 'deck-legacy',
+      slideId: createSlideId('deck-legacy', 1),
+      x: 0.2,
+      y: 0.3,
+      text: 'Keep this note',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+
+    // Simulate a pre-sync library upgraded by migration 11. The migration
+    // seeds the one-time binding marker for existing PDF decks.
+    const legacyDb = new DatabaseSync(dbPath);
+    legacyDb.exec('DROP TABLE sync_legacy_version_migration;');
+    legacyDb.exec('PRAGMA user_version = 10;');
+    legacyDb.close();
+    await store.close();
+
+    const cachePath = join(
+      deckCacheRoot,
+      'conference-legacy',
+      'deck-legacy.pdf',
+    );
+    mkdirSync(join(deckCacheRoot, 'conference-legacy'), { recursive: true });
+    writeFileSync(cachePath, Buffer.from('%PDF-legacy-original-bytes'));
+    const expectedVersion = createHash('sha256')
+      .update('%PDF-legacy-original-bytes')
+      .digest('hex');
+
+    const upgraded = new PersistenceStore(dbPath, () => 1700000001000);
+    await upgraded.bindLegacyDeckDocumentVersion(
+      'deck-legacy',
+      expectedVersion,
+    );
+    await expect(
+      upgraded.bindLegacyDeckDocumentVersion('deck-legacy', 'b'.repeat(64)),
+    ).resolves.toBe(false);
+    await expect(upgraded.getAnnotation('note-legacy')).resolves.toMatchObject({
+      text: 'Keep this note',
+    });
+    const boundDb = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      boundDb
+        .prepare(
+          'SELECT document_version, version_state FROM sync_annotation_versions WHERE annotation_id = ?',
+        )
+        .get('note-legacy'),
+    ).toEqual({ document_version: expectedVersion, version_state: 'known' });
+    boundDb.close();
+
+    await upgraded.close();
+    const absentPath = createTempDbPath('legacy-unknown');
+    const absent = new PersistenceStore(absentPath, () => 1700000002000);
+    await absent.upsertConference({
+      id: 'conference-absent',
+      sourceUrl: 'https://example.org/absent',
+      title: 'Absent',
+      dates: '',
+      host: 'example.org',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await absent.upsertTalk({
+      id: 'talk-absent',
+      conferenceId: 'conference-absent',
+      contributionId: '1',
+      contributionUrl: 'https://example.org/absent/1',
+      title: 'Talk',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await absent.upsertDeck({
+      id: 'deck-absent',
+      conferenceId: 'conference-absent',
+      talkId: 'talk-absent',
+      sourceUrl: 'https://example.org/replaced.pdf',
+      displayName: 'Slides',
+      mimeType: 'application/pdf',
+      selected: true,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await absent.upsertSlide({
+      id: createSlideId('deck-absent', 1),
+      conferenceId: 'conference-absent',
+      talkId: 'talk-absent',
+      deckId: 'deck-absent',
+      slideNumber: 1,
+      annotated: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await absent.upsertAnnotation({
+      id: 'note-absent',
+      conferenceId: 'conference-absent',
+      talkId: 'talk-absent',
+      deckId: 'deck-absent',
+      slideId: createSlideId('deck-absent', 1),
+      x: 0.1,
+      y: 0.1,
+      text: 'Unbound',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    const absentDb = new DatabaseSync(absentPath);
+    absentDb.exec('DROP TABLE sync_legacy_version_migration;');
+    absentDb.exec('PRAGMA user_version = 10;');
+    absentDb.close();
+    await absent.close();
+    const reopened = new PersistenceStore(absentPath, () => 1700000003000);
+    await reopened.bindLegacyDeckDocumentVersion('deck-absent', null);
+    const replacementHash = 'c'.repeat(64);
+    await reopened.recordCurrentDeckDocumentVersion(
+      'deck-absent',
+      replacementHash,
+    );
+    await reopened.setSyncConfiguration({
+      workspaceId: '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d',
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    await reopened.saveDeckPdfWorkspaceChanges({
+      sourceUrl: 'https://example.org/replaced.pdf',
+      conferenceId: 'conference-absent',
+      talkId: 'talk-absent',
+      deckId: 'deck-absent',
+      pageCount: 1,
+      revision: 1,
+      changes: [
+        {
+          kind: 'upsert-text-note',
+          pageIndex: 0,
+          note: {
+            id: 'note-new',
+            conferenceId: 'conference-absent',
+            talkId: 'talk-absent',
+            deckId: 'deck-absent',
+            slideId: createSlideId('deck-absent', 1),
+            x: 0.2,
+            y: 0.2,
+            text: 'New bytes',
+            createdAt: 1700000003000,
+            updatedAt: 1700000003000,
+          },
+        },
+      ],
+      history: createWorkspaceHistory(),
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+    await expect(reopened.getAnnotation('note-absent')).resolves.toMatchObject({
+      text: 'Unbound',
+    });
+    const unknownDb = new DatabaseSync(absentPath, { readOnly: true });
+    expect(
+      unknownDb
+        .prepare(
+          'SELECT document_version, version_state FROM sync_annotation_versions WHERE annotation_id = ?',
+        )
+        .get('note-absent'),
+    ).toEqual({ document_version: null, version_state: 'unknown' });
+    expect(
+      unknownDb
+        .prepare(
+          'SELECT document_version, version_state FROM sync_annotation_versions WHERE annotation_id = ?',
+        )
+        .get('note-new'),
+    ).toEqual({ document_version: replacementHash, version_state: 'known' });
+    unknownDb.close();
+    const explicitHash = 'd'.repeat(64);
+    await reopened.associateUnknownAnnotationsWithDocumentVersion(
+      'deck-absent',
+      ['note-absent'],
+      explicitHash,
+    );
+    await reopened.close();
+    const restart = new PersistenceStore(absentPath, () => 1700000004000);
+    const associatedDb = new DatabaseSync(absentPath, { readOnly: true });
+    expect(
+      associatedDb
+        .prepare(
+          'SELECT document_version, version_state FROM sync_annotation_versions WHERE annotation_id = ?',
+        )
+        .get('note-absent'),
+    ).toEqual({ document_version: explicitHash, version_state: 'known' });
+    expect(
+      associatedDb
+        .prepare(
+          'SELECT document_version FROM sync_document_versions WHERE deck_id = ?',
+        )
+        .get('deck-absent'),
+    ).toEqual({ document_version: replacementHash });
+    associatedDb.close();
+    await expect(restart.getAnnotation('note-absent')).resolves.toMatchObject({
+      text: 'Unbound',
+    });
+    await restart.close();
   });
 
   it('creates a fresh schema and supports repository CRUD and transactions', async () => {
@@ -558,7 +822,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(10);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(11);
     versionDb.close();
     expect(existsSync(`${dbPath}.pre-node-sqlite-v7.bak`)).toBe(true);
     const backupDb = new SQL.Database(

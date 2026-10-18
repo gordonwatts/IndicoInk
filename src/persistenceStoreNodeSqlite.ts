@@ -46,7 +46,7 @@ import {
   createViewStateId,
 } from './persistenceModels';
 
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
 const PRE_NODE_SQLITE_BACKUP_SUFFIX = '.pre-node-sqlite-v7.bak';
 
 const getFileName = (value: string) => {
@@ -728,6 +728,27 @@ const migration10 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
+const migration11 = (db: SqliteDatabaseAdapter) => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_legacy_version_migration (
+      deck_id TEXT PRIMARY KEY,
+      state TEXT NOT NULL DEFAULT 'pending',
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  const hasDecks = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'decks'",
+    )
+    .get();
+  if (hasDecks) {
+    db.prepare(
+      `INSERT OR IGNORE INTO sync_legacy_version_migration (deck_id, state, updated_at)
+       SELECT id, 'pending', updated_at FROM decks WHERE kind = 'pdf'`,
+    ).run();
+  }
+};
+
 const migrations = [
   migration1,
   migration2,
@@ -739,6 +760,7 @@ const migrations = [
   migration8,
   migration9,
   migration10,
+  migration11,
 ];
 
 export type SyncProfile = {
@@ -1096,6 +1118,140 @@ export class PersistenceStore {
     private readonly dbPath: string,
     private readonly now = () => Date.now(),
   ) {}
+
+  /**
+   * Resolve the one-time legacy PDF migration before the viewer can display
+   * annotations. A null hash records that the original cache was unavailable;
+   * a later download must never silently claim that it was the original.
+   */
+  async bindLegacyDeckDocumentVersion(
+    deckId: string,
+    cachedDocumentVersion: string | null,
+  ) {
+    if (
+      cachedDocumentVersion !== null &&
+      !/^[0-9a-f]{64}$/.test(cachedDocumentVersion)
+    ) {
+      throw new Error('Cached PDF document version is invalid.');
+    }
+    const db = await this.getDb();
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const migration = db
+        .prepare(
+          `SELECT state FROM sync_legacy_version_migration WHERE deck_id = ?`,
+        )
+        .get(deckId) as { state?: string } | undefined;
+      if (migration?.state !== 'pending') {
+        db.exec('COMMIT;');
+        return false;
+      }
+      const now = this.now();
+      db.prepare(
+        `INSERT OR IGNORE INTO sync_document_versions (
+           deck_id, document_version, version_state, measured_at, updated_at
+         ) VALUES (?, NULL, 'unknown', NULL, ?)`,
+      ).run([deckId, now]);
+      db.prepare(
+        `INSERT OR IGNORE INTO sync_annotation_versions (
+           annotation_id, deck_id, document_version, version_state,
+           association_operation_id, updated_at
+         )
+         SELECT id, deck_id, NULL, 'unknown', NULL, updated_at
+         FROM annotations WHERE deck_id = ?`,
+      ).run(deckId);
+      if (cachedDocumentVersion) {
+        db.prepare(
+          `UPDATE sync_document_versions
+           SET document_version = ?, version_state = 'known', measured_at = ?, updated_at = ?
+           WHERE deck_id = ?`,
+        ).run([cachedDocumentVersion, now, now, deckId]);
+        db.prepare(
+          `UPDATE sync_annotation_versions
+           SET document_version = ?, version_state = 'known', updated_at = ?
+           WHERE deck_id = ? AND document_version IS NULL AND version_state = 'unknown'`,
+        ).run([cachedDocumentVersion, now, deckId]);
+      }
+      db.prepare(
+        `UPDATE sync_legacy_version_migration SET state = ?, updated_at = ? WHERE deck_id = ?`,
+      ).run([cachedDocumentVersion ? 'bound' : 'unknown', now, deckId]);
+      this.markDirty();
+      db.exec('COMMIT;');
+      await this.flushIfNeeded();
+      return true;
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  /** Record bytes currently cached for newly created annotations without
+   * changing legacy annotations that were deliberately left unknown. */
+  async recordCurrentDeckDocumentVersion(
+    deckId: string,
+    documentVersion: string,
+  ) {
+    if (!/^[0-9a-f]{64}$/.test(documentVersion)) {
+      throw new Error('Cached PDF document version is invalid.');
+    }
+    const db = await this.getDb();
+    const now = this.now();
+    db.prepare(
+      `INSERT INTO sync_document_versions (
+         deck_id, document_version, version_state, measured_at, updated_at
+       ) VALUES (?, ?, 'known', ?, ?)
+       ON CONFLICT(deck_id) DO UPDATE SET
+         document_version = excluded.document_version,
+         version_state = 'known', measured_at = excluded.measured_at,
+         updated_at = excluded.updated_at`,
+    ).run([deckId, documentVersion, now, now]);
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
+  async associateUnknownAnnotationsWithDocumentVersion(
+    deckId: string,
+    annotationIds: string[],
+    documentVersion: string,
+  ) {
+    if (
+      !/^[0-9a-f]{64}$/.test(documentVersion) ||
+      annotationIds.length === 0 ||
+      annotationIds.length > 32 ||
+      new Set(annotationIds).size !== annotationIds.length
+    ) {
+      throw new Error('Document-version association is invalid.');
+    }
+    const db = await this.getDb();
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const update = db.prepare(
+        `UPDATE sync_annotation_versions
+         SET document_version = ?, version_state = 'known', updated_at = ?
+         WHERE annotation_id = ? AND deck_id = ? AND version_state = 'unknown'`,
+      );
+      for (const annotationId of annotationIds) {
+        const result = update.run([
+          documentVersion,
+          this.now(),
+          annotationId,
+          deckId,
+        ]);
+        if (Number(result.changes) !== 1) {
+          throw new Error(
+            `Annotation ${annotationId} is missing or already associated.`,
+          );
+        }
+      }
+      this.markDirty();
+      db.exec('COMMIT;');
+      await this.flushIfNeeded();
+      return true;
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
 
   async getSyncProfile(): Promise<SyncProfile> {
     const db = await this.getDb();
