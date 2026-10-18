@@ -1,5 +1,6 @@
 import { constants, existsSync, mkdirSync } from 'node:fs';
 import { copyFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import {
   DatabaseSync,
@@ -39,7 +40,7 @@ import {
   createViewStateId,
 } from './persistenceModels';
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 const PRE_NODE_SQLITE_BACKUP_SUFFIX = '.pre-node-sqlite-v7.bak';
 
 const getFileName = (value: string) => {
@@ -566,6 +567,161 @@ const migration9 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
+const migration10 = (db: SqliteDatabaseAdapter) => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_profile (
+      singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+      library_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      workspace_id TEXT,
+      folder_path TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_stream_state (
+      stream_id TEXT PRIMARY KEY,
+      next_sequence INTEGER NOT NULL DEFAULT 1,
+      local_frontier_json TEXT NOT NULL DEFAULT '{}',
+      remote_frontier_json TEXT NOT NULL DEFAULT '{}',
+      snapshot_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      operation_id TEXT PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      operation_json TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      published_at INTEGER,
+      UNIQUE(stream_id, device_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending
+      ON sync_outbox(state, stream_id, sequence);
+
+    CREATE TABLE IF NOT EXISTS sync_inbox (
+      operation_id TEXT PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      operation_json TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'discovered',
+      discovered_at INTEGER NOT NULL,
+      applied_at INTEGER,
+      UNIQUE(stream_id, device_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_stream
+      ON sync_inbox(stream_id, state, device_id, sequence);
+
+    CREATE TABLE IF NOT EXISTS sync_conflicts (
+      conflict_id TEXT PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      conflict_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open
+      ON sync_conflicts(resolved_at, stream_id);
+
+    CREATE TABLE IF NOT EXISTS sync_catalog_state (
+      device_id TEXT PRIMARY KEY,
+      generation INTEGER NOT NULL DEFAULT 0,
+      catalog_json TEXT,
+      validated_at INTEGER,
+      retired_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_checkpoints (
+      stream_id TEXT NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      frontier_json TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      acknowledged INTEGER NOT NULL DEFAULT 0,
+      validated_at INTEGER NOT NULL,
+      PRIMARY KEY(stream_id, snapshot_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_document_versions (
+      deck_id TEXT PRIMARY KEY,
+      document_version TEXT,
+      version_state TEXT NOT NULL DEFAULT 'unknown',
+      measured_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_annotation_versions (
+      annotation_id TEXT PRIMARY KEY,
+      deck_id TEXT NOT NULL,
+      document_version TEXT,
+      version_state TEXT NOT NULL DEFAULT 'unknown',
+      association_operation_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_retirements (
+      retirement_id TEXT PRIMARY KEY,
+      retired_device_id TEXT NOT NULL,
+      issued_by TEXT NOT NULL,
+      retirement_json TEXT NOT NULL,
+      validated_at INTEGER NOT NULL
+    );
+  `);
+
+  const profile = db
+    .prepare('SELECT singleton_id FROM sync_profile WHERE singleton_id = 1')
+    .get();
+  if (!profile) {
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO sync_profile (singleton_id, library_id, device_id, created_at, updated_at)
+       VALUES (1, @libraryId, @deviceId, @now, @now)`,
+    ).run({ libraryId: randomUUID(), deviceId: randomUUID(), now });
+  }
+
+  // Existing annotations predate PDF byte identity. Record them as unknown so a
+  // later download cannot silently assign them to a different PDF revision.
+  // Some older fixture databases intentionally contain only a subset of tables.
+  const hasDecks = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'decks'",
+    )
+    .get();
+  if (hasDecks) {
+    db.exec(`
+      INSERT OR IGNORE INTO sync_document_versions (
+        deck_id, document_version, version_state, measured_at, updated_at
+      )
+      SELECT id, NULL, 'unknown', NULL, updated_at
+      FROM decks
+      WHERE kind = 'pdf';
+    `);
+
+    const hasAnnotations = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'annotations'",
+      )
+      .get();
+    if (hasAnnotations) {
+      db.exec(`
+        INSERT OR IGNORE INTO sync_annotation_versions (
+          annotation_id, deck_id, document_version, version_state,
+          association_operation_id, updated_at
+        )
+        SELECT annotations.id, annotations.deck_id, NULL, 'unknown', NULL,
+               annotations.updated_at
+        FROM annotations
+        INNER JOIN decks ON decks.id = annotations.deck_id
+        WHERE decks.kind = 'pdf';
+      `);
+    }
+  }
+};
+
 const migrations = [
   migration1,
   migration2,
@@ -576,7 +732,18 @@ const migrations = [
   migration7,
   migration8,
   migration9,
+  migration10,
 ];
+
+export type SyncProfile = {
+  libraryId: string;
+  deviceId: string;
+  workspaceId: string | null;
+  folderPath: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -675,6 +842,10 @@ const rowToAnnotation = (row: Record<string, unknown>): Annotation => {
         ...base,
         x: Number(payload.x ?? 0),
         y: Number(payload.y ?? 0),
+        width:
+          typeof payload.width === 'number' && Number.isFinite(payload.width)
+            ? payload.width
+            : undefined,
         text: typeof payload.text === 'string' ? payload.text : '',
       };
     } catch {
@@ -912,6 +1083,27 @@ export class PersistenceStore {
     private readonly dbPath: string,
     private readonly now = () => Date.now(),
   ) {}
+
+  async getSyncProfile(): Promise<SyncProfile> {
+    const db = await this.getDb();
+    const row = db
+      .prepare('SELECT * FROM sync_profile WHERE singleton_id = 1')
+      .get() as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new Error('Sync profile is missing after database initialization.');
+    }
+
+    return {
+      libraryId: String(row.library_id),
+      deviceId: String(row.device_id),
+      workspaceId:
+        typeof row.workspace_id === 'string' ? row.workspace_id : null,
+      folderPath: typeof row.folder_path === 'string' ? row.folder_path : null,
+      enabled: toBoolean(row.enabled),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    };
+  }
 
   async close() {
     await this.flushIfNeeded();
