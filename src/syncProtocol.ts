@@ -655,9 +655,18 @@ const validatePayload = (
       'documentVersion',
       'logicalNoteId',
       'branchOfOperationId',
+      'resolves',
     ]);
     validateAnnotation(payload.annotation);
     const annotation = payload.annotation as Record<string, unknown>;
+    if (
+      !Array.isArray(payload.resolves) ||
+      payload.resolves.length > 32 ||
+      payload.resolves.some((operationId) => !isUuid(operationId)) ||
+      new Set(payload.resolves).size !== payload.resolves.length
+    ) {
+      fail('annotation resolution references are invalid');
+    }
     if (
       payload.documentVersion !== null &&
       (typeof payload.documentVersion !== 'string' ||
@@ -668,7 +677,8 @@ const validatePayload = (
     if (annotation.kind === 'stroke') {
       if (
         payload.logicalNoteId !== null ||
-        payload.branchOfOperationId !== null
+        payload.branchOfOperationId !== null ||
+        payload.resolves.length !== 0
       ) {
         fail('stroke note-branch fields must be null');
       }
