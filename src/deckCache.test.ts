@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -65,6 +66,31 @@ const makeDownloadResponse = (
 });
 
 describe('deck cache manager', () => {
+  it('identifies cached PDF bytes independently of a stable source URL', async () => {
+    const cacheRoot = createTempDir('deck-version-hash');
+    const manager = new DeckCacheManager(cacheRoot, vi.fn());
+    const deck = makeDeck();
+    const filePath = manager.getCacheFilePath(deck.conferenceId, deck.id);
+    mkdirSync(dirname(filePath), { recursive: true });
+    const originalBytes = Buffer.from('%PDF-1.4\noriginal attachment bytes');
+    writeFileSync(filePath, originalBytes);
+    const firstHash = createHash('sha256').update(originalBytes).digest('hex');
+    await expect(manager.getCachedPdfDocumentVersion(deck)).resolves.toBe(
+      firstHash,
+    );
+
+    const replacementBytes = Buffer.from('%PDF-1.4\nreplacement bytes');
+    writeFileSync(filePath, replacementBytes);
+    const replacementHash = createHash('sha256')
+      .update(replacementBytes)
+      .digest('hex');
+    await expect(manager.getCachedPdfDocumentVersion(deck)).resolves.toBe(
+      replacementHash,
+    );
+    expect(replacementHash).not.toBe(firstHash);
+    expect(deck.sourceUrl).toBe('https://example.org/materials/deck.pdf');
+  });
+
   it('reopens an existing cached deck without downloading it again', async () => {
     const cacheRoot = createTempDir('deck-cache-ready');
     const manager = new DeckCacheManager(cacheRoot, vi.fn());

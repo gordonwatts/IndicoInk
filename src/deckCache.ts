@@ -1,7 +1,8 @@
 import { mkdirSync, existsSync, unlinkSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { open, readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   createIndicoAuthenticatedRequest,
@@ -76,6 +77,27 @@ export class DeckCacheManager {
 
   getCacheFilePath(conferenceId: string, deckId: string) {
     return createCacheFilePath(this.cacheRoot, conferenceId, deckId);
+  }
+
+  async getCachedPdfDocumentVersion(deck: Deck): Promise<string | null> {
+    const filePath = this.getCacheFilePath(deck.conferenceId, deck.id);
+    const hash = createHash('sha256');
+    let firstChunk = true;
+    let validPdf = false;
+    try {
+      for await (const chunk of createReadStream(filePath)) {
+        if (firstChunk) {
+          validPdf =
+            chunk.byteLength > 5 && chunk.subarray(0, 5).toString() === '%PDF-';
+          firstChunk = false;
+        }
+        hash.update(chunk);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    return validPdf ? hash.digest('hex') : null;
   }
 
   async isDeckCached(deck: Deck) {

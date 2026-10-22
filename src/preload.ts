@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
+import type { SyncStatus } from './shared/sync';
 import type { PdfSelection } from './openPdf';
 import type { RefreshLibraryEventResult } from './shared/library';
 import type {
@@ -42,6 +43,37 @@ const getAppSettings = async (): Promise<AppSettings> =>
 
 const setAppSettings = async (settings: AppSettings): Promise<AppSettings> =>
   ipcRenderer.invoke('app:set-settings', settings);
+
+const startSync = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:start');
+
+const getSyncStatus = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:get-status');
+
+const setSyncActiveDeck = async (deckId: string | null): Promise<void> =>
+  ipcRenderer.invoke('sync:set-active-deck', deckId);
+
+const retrySync = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:retry');
+
+const pauseSync = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:pause');
+
+const resumeSync = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:resume');
+
+const configureSync = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:configure');
+
+const disconnectSync = async (): Promise<SyncStatus> =>
+  ipcRenderer.invoke('sync:disconnect');
+
+const onSyncStatusChanged = (listener: (status: SyncStatus) => void) => {
+  const handler = (_event: Electron.IpcRendererEvent, status: SyncStatus) =>
+    listener(status);
+  ipcRenderer.on('sync:status', handler);
+  return () => ipcRenderer.removeListener('sync:status', handler);
+};
 
 const getFullscreen = async (): Promise<boolean> =>
   ipcRenderer.invoke('window:get-fullscreen');
@@ -270,6 +302,15 @@ contextBridge.exposeInMainWorld('indicoInk', {
   toggleFullscreen,
   onFullscreenChanged,
   getAppSettings,
+  startSync,
+  getSyncStatus,
+  setSyncActiveDeck,
+  retrySync,
+  pauseSync,
+  resumeSync,
+  onSyncStatusChanged,
+  configureSync,
+  disconnectSync,
   getStartupIndicoEventUrl,
   onIndicoEventUrlRequested,
   openPdf,
@@ -320,6 +361,15 @@ export type IndicoInkApi = {
     listener: (isFullscreen: boolean) => void,
   ) => () => void;
   getAppSettings: () => Promise<AppSettings>;
+  startSync: () => Promise<SyncStatus>;
+  getSyncStatus: () => Promise<SyncStatus>;
+  setSyncActiveDeck: (deckId: string | null) => Promise<void>;
+  retrySync: () => Promise<SyncStatus>;
+  pauseSync: () => Promise<SyncStatus>;
+  resumeSync: () => Promise<SyncStatus>;
+  onSyncStatusChanged: (listener: (status: SyncStatus) => void) => () => void;
+  configureSync: () => Promise<SyncStatus>;
+  disconnectSync: () => Promise<SyncStatus>;
   getStartupIndicoEventUrl: () => Promise<string | null>;
   onIndicoEventUrlRequested: (
     listener: (eventUrl: string) => void,

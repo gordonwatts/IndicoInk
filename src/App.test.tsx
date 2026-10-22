@@ -9,10 +9,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  App,
-  SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS,
-} from './App';
+import { App, SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS } from './App';
 import { formatAgendaDayLabel, formatAgendaTimeRange } from './agendaTime';
 import { DEFAULT_PEN_COLORS } from './shared/appSettings';
 import type { OpenAiConfigurationSummary } from './shared/openAi';
@@ -212,6 +209,47 @@ describe('App', () => {
       getFullscreen: vi.fn().mockResolvedValue(false),
       toggleFullscreen: vi.fn().mockResolvedValue(true),
       onFullscreenChanged: vi.fn().mockReturnValue(() => {}),
+      startSync: vi.fn().mockResolvedValue({
+        state: 'not-configured',
+        message: 'Set up sync across your devices.',
+        pendingChanges: 0,
+        lastCheckedAt: null,
+        lastPublishedAt: null,
+        peerReceivedAt: null,
+        cloudDeliveryConfirmed: false,
+      }),
+      getSyncStatus: vi.fn().mockResolvedValue({
+        state: 'not-configured',
+        message: 'Set up sync across your devices.',
+        pendingChanges: 0,
+        lastCheckedAt: null,
+        lastPublishedAt: null,
+        peerReceivedAt: null,
+        cloudDeliveryConfirmed: false,
+      }),
+      setSyncActiveDeck: vi.fn().mockResolvedValue(undefined),
+      retrySync: vi.fn(),
+      pauseSync: vi.fn(),
+      resumeSync: vi.fn(),
+      onSyncStatusChanged: vi.fn().mockReturnValue(() => {}),
+      configureSync: vi.fn().mockResolvedValue({
+        state: 'idle',
+        message: 'No pending local changes. Cloud delivery is unconfirmed.',
+        pendingChanges: 0,
+        lastCheckedAt: Date.now(),
+        lastPublishedAt: null,
+        peerReceivedAt: null,
+        cloudDeliveryConfirmed: false,
+      }),
+      disconnectSync: vi.fn().mockResolvedValue({
+        state: 'not-configured',
+        message: 'Sync is disconnected. Local data remains on this device.',
+        pendingChanges: 0,
+        lastCheckedAt: null,
+        lastPublishedAt: null,
+        peerReceivedAt: null,
+        cloudDeliveryConfirmed: false,
+      }),
     };
   });
 
@@ -1942,9 +1980,7 @@ describe('App', () => {
       ...downloadStatus,
       bytesDownloaded: 7_168,
       updatedAt:
-        downloadStatus.updatedAt +
-        SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS +
-        500,
+        downloadStatus.updatedAt + SLIDE_DOWNLOAD_RATE_UPDATE_INTERVAL_MS + 500,
     };
 
     window.indicoInk.listLibraryEvents = vi
@@ -1952,9 +1988,7 @@ describe('App', () => {
       .mockResolvedValue([libraryEvent]);
     window.indicoInk.listAgendaTalks = vi.fn().mockResolvedValue([talk]);
     const openTalkDeckResult = { ...downloadStatus, pageCount: 0 };
-    let resolveOpenTalkDeck!: (
-      result: typeof openTalkDeckResult,
-    ) => void;
+    let resolveOpenTalkDeck!: (result: typeof openTalkDeckResult) => void;
     window.indicoInk.openTalkDeck = vi.fn().mockImplementation(
       () =>
         new Promise<typeof openTalkDeckResult>((resolve) => {
@@ -2002,7 +2036,9 @@ describe('App', () => {
 
     expect(onDeckDownloadProgress).toHaveBeenCalledTimes(1);
     if (!progressListener) {
-      throw new Error('Expected the download progress listener to be registered.');
+      throw new Error(
+        'Expected the download progress listener to be registered.',
+      );
     }
 
     await act(async () => {

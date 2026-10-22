@@ -11,6 +11,13 @@ import squirrelStartup from 'electron-squirrel-startup';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import {
+  canonicalJson,
+  isUuid,
+  operationPath,
+  parseStrictSyncJson,
+} from './syncProtocol';
 
 import { assertLaunchArtifacts, getLaunchArtifacts } from './launchDiagnostics';
 import {
@@ -32,6 +39,7 @@ import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
 import { createConferenceId } from './persistenceModels';
+import type { Deck } from './persistenceModels';
 import type { PdfWorkspaceChangeBatch } from './shared/pdfWorkspace';
 import type {
   ConferenceExportSnapshot,
@@ -78,6 +86,9 @@ import {
   loadAppSettings,
   saveAppSettings,
 } from './appSettings';
+import { SyncWorkerClient } from './syncWorkerClient';
+import { SyncCoordinator } from './syncCoordinator';
+import type { SyncStatus } from './shared/sync';
 
 if (squirrelStartup) {
   process.exit(0);
@@ -88,7 +99,10 @@ let persistenceStore: PersistenceStore | null = null;
 let credentialStore: IndicoCredentialStore | null = null;
 let deckCacheManager: DeckCacheManager | null = null;
 let agendaDownloadManager: AgendaDownloadManager | null = null;
+let syncWorkerClient: SyncWorkerClient | null = null;
+let syncCoordinator: SyncCoordinator | null = null;
 let appSettings: AppSettings | null = null;
+const deckAnnotationPreparations = new Map<string, Promise<void>>();
 const importFixtureName = getImportFixtureName(process.argv);
 
 if (shouldDisableGpu()) {
@@ -150,6 +164,19 @@ const getPersistenceStore = () =>
     getPersistenceDbPath(app.getPath('userData')),
   ));
 
+const getSyncWorkerClient = () => (syncWorkerClient ??= new SyncWorkerClient());
+
+const getSyncCoordinator = () =>
+  (syncCoordinator ??= new SyncCoordinator(
+    getPersistenceStore(),
+    getSyncWorkerClient(),
+    (status: SyncStatus) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:status', status);
+      }
+    },
+  ));
+
 const getCredentialStore = () =>
   credentialStore ??
   (credentialStore = new IndicoCredentialStore(
@@ -171,18 +198,122 @@ const getDeckCacheManager = () =>
     undefined,
     undefined,
     (status) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('deck:download-progress', status);
-      }
+      void (async () => {
+        if (status.kind === 'ready') {
+          try {
+            await prepareDownloadedDeckForAnnotations(status.deckId);
+          } catch (error) {
+            console.error('Could not prepare downloaded deck for sync.', error);
+          }
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('deck:download-progress', status);
+        }
+      })();
     },
   ));
+
+const prepareDownloadedDeckForAnnotations = (deckId: string) => {
+  const existing = deckAnnotationPreparations.get(deckId);
+  if (existing) return existing;
+  const preparation = (async () => {
+    const store = getPersistenceStore();
+    const deck = await store.getDeck(deckId);
+    if (!deck || deck.kind !== 'pdf') return;
+    const documentVersion =
+      await getDeckCacheManager().getCachedPdfDocumentVersion(deck);
+    if (!documentVersion) return;
+    await store.recordCurrentDeckDocumentVersion(deck.id, documentVersion);
+    await store.applyDownloadedAnnotationOperations(`deck:${deck.id}`);
+  })().finally(() => {
+    if (deckAnnotationPreparations.get(deckId) === preparation) {
+      deckAnnotationPreparations.delete(deckId);
+    }
+  });
+  deckAnnotationPreparations.set(deckId, preparation);
+  return preparation;
+};
+
+const reconcilePendingAnnotationPublications = async (
+  workspaceId: string,
+  folderPath: string,
+  deviceId: string,
+) => {
+  const store = getPersistenceStore();
+  const transport = getSyncWorkerClient();
+  await transport.initialize(folderPath, deviceId);
+  const alreadyPublished = new Set<string>();
+  let after:
+    | { createdAt: number; streamId: string; sequence: number }
+    | undefined;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await store.listPendingSyncOutboxForWorkspace(
+      workspaceId,
+      32,
+      after,
+    );
+    for (const entry of page) {
+      if (
+        entry.conferenceId &&
+        (entry.operation.kind === 'annotation.put' ||
+          entry.operation.kind === 'annotation.erase')
+      ) {
+        try {
+          const bytes = await transport.readFile(
+            operationPath(entry.operation, entry.conferenceId),
+          );
+          const publishedJson = new TextDecoder('utf-8', {
+            fatal: true,
+          }).decode(bytes);
+          if (publishedJson !== canonicalJson(entry.operation)) {
+            throw new Error(
+              `Published sync operation ${entry.operation.operationId} has unexpected contents.`,
+            );
+          }
+          await store.markSyncOperationPublished(entry.operation.operationId);
+          alreadyPublished.add(entry.operation.operationId);
+        } catch (error) {
+          if (!/ENOENT|not found/i.test(String(error))) throw error;
+        }
+      } else if (
+        entry.operation.streamId.startsWith('deck:') &&
+        (entry.operation.kind === 'annotation.put' ||
+          entry.operation.kind === 'annotation.erase')
+      ) {
+        throw new Error(
+          `Pending sync operation ${entry.operation.operationId} has no conference route.`,
+        );
+      }
+      after = {
+        createdAt: entry.createdAt,
+        streamId: `${workspaceId}:${entry.operation.streamId}`,
+        sequence: entry.operation.sequence,
+      };
+    }
+    hasMore = page.length === 32;
+  }
+  return alreadyPublished;
+};
+
+const bindLegacyDeckToExistingCache = async (deck: Deck) => {
+  if (deck.kind !== 'pdf') return;
+  const cachedVersion =
+    await getDeckCacheManager().getCachedPdfDocumentVersion(deck);
+  await getPersistenceStore().bindLegacyDeckDocumentVersion(
+    deck.id,
+    cachedVersion,
+  );
+};
 
 const getAgendaDownloadManager = () =>
   agendaDownloadManager ??
   (agendaDownloadManager = new AgendaDownloadManager(
     getPersistenceStore(),
-    (deck, onStatus) =>
-      getDeckCacheManager().ensureDeckAvailable(deck, onStatus),
+    async (deck, onStatus) => {
+      await bindLegacyDeckToExistingCache(deck);
+      return getDeckCacheManager().ensureDeckAvailable(deck, onStatus);
+    },
     (deck) => getDeckCacheManager().isDeckCached(deck),
   ));
 
@@ -246,6 +377,7 @@ const buildConferenceExportSnapshot = async (
           continue;
         }
 
+        await bindLegacyDeckToExistingCache(deck);
         const availability =
           await getDeckCacheManager().ensureDeckAvailable(deck);
         if (availability.kind !== 'ready') {
@@ -676,6 +808,7 @@ ipcMain.handle(
   'agenda:set-talk-bookmarked',
   async (_event, talkId: string, bookmarked: boolean) => {
     await getPersistenceStore().setTalkBookmarked(talkId, bookmarked);
+    getSyncCoordinator().notifyLocalChanges();
   },
 );
 
@@ -729,7 +862,7 @@ ipcMain.handle(
       }
       const apiKey = await getCredentialStore().getApiKey(identity.origin);
       try {
-        return await refreshIndicoEvent(
+        const result = await refreshIndicoEvent(
           getPersistenceStore(),
           conference.sourceUrl,
           {
@@ -743,6 +876,11 @@ ipcMain.handle(
             ...(decision ? { decision } : {}),
           },
         );
+        await getPersistenceStore().recordLocalSyncMetadataSnapshot(
+          conferenceId,
+        );
+        getSyncCoordinator().notifyLocalChanges();
+        return result;
       } catch (error) {
         const refreshError = classifyRefreshError(error, identity);
         if (refreshError) {
@@ -761,7 +899,7 @@ ipcMain.handle(
     }
 
     try {
-      return await refreshWebAgenda(
+      const result = await refreshWebAgenda(
         getPersistenceStore(),
         conference.sourceUrl,
         {
@@ -776,6 +914,9 @@ ipcMain.handle(
           ...(decision ? { decision } : {}),
         },
       );
+      await getPersistenceStore().recordLocalSyncMetadataSnapshot(conferenceId);
+      getSyncCoordinator().notifyLocalChanges();
+      return result;
     } catch (error) {
       if (error instanceof WebAgendaAuthenticationError) {
         return {
@@ -817,6 +958,10 @@ ipcMain.handle(
               }),
           },
         );
+        await getPersistenceStore().recordLocalSyncMetadataSnapshot(
+          identity.conferenceId,
+        );
+        getSyncCoordinator().notifyLocalChanges();
         return {
           kind: 'opened',
           result,
@@ -870,6 +1015,9 @@ ipcMain.handle(
             }),
         },
       );
+      const conferenceId = createConferenceId(normalizedUrl);
+      await getPersistenceStore().recordLocalSyncMetadataSnapshot(conferenceId);
+      getSyncCoordinator().notifyLocalChanges();
       return { kind: 'opened', result };
     } catch (error) {
       if (error instanceof WebAgendaAuthenticationError) {
@@ -962,9 +1110,222 @@ ipcMain.handle(
 
 ipcMain.handle(
   'persistence:save-deck-workspace-changes',
-  async (_event, batch: PdfWorkspaceChangeBatch) =>
-    getPersistenceStore().saveDeckPdfWorkspaceChanges(batch),
+  async (_event, batch: PdfWorkspaceChangeBatch) => {
+    const store = getPersistenceStore();
+    const deck = batch.deckId ? await store.getDeck(batch.deckId) : null;
+    if (deck?.kind === 'pdf') {
+      await bindLegacyDeckToExistingCache(deck);
+      const documentVersion =
+        await getDeckCacheManager().getCachedPdfDocumentVersion(deck);
+      if (documentVersion) {
+        await store.recordCurrentDeckDocumentVersion(deck.id, documentVersion);
+      }
+    }
+    const result = await store.saveDeckPdfWorkspaceChanges(batch);
+    getSyncCoordinator().notifyLocalChanges();
+    return result;
+  },
 );
+
+ipcMain.handle('sync:start', async () => getSyncCoordinator().start());
+ipcMain.handle('sync:get-status', async () => getSyncCoordinator().getStatus());
+ipcMain.handle(
+  'sync:set-active-deck',
+  async (_event, deckId: string | null) => {
+    getSyncCoordinator().setActiveDeck(deckId);
+  },
+);
+ipcMain.handle('sync:retry', async () => getSyncCoordinator().retryNow());
+ipcMain.handle('sync:configure', async () => {
+  const store = getPersistenceStore();
+  const profile = await store.getSyncProfile();
+  if (profile.workspaceId && profile.folderPath) {
+    const answer = await dialog.showMessageBox(mainWindow!, {
+      type: 'question',
+      buttons: ['Choose another folder', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Change sync folder',
+      message:
+        'Your local library stays on this device. Choose another shared folder to switch sync libraries.',
+    });
+    if (answer.response !== 0) return getSyncCoordinator().getStatus();
+  }
+  const selection = await dialog.showOpenDialog(mainWindow!, {
+    title: 'Choose shared sync folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (selection.canceled || !selection.filePaths[0]) {
+    return getSyncCoordinator().getStatus();
+  }
+  const folderPath = selection.filePaths[0];
+  const coordinator = getSyncCoordinator();
+  const validator = new SyncWorkerClient();
+  let workspaceId: string;
+  try {
+    await validator.initialize(folderPath, profile.deviceId);
+    try {
+      const record = await validator.readFile('workspace.json', 4096);
+      const parsed = parseStrictSyncJson(record, {
+        maxBytes: 4096,
+        requireCanonical: true,
+      });
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !('format' in parsed) ||
+        parsed.format !== 'indicoink-folder-sync' ||
+        !('version' in parsed) ||
+        parsed.version !== 1 ||
+        !('workspaceId' in parsed) ||
+        !isUuid(parsed.workspaceId) ||
+        Object.keys(parsed).length !== 3
+      ) {
+        throw new Error('Selected folder has an invalid sync library record.');
+      }
+      workspaceId = parsed.workspaceId;
+    } catch (error) {
+      if (!/ENOENT|not found/i.test(String(error))) throw error;
+      workspaceId = randomUUID();
+    }
+  } finally {
+    validator.close();
+  }
+
+  const switchingWorkspace =
+    profile.workspaceId !== null && profile.workspaceId !== workspaceId;
+  let deleteLocalAnnotations = false;
+  if (switchingWorkspace) {
+    const choice = await dialog.showMessageBox(mainWindow!, {
+      type: 'warning',
+      buttons: [
+        'Keep annotations and merge into the new library',
+        'Delete annotations from this device and start fresh',
+        'Cancel',
+      ],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Switch sync libraries',
+      message: 'Choose what to do with annotations saved on this device.',
+      detail:
+        'Keeping annotations shares retained work with the destination library. Deleting removes local annotations and unpublished edits only; it does not delete work in either shared folder or on other devices.',
+    });
+    if (choice.response === 2) return coordinator.getStatus();
+    deleteLocalAnnotations = choice.response === 1;
+  }
+
+  await coordinator.stop();
+  const transport = getSyncWorkerClient();
+  let deletionCommitted = false;
+  try {
+    const priorFolderPath = profile.folderPath ?? profile.lastFolderPath;
+    const alreadyPublishedOperationIds =
+      deleteLocalAnnotations && profile.workspaceId && priorFolderPath
+        ? await reconcilePendingAnnotationPublications(
+            profile.workspaceId,
+            priorFolderPath,
+            profile.deviceId,
+          )
+        : new Set<string>();
+    await transport.initialize(folderPath, profile.deviceId);
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath,
+      enabled: true,
+    });
+    if (deleteLocalAnnotations && profile.workspaceId) {
+      await store.clearSyncEligibleAnnotations(
+        profile.workspaceId,
+        alreadyPublishedOperationIds,
+      );
+      deletionCommitted = true;
+    }
+    if (profile.workspaceId !== workspaceId && !deleteLocalAnnotations) {
+      await store.requeueSyncEligibleMetadata();
+      await store.requeueSyncEligibleAnnotations();
+    }
+    return coordinator.start();
+  } catch (error) {
+    if (!deletionCommitted) await store.setSyncConfiguration(profile);
+    await coordinator.start();
+    throw error;
+  }
+});
+ipcMain.handle('sync:disconnect', async () => {
+  const store = getPersistenceStore();
+  const profile = await store.getSyncProfile();
+  const answer = await dialog.showMessageBox(mainWindow!, {
+    type: 'warning',
+    buttons: [
+      'Keep annotations on this device',
+      'Delete annotations from this device',
+      'Cancel',
+    ],
+    defaultId: 0,
+    cancelId: 2,
+    title: 'Disconnect sync',
+    message: 'Disconnect this device from the shared library?',
+    detail:
+      'Keeping annotations preserves unpublished work for local use and a later connection. Deleting removes local annotations and unpublished edits only; files in the shared folder and data on other devices remain.',
+  });
+  if (answer.response === 2) return getSyncCoordinator().getStatus();
+  const coordinator = getSyncCoordinator();
+  await coordinator.stop();
+  let deletionCommitted = false;
+  try {
+    const priorFolderPath = profile.folderPath ?? profile.lastFolderPath;
+    const alreadyPublishedOperationIds =
+      answer.response === 1 && profile.workspaceId && priorFolderPath
+        ? await reconcilePendingAnnotationPublications(
+            profile.workspaceId,
+            priorFolderPath,
+            profile.deviceId,
+          )
+        : new Set<string>();
+    await store.setSyncConfiguration({ ...profile, enabled: false });
+    if (answer.response === 1 && profile.workspaceId) {
+      await store.clearSyncEligibleAnnotations(
+        profile.workspaceId,
+        alreadyPublishedOperationIds,
+      );
+      deletionCommitted = true;
+    }
+    const pendingChanges = await store.countPendingSyncOutbox();
+    const status = await coordinator.disconnect(pendingChanges);
+    await store.setSyncConfiguration({
+      workspaceId: profile.workspaceId,
+      folderPath: null,
+      enabled: false,
+    });
+    return status;
+  } catch (error) {
+    await store.setSyncConfiguration(
+      deletionCommitted ? { ...profile, enabled: false } : profile,
+    );
+    await coordinator.start();
+    throw error;
+  }
+});
+ipcMain.handle('sync:pause', async () => {
+  const store = getPersistenceStore();
+  const profile = await store.getSyncProfile();
+  await store.setSyncConfiguration({ ...profile, enabled: false });
+  await getSyncCoordinator().pause();
+  return getSyncCoordinator().getStatus();
+});
+ipcMain.handle('sync:resume', async () => {
+  const store = getPersistenceStore();
+  const profile = await store.getSyncProfile();
+  await store.setSyncConfiguration({ ...profile, enabled: true });
+  const coordinator = getSyncCoordinator();
+  try {
+    return await coordinator.resume();
+  } catch (error) {
+    await coordinator.stop();
+    await store.setSyncConfiguration({ ...profile, enabled: false });
+    throw error;
+  }
+});
 
 ipcMain.handle(
   'agenda:set-selected-deck',
@@ -976,13 +1337,41 @@ ipcMain.handle(
 ipcMain.handle(
   'deck:open',
   async (_event, conferenceId: string, talkId: string, deckId: string) => {
-    const deck = await getPersistenceStore().getDeck(deckId);
-    if (!deck || deck.conferenceId !== conferenceId || deck.talkId !== talkId) {
-      throw new Error('The requested deck does not exist.');
-    }
+    getSyncCoordinator().setActiveDeck(deckId);
+    try {
+      const deck = await getPersistenceStore().getDeck(deckId);
+      if (
+        !deck ||
+        deck.conferenceId !== conferenceId ||
+        deck.talkId !== talkId
+      ) {
+        throw new Error('The requested deck does not exist.');
+      }
 
-    await getPersistenceStore().touchConference(conferenceId);
-    return getDeckCacheManager().openDeck(deck);
+      await getPersistenceStore().touchConference(conferenceId);
+      // Resolve the original association before this open can download bytes.
+      await bindLegacyDeckToExistingCache(deck);
+      const opened = await getDeckCacheManager().openDeck(deck);
+      if (opened.kind === 'error' || opened.kind === 'api-key-required') {
+        getSyncCoordinator().setActiveDeck(null);
+      }
+      if (opened.kind === 'ready' && deck.kind === 'pdf') {
+        const documentVersion =
+          await getDeckCacheManager().getCachedPdfDocumentVersion(deck);
+        if (documentVersion) {
+          const store = getPersistenceStore();
+          await store.recordCurrentDeckDocumentVersion(
+            deck.id,
+            documentVersion,
+          );
+          await store.applyDownloadedAnnotationOperations(`deck:${deck.id}`);
+        }
+      }
+      return opened;
+    } catch (error) {
+      getSyncCoordinator().setActiveDeck(null);
+      throw error;
+    }
   },
 );
 
@@ -991,8 +1380,13 @@ ipcMain.handle(
   async (
     _event,
     operationId: string,
-  ): Promise<DeckCacheDownloadStatus | null> =>
-    getDeckCacheManager().getDownloadStatus(operationId),
+  ): Promise<DeckCacheDownloadStatus | null> => {
+    const status = getDeckCacheManager().getDownloadStatus(operationId);
+    if (status?.kind === 'ready') {
+      await prepareDownloadedDeckForAnnotations(status.deckId);
+    }
+    return status;
+  },
 );
 
 ipcMain.handle('deck:cancel-download', async (_event, operationId: string) => {
@@ -1105,6 +1499,13 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on('will-quit', () => {
+  syncCoordinator?.close();
+  syncWorkerClient?.close();
+  syncCoordinator = null;
+  syncWorkerClient = null;
 });
 
 app.on('window-all-closed', () => {

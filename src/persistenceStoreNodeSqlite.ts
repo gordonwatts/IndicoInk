@@ -1,5 +1,6 @@
 import { constants, existsSync, mkdirSync } from 'node:fs';
 import { copyFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import {
   DatabaseSync,
@@ -31,6 +32,23 @@ import type {
   WorkspaceHistoryEntry,
 } from './shared/pdfWorkspace';
 import {
+  canonicalJson,
+  createOperation,
+  isCredentialFreeMetadataUrl,
+  isShareableSourceUrl,
+  isUuid,
+  validateCatalog,
+  type SyncCatalog,
+  type SyncOperation,
+} from './syncProtocol';
+import {
+  mergeAnnotationOperations,
+  mergeBookmarkState,
+  causallyReadyMetadataOperations,
+  mergeConcurrentConferenceDeletion,
+  mergeMetadataRefreshes,
+} from './syncMerge';
+import {
   createConferenceId,
   createDeckId,
   createNotebookDeckId,
@@ -39,7 +57,7 @@ import {
   createViewStateId,
 } from './persistenceModels';
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 16;
 const PRE_NODE_SQLITE_BACKUP_SUFFIX = '.pre-node-sqlite-v7.bak';
 
 const getFileName = (value: string) => {
@@ -566,6 +584,296 @@ const migration9 = (db: SqliteDatabaseAdapter) => {
   }
 };
 
+const migration10 = (db: SqliteDatabaseAdapter) => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_profile (
+      singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+      library_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      workspace_id TEXT,
+      folder_path TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_stream_state (
+      stream_id TEXT PRIMARY KEY,
+      next_sequence INTEGER NOT NULL DEFAULT 1,
+      local_frontier_json TEXT NOT NULL DEFAULT '{}',
+      remote_frontier_json TEXT NOT NULL DEFAULT '{}',
+      snapshot_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      operation_id TEXT PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      operation_json TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      published_at INTEGER,
+      UNIQUE(stream_id, device_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending
+      ON sync_outbox(state, stream_id, sequence);
+
+    CREATE TABLE IF NOT EXISTS sync_inbox (
+      operation_id TEXT PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      operation_json TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'discovered',
+      discovered_at INTEGER NOT NULL,
+      applied_at INTEGER,
+      UNIQUE(stream_id, device_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_stream
+      ON sync_inbox(stream_id, state, device_id, sequence);
+
+    CREATE TABLE IF NOT EXISTS sync_conflicts (
+      conflict_id TEXT PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      conflict_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open
+      ON sync_conflicts(resolved_at, stream_id);
+
+    CREATE TABLE IF NOT EXISTS sync_catalog_state (
+      device_id TEXT PRIMARY KEY,
+      generation INTEGER NOT NULL DEFAULT 0,
+      catalog_json TEXT,
+      validated_at INTEGER,
+      retired_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_checkpoints (
+      stream_id TEXT NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      frontier_json TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      acknowledged INTEGER NOT NULL DEFAULT 0,
+      validated_at INTEGER NOT NULL,
+      PRIMARY KEY(stream_id, snapshot_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_document_versions (
+      deck_id TEXT PRIMARY KEY,
+      document_version TEXT,
+      version_state TEXT NOT NULL DEFAULT 'unknown',
+      measured_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_annotation_versions (
+      annotation_id TEXT PRIMARY KEY,
+      deck_id TEXT NOT NULL,
+      document_version TEXT,
+      version_state TEXT NOT NULL DEFAULT 'unknown',
+      association_operation_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_retirements (
+      retirement_id TEXT PRIMARY KEY,
+      retired_device_id TEXT NOT NULL,
+      issued_by TEXT NOT NULL,
+      retirement_json TEXT NOT NULL,
+      validated_at INTEGER NOT NULL
+    );
+  `);
+
+  const profile = db
+    .prepare('SELECT singleton_id FROM sync_profile WHERE singleton_id = 1')
+    .get();
+  if (!profile) {
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO sync_profile (singleton_id, library_id, device_id, created_at, updated_at)
+       VALUES (1, @libraryId, @deviceId, @now, @now)`,
+    ).run({ libraryId: randomUUID(), deviceId: randomUUID(), now });
+  }
+
+  // Existing annotations predate PDF byte identity. Record them as unknown so a
+  // later download cannot silently assign them to a different PDF revision.
+  // Some older fixture databases intentionally contain only a subset of tables.
+  const hasDecks = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'decks'",
+    )
+    .get();
+  if (hasDecks) {
+    db.exec(`
+      INSERT OR IGNORE INTO sync_document_versions (
+        deck_id, document_version, version_state, measured_at, updated_at
+      )
+      SELECT id, NULL, 'unknown', NULL, updated_at
+      FROM decks
+      WHERE kind = 'pdf';
+    `);
+
+    const hasAnnotations = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'annotations'",
+      )
+      .get();
+    if (hasAnnotations) {
+      db.exec(`
+        INSERT OR IGNORE INTO sync_annotation_versions (
+          annotation_id, deck_id, document_version, version_state,
+          association_operation_id, updated_at
+        )
+        SELECT annotations.id, annotations.deck_id, NULL, 'unknown', NULL,
+               annotations.updated_at
+        FROM annotations
+        INNER JOIN decks ON decks.id = annotations.deck_id
+        WHERE decks.kind = 'pdf';
+      `);
+    }
+  }
+};
+
+const migration11 = (db: SqliteDatabaseAdapter) => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_legacy_version_migration (
+      deck_id TEXT PRIMARY KEY,
+      state TEXT NOT NULL DEFAULT 'pending',
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  const hasDecks = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'decks'",
+    )
+    .get();
+  if (hasDecks) {
+    db.prepare(
+      `INSERT OR IGNORE INTO sync_legacy_version_migration (deck_id, state, updated_at)
+       SELECT id, 'pending', updated_at FROM decks WHERE kind = 'pdf'`,
+    ).run();
+  }
+};
+
+const migration12 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(sync_profile)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+  if (!columns.has('scan_queue_json')) {
+    db.exec(
+      "ALTER TABLE sync_profile ADD COLUMN scan_queue_json TEXT NOT NULL DEFAULT '[]';",
+    );
+  }
+};
+
+const migration13 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(sync_catalog_state)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+  if (columns.has('workspace_id')) return;
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE sync_catalog_state RENAME TO sync_catalog_state_v12;
+    CREATE TABLE sync_catalog_state (
+      workspace_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      generation INTEGER NOT NULL DEFAULT 0,
+      catalog_json TEXT,
+      validated_at INTEGER,
+      retired_at INTEGER,
+      PRIMARY KEY(workspace_id, device_id)
+    );
+    INSERT INTO sync_catalog_state (
+      workspace_id, device_id, generation, catalog_json, validated_at, retired_at
+    )
+    SELECT COALESCE((SELECT workspace_id FROM sync_profile WHERE singleton_id = 1), ''),
+           device_id, generation, catalog_json, validated_at, retired_at
+    FROM sync_catalog_state_v12;
+    DROP TABLE sync_catalog_state_v12;
+    COMMIT;
+  `);
+};
+
+const migration15 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(sync_outbox)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+  if (!columns.has('conference_id')) {
+    const tables = new Set(
+      (
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+          .all() as Array<Record<string, unknown>>
+      ).map((row) => String(row.name)),
+    );
+    db.exec(`
+      BEGIN IMMEDIATE;
+      ALTER TABLE sync_outbox ADD COLUMN conference_id TEXT;
+    `);
+    if (tables.has('decks')) {
+      db.exec(`
+      UPDATE sync_outbox
+      SET conference_id = (
+        SELECT decks.conference_id
+        FROM decks
+        WHERE decks.id = substr(sync_outbox.stream_id, 43)
+      )
+      WHERE instr(sync_outbox.stream_id, ':deck:') > 0;
+      UPDATE sync_outbox AS target
+      SET conference_id = (
+        SELECT json_extract(source.operation_json, '$.payload.annotation.conferenceId')
+        FROM sync_outbox AS source
+        WHERE source.stream_id = target.stream_id
+          AND json_extract(source.operation_json, '$.payload.annotation.conferenceId') IS NOT NULL
+        ORDER BY source.sequence
+        LIMIT 1
+      )
+      WHERE target.conference_id IS NULL
+        AND instr(target.stream_id, ':deck:') > 0;
+      `);
+    }
+    db.exec(`
+      COMMIT;
+    `);
+  }
+};
+
+const migration16 = (db: SqliteDatabaseAdapter) => {
+  const columns = new Set(
+    (
+      db.pragma('table_info(sync_profile)') as Array<{
+        values: Array<Array<unknown>>;
+      }>
+    ).flatMap((result) => result.values.map((row) => String(row[1]))),
+  );
+  if (!columns.has('last_folder_path')) {
+    db.exec(`
+      BEGIN IMMEDIATE;
+      ALTER TABLE sync_profile ADD COLUMN last_folder_path TEXT;
+      UPDATE sync_profile SET last_folder_path = folder_path
+      WHERE folder_path IS NOT NULL;
+      COMMIT;
+    `);
+  }
+};
+
 const migrations = [
   migration1,
   migration2,
@@ -576,7 +884,48 @@ const migrations = [
   migration7,
   migration8,
   migration9,
+  migration10,
+  migration11,
+  migration12,
+  migration13,
+  (db: SqliteDatabaseAdapter) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_hidden_conferences (
+        workspace_id TEXT NOT NULL,
+        conference_id TEXT NOT NULL,
+        hidden_at INTEGER NOT NULL,
+        PRIMARY KEY(workspace_id, conference_id)
+      );
+      CREATE TABLE IF NOT EXISTS sync_suppressed_annotations (
+        workspace_id TEXT NOT NULL,
+        annotation_id TEXT NOT NULL,
+        suppressed_at INTEGER NOT NULL,
+        PRIMARY KEY(workspace_id, annotation_id)
+      );
+    `);
+  },
+  migration15,
+  migration16,
 ];
+
+export type SyncProfile = {
+  libraryId: string;
+  deviceId: string;
+  workspaceId: string | null;
+  folderPath: string | null;
+  lastFolderPath: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type SyncOutboxEntry = {
+  operation: SyncOperation;
+  conferenceId: string | null;
+  state: 'pending' | 'published';
+  createdAt: number;
+  publishedAt: number | null;
+};
 
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
@@ -675,6 +1024,10 @@ const rowToAnnotation = (row: Record<string, unknown>): Annotation => {
         ...base,
         x: Number(payload.x ?? 0),
         y: Number(payload.y ?? 0),
+        width:
+          typeof payload.width === 'number' && Number.isFinite(payload.width)
+            ? payload.width
+            : undefined,
         text: typeof payload.text === 'string' ? payload.text : '',
       };
     } catch {
@@ -913,6 +1266,1563 @@ export class PersistenceStore {
     private readonly now = () => Date.now(),
   ) {}
 
+  /**
+   * Resolve the one-time legacy PDF migration before the viewer can display
+   * annotations. A null hash records that the original cache was unavailable;
+   * a later download must never silently claim that it was the original.
+   */
+  async bindLegacyDeckDocumentVersion(
+    deckId: string,
+    cachedDocumentVersion: string | null,
+  ) {
+    if (
+      cachedDocumentVersion !== null &&
+      !/^[0-9a-f]{64}$/.test(cachedDocumentVersion)
+    ) {
+      throw new Error('Cached PDF document version is invalid.');
+    }
+    const db = await this.getDb();
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const migration = db
+        .prepare(
+          `SELECT state FROM sync_legacy_version_migration WHERE deck_id = ?`,
+        )
+        .get(deckId) as { state?: string } | undefined;
+      if (migration?.state !== 'pending') {
+        db.exec('COMMIT;');
+        return false;
+      }
+      const now = this.now();
+      db.prepare(
+        `INSERT OR IGNORE INTO sync_document_versions (
+           deck_id, document_version, version_state, measured_at, updated_at
+         ) VALUES (?, NULL, 'unknown', NULL, ?)`,
+      ).run([deckId, now]);
+      db.prepare(
+        `INSERT OR IGNORE INTO sync_annotation_versions (
+           annotation_id, deck_id, document_version, version_state,
+           association_operation_id, updated_at
+         )
+         SELECT id, deck_id, NULL, 'unknown', NULL, updated_at
+         FROM annotations WHERE deck_id = ?`,
+      ).run(deckId);
+      if (cachedDocumentVersion) {
+        db.prepare(
+          `UPDATE sync_document_versions
+           SET document_version = ?, version_state = 'known', measured_at = ?, updated_at = ?
+           WHERE deck_id = ?`,
+        ).run([cachedDocumentVersion, now, now, deckId]);
+        db.prepare(
+          `UPDATE sync_annotation_versions
+           SET document_version = ?, version_state = 'known', updated_at = ?
+           WHERE deck_id = ? AND document_version IS NULL AND version_state = 'unknown'`,
+        ).run([cachedDocumentVersion, now, deckId]);
+      }
+      db.prepare(
+        `UPDATE sync_legacy_version_migration SET state = ?, updated_at = ? WHERE deck_id = ?`,
+      ).run([cachedDocumentVersion ? 'bound' : 'unknown', now, deckId]);
+      this.markDirty();
+      db.exec('COMMIT;');
+      await this.flushIfNeeded();
+      return true;
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  /** Record bytes currently cached for newly created annotations without
+   * changing legacy annotations that were deliberately left unknown. */
+  async recordCurrentDeckDocumentVersion(
+    deckId: string,
+    documentVersion: string,
+  ) {
+    if (!/^[0-9a-f]{64}$/.test(documentVersion)) {
+      throw new Error('Cached PDF document version is invalid.');
+    }
+    const db = await this.getDb();
+    const now = this.now();
+    db.prepare(
+      `INSERT INTO sync_document_versions (
+         deck_id, document_version, version_state, measured_at, updated_at
+       ) VALUES (?, ?, 'known', ?, ?)
+       ON CONFLICT(deck_id) DO UPDATE SET
+         document_version = excluded.document_version,
+         version_state = 'known', measured_at = excluded.measured_at,
+         updated_at = excluded.updated_at`,
+    ).run([deckId, documentVersion, now, now]);
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
+  async associateUnknownAnnotationsWithDocumentVersion(
+    deckId: string,
+    annotationIds: string[],
+    documentVersion: string,
+  ) {
+    if (
+      !/^[0-9a-f]{64}$/.test(documentVersion) ||
+      annotationIds.length === 0 ||
+      annotationIds.length > 32 ||
+      new Set(annotationIds).size !== annotationIds.length
+    ) {
+      throw new Error('Document-version association is invalid.');
+    }
+    const db = await this.getDb();
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const update = db.prepare(
+        `UPDATE sync_annotation_versions
+         SET document_version = ?, version_state = 'known', updated_at = ?
+         WHERE annotation_id = ? AND deck_id = ? AND version_state = 'unknown'`,
+      );
+      for (const annotationId of annotationIds) {
+        const result = update.run([
+          documentVersion,
+          this.now(),
+          annotationId,
+          deckId,
+        ]);
+        if (Number(result.changes) !== 1) {
+          throw new Error(
+            `Annotation ${annotationId} is missing or already associated.`,
+          );
+        }
+      }
+      this.markDirty();
+      db.exec('COMMIT;');
+      await this.flushIfNeeded();
+      return true;
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  async getSyncProfile(): Promise<SyncProfile> {
+    const db = await this.getDb();
+    const row = db
+      .prepare('SELECT * FROM sync_profile WHERE singleton_id = 1')
+      .get() as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new Error('Sync profile is missing after database initialization.');
+    }
+
+    return {
+      libraryId: String(row.library_id),
+      deviceId: String(row.device_id),
+      workspaceId:
+        typeof row.workspace_id === 'string' ? row.workspace_id : null,
+      folderPath: typeof row.folder_path === 'string' ? row.folder_path : null,
+      lastFolderPath:
+        typeof row.last_folder_path === 'string' ? row.last_folder_path : null,
+      enabled: toBoolean(row.enabled),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async setSyncConfiguration(configuration: {
+    workspaceId: string | null;
+    folderPath: string | null;
+    enabled: boolean;
+  }) {
+    if (
+      (configuration.workspaceId !== null &&
+        !isUuid(configuration.workspaceId)) ||
+      (configuration.enabled &&
+        (!configuration.workspaceId || !configuration.folderPath?.trim()))
+    ) {
+      throw new Error('Sync library configuration is invalid.');
+    }
+    const db = await this.getDb();
+    const current = await this.getSyncProfile();
+    db.prepare(
+      `UPDATE sync_profile
+       SET workspace_id = @workspaceId,
+           folder_path = @folderPath,
+           last_folder_path = CASE WHEN @folderPath IS NOT NULL
+             THEN @folderPath ELSE last_folder_path END,
+           enabled = @enabled,
+           scan_queue_json = CASE WHEN @resetScanQueue THEN '[]' ELSE scan_queue_json END,
+           updated_at = @updatedAt
+       WHERE singleton_id = 1`,
+    ).run({
+      workspaceId: configuration.workspaceId,
+      folderPath: configuration.folderPath?.trim() || null,
+      enabled: configuration.enabled ? 1 : 0,
+      resetScanQueue:
+        current.workspaceId !== configuration.workspaceId ||
+        current.folderPath !== (configuration.folderPath?.trim() || null)
+          ? 1
+          : 0,
+      updatedAt: this.now(),
+    });
+    this.markDirty();
+    await this.flushIfNeeded();
+    return this.getSyncProfile();
+  }
+
+  async requeueSyncEligibleAnnotations() {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(
+        `SELECT annotations.id FROM annotations
+         INNER JOIN conferences ON conferences.id = annotations.conference_id
+         INNER JOIN decks ON decks.id = annotations.deck_id
+         WHERE conferences.source_kind IN ('indico', 'web')
+           AND decks.kind <> 'notebook'
+         ORDER BY annotations.id`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    await this.transaction(async () => {
+      for (const row of rows) {
+        const annotation = await this.getAnnotation(String(row.id));
+        if (annotation) {
+          this.recordLocalSyncAnnotationChange('annotation.put', annotation);
+        }
+      }
+    });
+    await this.flushIfNeeded();
+    return rows.length;
+  }
+
+  async clearSyncEligibleAnnotations(
+    workspaceId: string,
+    alreadyPublishedOperationIds: ReadonlySet<string> = new Set(),
+  ) {
+    if (!isUuid(workspaceId)) throw new Error('Sync workspace ID is invalid.');
+    const db = await this.getDb();
+    await this.transaction(async () => {
+      const annotationRows = db
+        .prepare(
+          `SELECT annotations.id AS annotation_id, annotations.deck_id
+           FROM annotations
+           INNER JOIN decks ON decks.id = annotations.deck_id
+           INNER JOIN conferences ON conferences.id = decks.conference_id
+           WHERE conferences.source_kind IN ('indico', 'web')
+             AND decks.kind <> 'notebook'`,
+        )
+        .all() as Array<Record<string, unknown>>;
+      const annotationIds = annotationRows.map((row) =>
+        String(row.annotation_id),
+      );
+      const deckIds = [
+        ...new Set(annotationRows.map((row) => String(row.deck_id))),
+      ];
+      for (const annotationId of annotationIds) {
+        db.prepare(
+          `INSERT INTO sync_suppressed_annotations (
+             workspace_id, annotation_id, suppressed_at
+           ) VALUES (?, ?, ?)
+           ON CONFLICT(workspace_id, annotation_id) DO UPDATE SET
+             suppressed_at = excluded.suppressed_at`,
+        ).run([workspaceId, annotationId, this.now()]);
+        db.prepare('DELETE FROM annotations WHERE id = ?').run(annotationId);
+        db.prepare(
+          'DELETE FROM sync_annotation_versions WHERE annotation_id = ?',
+        ).run(annotationId);
+      }
+      for (const deckId of deckIds) {
+        db.prepare('DELETE FROM workspace_history WHERE deck_id = ?').run(
+          deckId,
+        );
+        db.prepare('DELETE FROM workspace_revision WHERE deck_id = ?').run(
+          deckId,
+        );
+      }
+      if (deckIds.length > 0) {
+        const placeholders = deckIds.map(() => '?').join(', ');
+        db.prepare(
+          `UPDATE slides
+           SET annotated = EXISTS (
+             SELECT 1 FROM annotations WHERE annotations.slide_id = slides.id
+           )
+           WHERE deck_id IN (${placeholders})`,
+        ).run(...deckIds);
+      }
+      const pendingOperations = db
+        .prepare(
+          `SELECT operation_id, stream_id, operation_json FROM sync_outbox
+           WHERE state = 'pending' AND substr(stream_id, 1, ?) = ?`,
+        )
+        .all([`${workspaceId}:`.length, `${workspaceId}:`]) as Array<
+        Record<string, unknown>
+      >;
+      for (const row of pendingOperations) {
+        const operation = JSON.parse(
+          String(row.operation_json),
+        ) as SyncOperation;
+        if (
+          !String(row.stream_id).includes(':deck:') ||
+          (operation.kind !== 'annotation.put' &&
+            operation.kind !== 'annotation.erase')
+        ) {
+          continue;
+        }
+        const annotationId =
+          operation.kind === 'annotation.put'
+            ? String(
+                (operation.payload.annotation as Record<string, unknown>).id,
+              )
+            : String(operation.payload.annotationId);
+        db.prepare(
+          `INSERT INTO sync_suppressed_annotations (
+             workspace_id, annotation_id, suppressed_at
+           ) VALUES (?, ?, ?)
+           ON CONFLICT(workspace_id, annotation_id) DO UPDATE SET
+             suppressed_at = excluded.suppressed_at`,
+        ).run([workspaceId, annotationId, this.now()]);
+        if (alreadyPublishedOperationIds.has(operation.operationId)) {
+          db.prepare(
+            `UPDATE sync_outbox SET state = 'published', published_at = ?
+             WHERE operation_id = ? AND state = 'pending'`,
+          ).run([this.now(), operation.operationId]);
+          continue;
+        }
+        const { integrity: _integrity, ...fields } = operation;
+        void _integrity;
+        const noop = createOperation({ ...fields, kind: 'noop', payload: {} });
+        db.prepare(
+          "UPDATE sync_outbox SET operation_json = ? WHERE operation_id = ? AND state = 'pending'",
+        ).run([canonicalJson(noop), operation.operationId]);
+      }
+      const prefix = `${workspaceId}:`;
+      for (const table of ['sync_inbox', 'sync_conflicts']) {
+        db.prepare(
+          `DELETE FROM ${table} WHERE substr(stream_id, 1, ?) = ?`,
+        ).run([prefix.length, prefix]);
+      }
+    });
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
+  async getSyncScanQueue(): Promise<
+    Array<{ relativeDirectory: string; lastName: string | null }>
+  > {
+    const db = await this.getDb();
+    const row = db
+      .prepare(
+        'SELECT scan_queue_json FROM sync_profile WHERE singleton_id = 1',
+      )
+      .get() as { scan_queue_json?: string } | undefined;
+    if (!row?.scan_queue_json) return [];
+    const value: unknown = JSON.parse(row.scan_queue_json);
+    if (
+      !Array.isArray(value) ||
+      value.length > 10_000 ||
+      value.some(
+        (cursor) =>
+          !cursor ||
+          typeof cursor !== 'object' ||
+          typeof cursor.relativeDirectory !== 'string' ||
+          (cursor.lastName !== null && typeof cursor.lastName !== 'string'),
+      )
+    ) {
+      throw new Error('Saved sync scan progress is invalid.');
+    }
+    return value as Array<{
+      relativeDirectory: string;
+      lastName: string | null;
+    }>;
+  }
+
+  async createSyncCatalog(): Promise<SyncCatalog | null> {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) return null;
+    const row = db
+      .prepare(
+        `SELECT generation, catalog_json FROM sync_catalog_state
+         WHERE workspace_id = ? AND device_id = ?`,
+      )
+      .get([profile.workspaceId, profile.deviceId]) as
+      | { generation?: number; catalog_json?: string | null }
+      | undefined;
+    const conferences = (await this.listConferences())
+      .filter(
+        (conference) =>
+          (conference.sourceKind === 'indico' ||
+            conference.sourceKind === 'web') &&
+          isShareableSourceUrl(conference.sourceUrl),
+      )
+      .map((conference) => ({
+        conferenceId: conference.id,
+        sourceKind: conference.sourceKind ?? 'indico',
+        sourceUrl: conference.sourceUrl,
+        title: conference.title,
+        dates: conference.dates,
+        host: conference.host,
+        metadataSnapshotId: null,
+      }))
+      .sort((left, right) =>
+        left.conferenceId < right.conferenceId
+          ? -1
+          : left.conferenceId > right.conferenceId
+            ? 1
+            : 0,
+      );
+    if (row?.catalog_json) {
+      const previous = validateCatalog(JSON.parse(row.catalog_json));
+      if (
+        previous.workspaceId === profile.workspaceId &&
+        previous.deviceId === profile.deviceId &&
+        canonicalJson(previous.conferences) === canonicalJson(conferences)
+      ) {
+        return previous;
+      }
+    }
+    const generation = Number(row?.generation ?? 0) + 1;
+    const catalog = validateCatalog({
+      format: 'indicoink-catalog',
+      version: 1,
+      workspaceId: profile.workspaceId,
+      deviceId: profile.deviceId,
+      generation,
+      updatedAt: this.now(),
+      conferences,
+    });
+    const catalogJson = canonicalJson(catalog);
+    db.prepare(
+      `INSERT INTO sync_catalog_state (
+         workspace_id, device_id, generation, catalog_json, validated_at,
+         retired_at
+       ) VALUES (?, ?, ?, ?, ?, NULL)
+       ON CONFLICT(workspace_id, device_id) DO UPDATE SET
+         generation = excluded.generation,
+         catalog_json = excluded.catalog_json,
+         validated_at = excluded.validated_at`,
+    ).run([
+      profile.workspaceId,
+      profile.deviceId,
+      generation,
+      catalogJson,
+      this.now(),
+    ]);
+    this.markDirty();
+    await this.flushIfNeeded();
+    return catalog;
+  }
+
+  async applyRemoteSyncCatalog(input: unknown) {
+    const catalog = validateCatalog(input);
+    const profile = await this.getSyncProfile();
+    if (catalog.workspaceId !== profile.workspaceId) {
+      throw new Error('Catalog belongs to another sync library.');
+    }
+    if (catalog.deviceId === profile.deviceId) return false;
+    const db = await this.getDb();
+    const previous = db
+      .prepare(
+        `SELECT generation, catalog_json FROM sync_catalog_state
+         WHERE workspace_id = ? AND device_id = ?`,
+      )
+      .get([catalog.workspaceId, catalog.deviceId]) as
+      | { generation?: number; catalog_json?: string | null }
+      | undefined;
+    const serialized = canonicalJson(catalog);
+    if (previous && Number(previous.generation) > catalog.generation)
+      return false;
+    if (
+      previous &&
+      Number(previous.generation) === catalog.generation &&
+      previous.catalog_json !== serialized
+    ) {
+      throw new Error('A device catalog changed without advancing generation.');
+    }
+    if (
+      previous &&
+      Number(previous.generation) === catalog.generation &&
+      previous.catalog_json === serialized
+    ) {
+      return false;
+    }
+    await this.transaction(async () => {
+      for (const summary of catalog.conferences) {
+        const locallyHidden = db
+          .prepare(
+            `SELECT 1 FROM sync_hidden_conferences
+             WHERE workspace_id = ? AND conference_id = ?`,
+          )
+          .get([catalog.workspaceId, summary.conferenceId]);
+        if (locallyHidden) continue;
+        if (await this.getConference(summary.conferenceId)) continue;
+        await this.upsertConference({
+          id: summary.conferenceId,
+          sourceUrl: summary.sourceUrl,
+          title: summary.title,
+          dates: summary.dates,
+          host: summary.host,
+          sourceKind: summary.sourceKind,
+          timeZone: 'UTC',
+          lastOpenedAt: catalog.updatedAt,
+          createdAt: catalog.updatedAt,
+          updatedAt: catalog.updatedAt,
+        });
+      }
+      db.prepare(
+        `INSERT INTO sync_catalog_state (
+           workspace_id, device_id, generation, catalog_json, validated_at,
+           retired_at
+         ) VALUES (?, ?, ?, ?, ?, NULL)
+         ON CONFLICT(workspace_id, device_id) DO UPDATE SET
+           generation = excluded.generation,
+           catalog_json = excluded.catalog_json,
+           validated_at = excluded.validated_at`,
+      ).run([
+        catalog.workspaceId,
+        catalog.deviceId,
+        catalog.generation,
+        serialized,
+        this.now(),
+      ]);
+    });
+    return true;
+  }
+
+  async recordLocalSyncMetadataSnapshot(conferenceId: string) {
+    const conference = await this.getConference(conferenceId);
+    if (!conference || !isShareableSourceUrl(conference.sourceUrl)) return 0;
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) return 0;
+    const talks = await this.listTalksByConference(conferenceId);
+    const decks = (await this.listDecksByConference(conferenceId)).filter(
+      (deck) => deck.kind !== 'notebook',
+    );
+    if (
+      talks.some(
+        (talk) =>
+          !isCredentialFreeMetadataUrl(talk.contributionId) ||
+          !isCredentialFreeMetadataUrl(talk.contributionUrl) ||
+          (talk.linkedAgendaUrl &&
+            !isCredentialFreeMetadataUrl(talk.linkedAgendaUrl)),
+      ) ||
+      decks.some((deck) => !isShareableSourceUrl(deck.sourceUrl))
+    ) {
+      return 0;
+    }
+    const conferenceRecord = {
+      id: conference.id,
+      sourceUrl: conference.sourceUrl,
+      title: conference.title,
+      dates: conference.dates,
+      host: conference.host,
+      sourceKind: conference.sourceKind ?? 'indico',
+      ...(conference.timeZone === undefined
+        ? {}
+        : { timeZone: conference.timeZone }),
+      createdAt: conference.createdAt,
+      updatedAt: conference.updatedAt,
+    };
+    const talkRecords = talks.map((talk) => ({
+      id: talk.id,
+      conferenceId: talk.conferenceId,
+      contributionId: talk.contributionId,
+      contributionUrl: talk.contributionUrl,
+      title: talk.title,
+      speaker: talk.speaker,
+      sessionTitle: talk.sessionTitle,
+      startsAt: talk.startsAt,
+      endsAt: talk.endsAt,
+      room: talk.room,
+      createdAt: talk.createdAt,
+      updatedAt: talk.updatedAt,
+      ...(talk.upstreamStatus ? { upstreamStatus: talk.upstreamStatus } : {}),
+      ...(talk.entryKind ? { entryKind: talk.entryKind } : {}),
+      ...(talk.linkedAgendaUrl
+        ? { linkedAgendaUrl: talk.linkedAgendaUrl }
+        : {}),
+    }));
+    const deckRecords = decks.map((deck) => ({
+      id: deck.id,
+      conferenceId: deck.conferenceId,
+      talkId: deck.talkId,
+      sourceUrl: deck.sourceUrl,
+      displayName: deck.displayName,
+      mimeType: deck.mimeType,
+      kind: deck.kind === 'other' ? 'other' : 'pdf',
+      createdAt: deck.createdAt,
+      updatedAt: deck.updatedAt,
+      ...(deck.upstreamStatus ? { upstreamStatus: deck.upstreamStatus } : {}),
+    }));
+    const entities = [
+      ...talkRecords.map((talk) => ({ kind: 'talk' as const, value: talk })),
+      ...deckRecords.map((deck) => ({ kind: 'deck' as const, value: deck })),
+    ];
+    const chunks: Array<typeof entities> = [];
+    for (let index = 0; index < entities.length; index += 32) {
+      chunks.push(entities.slice(index, index + 32));
+    }
+    if (!chunks.length) chunks.push([]);
+    const batchId = randomUUID();
+    await this.transaction(async () => {
+      for (let partIndex = 0; partIndex < chunks.length; partIndex += 1) {
+        const part = chunks[partIndex]!;
+        await this.recordLocalSyncOperation(
+          `metadata:${conferenceId}`,
+          conferenceId,
+          'conference.metadata',
+          {
+            batchId,
+            partIndex,
+            partCount: chunks.length,
+            conference: partIndex === 0 ? conferenceRecord : null,
+            talks: part
+              .filter((entity) => entity.kind === 'talk')
+              .map((entity) => entity.value),
+            decks: part
+              .filter((entity) => entity.kind === 'deck')
+              .map((entity) => entity.value),
+            upstreamRevision: null,
+          },
+        );
+      }
+    });
+    await this.flushIfNeeded();
+    return chunks.length;
+  }
+
+  async requeueSyncEligibleMetadata() {
+    const db = await this.getDb();
+    const conferences = db
+      .prepare(
+        `SELECT id, source_url FROM conferences
+         WHERE source_kind IN ('indico', 'web')
+         ORDER BY id`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    const shareableConferences = conferences.filter((row) =>
+      isShareableSourceUrl(String(row.source_url)),
+    );
+    for (const row of shareableConferences) {
+      await this.recordLocalSyncMetadataSnapshot(String(row.id));
+    }
+    const bookmarkedTalks = db
+      .prepare(
+        `SELECT talks.id, talks.conference_id, conferences.source_url
+         FROM talks
+         INNER JOIN conferences ON conferences.id = talks.conference_id
+         WHERE talks.bookmarked = 1
+           AND conferences.source_kind IN ('indico', 'web')
+         ORDER BY talks.id`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    const shareableBookmarks = bookmarkedTalks.filter((row) =>
+      isShareableSourceUrl(String(row.source_url)),
+    );
+    await this.transaction(async () => {
+      for (const row of shareableBookmarks) {
+        await this.recordLocalSyncOperation(
+          `metadata:${String(row.conference_id)}`,
+          String(row.conference_id),
+          'bookmark.set',
+          { talkId: String(row.id), bookmarked: true },
+        );
+      }
+    });
+    await this.flushIfNeeded();
+    return shareableConferences.length + shareableBookmarks.length;
+  }
+
+  async setSyncScanQueue(
+    queue: Array<{ relativeDirectory: string; lastName: string | null }>,
+  ) {
+    if (queue.length > 10_000) {
+      throw new Error('Sync scan progress exceeds its storage limit.');
+    }
+    const db = await this.getDb();
+    db.prepare(
+      `UPDATE sync_profile SET scan_queue_json = ?, updated_at = ?
+       WHERE singleton_id = 1`,
+    ).run([JSON.stringify(queue), this.now()]);
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
+  async listPendingSyncOutbox(limit = 32): Promise<SyncOutboxEntry[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 32) {
+      throw new Error('Sync outbox batch limit must be between 1 and 32.');
+    }
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId || !profile.enabled) return [];
+    return this.listPendingSyncOutboxForWorkspace(profile.workspaceId, limit);
+  }
+
+  async listPendingSyncOutboxForWorkspace(
+    workspaceId: string,
+    limit = 32,
+    after?: { createdAt: number; streamId: string; sequence: number },
+  ): Promise<SyncOutboxEntry[]> {
+    if (!isUuid(workspaceId)) throw new Error('Sync workspace ID is invalid.');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 32) {
+      throw new Error('Sync outbox batch limit must be between 1 and 32.');
+    }
+    const db = await this.getDb();
+    const rows = db
+      .prepare(
+        `SELECT operation_json, conference_id, state, created_at, published_at
+         FROM sync_outbox
+         WHERE state = 'pending' AND substr(stream_id, 1, 37) = ?
+           AND (? IS NULL OR created_at > ? OR
+             (created_at = ? AND stream_id > ?) OR
+             (created_at = ? AND stream_id = ? AND sequence > ?))
+         ORDER BY created_at, stream_id, sequence LIMIT ?`,
+      )
+      .all([
+        `${workspaceId}:`,
+        after ? 1 : null,
+        after?.createdAt ?? null,
+        after?.createdAt ?? null,
+        after?.streamId ?? null,
+        after?.createdAt ?? null,
+        after?.streamId ?? null,
+        after?.sequence ?? null,
+        limit,
+      ]) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      operation: JSON.parse(String(row.operation_json)) as SyncOperation,
+      conferenceId:
+        typeof row.conference_id === 'string' ? row.conference_id : null,
+      state: String(row.state) === 'published' ? 'published' : 'pending',
+      createdAt: Number(row.created_at),
+      publishedAt:
+        row.published_at === null || row.published_at === undefined
+          ? null
+          : Number(row.published_at),
+    }));
+  }
+
+  async countPendingSyncOutbox() {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) return 0;
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM sync_outbox
+         WHERE state = 'pending' AND substr(stream_id, 1, 37) = ?`,
+      )
+      .get([`${profile.workspaceId}:`]) as { count?: number } | undefined;
+    return Number(row?.count ?? 0);
+  }
+
+  async markSyncOperationPublished(
+    operationId: string,
+    publishedAt = this.now(),
+  ) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) {
+      throw new Error('Sync library is not currently connected.');
+    }
+    const result = db
+      .prepare(
+        `UPDATE sync_outbox
+         SET state = 'published', published_at = COALESCE(published_at, ?)
+         WHERE operation_id = ? AND state IN ('pending', 'published')
+           AND substr(stream_id, 1, 37) = ?`,
+      )
+      .run([publishedAt, operationId, `${profile.workspaceId}:`]);
+    if (result.changes === 0) {
+      throw new Error('Cannot mark an unknown sync operation as published.');
+    }
+    this.markDirty();
+    await this.flushIfNeeded();
+  }
+
+  async recordDownloadedSyncOperation(operation: SyncOperation) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId || profile.workspaceId !== operation.workspaceId) {
+      throw new Error('Downloaded operation belongs to another sync library.');
+    }
+    if (operation.deviceId === profile.deviceId) return false;
+    const scopedStreamId = `${profile.workspaceId}:${operation.streamId}`;
+    const prior = db
+      .prepare('SELECT operation_json FROM sync_inbox WHERE operation_id = ?')
+      .get(operation.operationId) as { operation_json?: string } | undefined;
+    const operationJson = canonicalJson(operation);
+    if (prior) {
+      if (prior.operation_json !== operationJson) {
+        throw new Error(
+          'Conflicting bytes for a previously downloaded operation.',
+        );
+      }
+      return false;
+    }
+    db.prepare(
+      `INSERT INTO sync_inbox (
+         operation_id, stream_id, device_id, sequence, operation_json, state,
+         discovered_at, applied_at
+       ) VALUES (?, ?, ?, ?, ?, 'downloaded', ?, NULL)`,
+    ).run([
+      operation.operationId,
+      scopedStreamId,
+      operation.deviceId,
+      operation.sequence,
+      operationJson,
+      this.now(),
+    ]);
+    this.markDirty();
+    await this.flushIfNeeded();
+    return true;
+  }
+
+  async listDownloadedSyncOperations(streamId?: string) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) return [];
+    const scopedStreamId = streamId
+      ? `${profile.workspaceId}:${streamId}`
+      : null;
+    const rows = db
+      .prepare(
+        `SELECT operation_json FROM sync_inbox
+         WHERE state = 'downloaded'
+           AND substr(stream_id, 1, 37) = ?
+           AND (? IS NULL OR stream_id = ?)
+         ORDER BY stream_id, device_id, sequence`,
+      )
+      .all([
+        `${profile.workspaceId}:`,
+        scopedStreamId,
+        scopedStreamId,
+      ]) as Array<Record<string, unknown>>;
+    return rows.map(
+      (row) => JSON.parse(String(row.operation_json)) as SyncOperation,
+    );
+  }
+
+  async listSyncOperationsForStream(streamId: string) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) return [];
+    const scopedStreamId = `${profile.workspaceId}:${streamId}`;
+    const outbox = db
+      .prepare(`SELECT operation_json FROM sync_outbox WHERE stream_id = ?`)
+      .all([scopedStreamId]) as Array<Record<string, unknown>>;
+    const inbox = db
+      .prepare(`SELECT operation_json FROM sync_inbox WHERE stream_id = ?`)
+      .all([scopedStreamId]) as Array<Record<string, unknown>>;
+    const byId = new Map<string, SyncOperation>();
+    for (const row of [...outbox, ...inbox]) {
+      const serialized = String(row.operation_json);
+      const operation = JSON.parse(serialized) as SyncOperation;
+      const previous = byId.get(operation.operationId);
+      if (previous && canonicalJson(previous) !== serialized) {
+        throw new Error('Conflicting bytes for a sync operation identity.');
+      }
+      byId.set(operation.operationId, operation);
+    }
+    return [...byId.values()];
+  }
+
+  async applyDownloadedMetadataOperations(streamId: string) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId || !streamId.startsWith('metadata:')) return false;
+    const conferenceId = streamId.slice('metadata:'.length);
+    const operations = await this.listSyncOperationsForStream(streamId);
+    const pendingInboxRows = db
+      .prepare(
+        `SELECT operation_id FROM sync_inbox
+         WHERE stream_id = ? AND state = 'downloaded'`,
+      )
+      .all([`${profile.workspaceId}:${streamId}`]) as Array<
+      Record<string, unknown>
+    >;
+    if (!pendingInboxRows.length || !operations.length) return false;
+    if (
+      operations.some(
+        (operation) =>
+          operation.kind !== 'noop' &&
+          operation.kind !== 'bookmark.set' &&
+          operation.kind !== 'conference.metadata' &&
+          operation.kind !== 'conference.delete',
+      )
+    ) {
+      return false;
+    }
+
+    const streamState = db
+      .prepare(
+        `SELECT local_frontier_json, remote_frontier_json
+         FROM sync_stream_state WHERE stream_id = ?`,
+      )
+      .get(`${profile.workspaceId}:${streamId}`) as
+      | { local_frontier_json?: string; remote_frontier_json?: string }
+      | undefined;
+    const readiness = causallyReadyMetadataOperations(operations, {
+      ...(JSON.parse(streamState?.local_frontier_json ?? '{}') as Record<
+        string,
+        number
+      >),
+      ...(JSON.parse(streamState?.remote_frontier_json ?? '{}') as Record<
+        string,
+        number
+      >),
+    });
+    const readyOperations = readiness.operations;
+    if (readyOperations.length === 0) return false;
+
+    const appliedOperationIds = new Set<string>();
+    const metadataOperations = operations.filter(
+      (operation) =>
+        operation.kind === 'conference.metadata' &&
+        readyOperations.some(
+          (ready) => ready.operationId === operation.operationId,
+        ),
+    );
+    const batches = new Map<
+      string,
+      { partCount: number; parts: Map<number, SyncOperation> }
+    >();
+    for (const operation of metadataOperations) {
+      const payload = operation.payload;
+      const batchId = String(payload.batchId);
+      const partIndex = Number(payload.partIndex);
+      const partCount = Number(payload.partCount);
+      let batch = batches.get(batchId);
+      if (!batch) {
+        batch = { partCount, parts: new Map() };
+        batches.set(batchId, batch);
+      }
+      if (batch.partCount !== partCount || batch.parts.has(partIndex)) {
+        throw new Error(
+          'Downloaded metadata batch has duplicate or mismatched parts.',
+        );
+      }
+      batch.parts.set(partIndex, operation);
+    }
+
+    const refreshes: Array<{
+      operation: SyncOperation;
+      upstreamRevision: string | null;
+      records: Record<string, unknown>;
+    }> = [];
+    for (const batch of batches.values()) {
+      // partCount and partIndex are validated with a strict upper bound. Do
+      // not allocate an attacker-controlled array just to verify completeness.
+      if (
+        batch.parts.size !== batch.partCount ||
+        !batch.parts.has(0) ||
+        !batch.parts.has(batch.partCount - 1)
+      ) {
+        continue;
+      }
+      const parts = [...batch.parts.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, operation]) => operation);
+      const firstPayload = parts[0]!.payload;
+      const conference = firstPayload.conference;
+      if (!conference || typeof conference !== 'object') {
+        throw new Error('Complete metadata batch has no conference record.');
+      }
+      const talks = parts.flatMap((part) =>
+        Array.isArray(part.payload.talks) ? part.payload.talks : [],
+      );
+      const decks = parts.flatMap((part) =>
+        Array.isArray(part.payload.decks) ? part.payload.decks : [],
+      );
+      refreshes.push({
+        operation: parts[parts.length - 1]!,
+        upstreamRevision:
+          typeof firstPayload.upstreamRevision === 'string'
+            ? firstPayload.upstreamRevision
+            : null,
+        records: { conference, talks, decks },
+      });
+      for (const part of parts) appliedOperationIds.add(part.operationId);
+    }
+
+    const metadataMerge = mergeMetadataRefreshes(refreshes);
+    const deletionMerge = mergeConcurrentConferenceDeletion(
+      readyOperations.filter(
+        (operation) =>
+          operation.kind === 'conference.metadata' ||
+          operation.kind === 'conference.delete',
+      ),
+    );
+    await this.transaction(async () => {
+      if (deletionMerge.deleted) {
+        const deletedAt = Math.max(
+          ...deletionMerge.operations
+            .filter((operation) => operation.kind === 'conference.delete')
+            .map((operation) => Number(operation.payload.deletedAt)),
+        );
+        db.prepare(
+          `INSERT INTO sync_hidden_conferences (
+             workspace_id, conference_id, hidden_at
+           ) VALUES (?, ?, ?)
+           ON CONFLICT(workspace_id, conference_id) DO UPDATE SET
+             hidden_at = MAX(hidden_at, excluded.hidden_at)`,
+        ).run([profile.workspaceId, conferenceId, deletedAt]);
+        for (const operation of readyOperations) {
+          if (operation.kind === 'conference.delete') {
+            appliedOperationIds.add(operation.operationId);
+          }
+        }
+      } else if (metadataMerge.alternatives.length > 0) {
+        const conflictId = createHash('sha256')
+          .update(canonicalJson([profile.workspaceId, streamId, 'metadata']))
+          .digest('hex');
+        db.prepare(
+          `INSERT INTO sync_conflicts (
+             conflict_id, stream_id, entity_id, conflict_json, created_at,
+             resolved_at
+           ) VALUES (?, ?, ?, ?, ?, NULL)
+           ON CONFLICT(conflict_id) DO UPDATE SET
+             conflict_json = excluded.conflict_json,
+             resolved_at = NULL`,
+        ).run([
+          conflictId,
+          `${profile.workspaceId}:${streamId}`,
+          conferenceId,
+          canonicalJson({
+            kind: 'metadata',
+            alternatives: metadataMerge.alternatives,
+          }),
+          this.now(),
+        ]);
+      } else if (metadataMerge.refresh) {
+        const hidden = db
+          .prepare(
+            `SELECT 1 FROM sync_hidden_conferences
+             WHERE workspace_id = ? AND conference_id = ?`,
+          )
+          .get([profile.workspaceId, conferenceId]);
+        if (!hidden) {
+          const records = metadataMerge.refresh.records;
+          const remoteConference = records.conference as Conference;
+          const localConference = await this.getConference(conferenceId);
+          await this.upsertConference({
+            ...remoteConference,
+            lastOpenedAt: localConference?.lastOpenedAt ?? null,
+          });
+          for (const remoteTalk of records.talks as Talk[]) {
+            const localTalk = await this.getTalk(remoteTalk.id);
+            await this.upsertTalk({
+              ...remoteTalk,
+              bookmarked: localTalk?.bookmarked ?? false,
+            });
+          }
+          for (const remoteDeck of records.decks as Deck[]) {
+            const talk = await this.getTalk(remoteDeck.talkId);
+            if (!talk || talk.conferenceId !== conferenceId) {
+              throw new Error(
+                'A remote deck does not match its conference metadata.',
+              );
+            }
+            const localDeck = await this.getDeck(remoteDeck.id);
+            await this.upsertDeck({
+              ...remoteDeck,
+              selected: localDeck?.selected ?? false,
+            });
+          }
+        }
+      }
+      if (metadataMerge.alternatives.length > 0 || deletionMerge.deleted) {
+        for (const batch of batches.values()) {
+          if (batch.parts.size === batch.partCount) {
+            for (const operation of batch.parts.values()) {
+              appliedOperationIds.add(operation.operationId);
+            }
+          }
+        }
+      } else if (metadataMerge.refresh) {
+        db.prepare(
+          `UPDATE sync_conflicts SET resolved_at = ?
+           WHERE stream_id = ? AND entity_id = ? AND resolved_at IS NULL`,
+        ).run([this.now(), `${profile.workspaceId}:${streamId}`, conferenceId]);
+      }
+
+      const bookmarkOperations = readyOperations.filter(
+        (operation) => operation.kind === 'bookmark.set',
+      );
+      const byTalk = new Map<string, SyncOperation[]>();
+      for (const operation of bookmarkOperations) {
+        const talkId = String(operation.payload.talkId);
+        const group = byTalk.get(talkId) ?? [];
+        group.push(operation);
+        byTalk.set(talkId, group);
+      }
+      for (const [talkId, changes] of byTalk) {
+        const talk = await this.getTalk(talkId);
+        if (!talk) continue;
+        if (talk.conferenceId !== conferenceId) {
+          throw new Error(
+            'A remote bookmark does not match its conference stream.',
+          );
+        }
+        const merged = mergeBookmarkState(changes);
+        db.prepare(
+          'UPDATE talks SET bookmarked = ?, updated_at = ? WHERE id = ?',
+        ).run([merged.bookmarked ? 1 : 0, this.now(), talkId]);
+        for (const change of changes) {
+          appliedOperationIds.add(change.operationId);
+        }
+      }
+      for (const operation of readyOperations) {
+        if (operation.kind === 'noop') {
+          appliedOperationIds.add(operation.operationId);
+        }
+      }
+
+      const inboxUpdate = db.prepare(
+        `UPDATE sync_inbox SET state = 'applied', applied_at = ?
+         WHERE operation_id = ? AND state = 'downloaded'`,
+      );
+      for (const row of pendingInboxRows) {
+        const operationId = String(row.operation_id);
+        if (appliedOperationIds.has(operationId)) {
+          inboxUpdate.run([this.now(), operationId]);
+        }
+      }
+
+      const remoteFrontierRow = db
+        .prepare(
+          'SELECT remote_frontier_json FROM sync_stream_state WHERE stream_id = ?',
+        )
+        .get(`${profile.workspaceId}:${streamId}`) as
+        | { remote_frontier_json?: string }
+        | undefined;
+      const remoteFrontier = JSON.parse(
+        remoteFrontierRow?.remote_frontier_json ?? '{}',
+      ) as Record<string, number>;
+      const byDevice = new Map<string, Set<number>>();
+      for (const operation of readyOperations) {
+        if (
+          operation.deviceId === profile.deviceId ||
+          !appliedOperationIds.has(operation.operationId)
+        ) {
+          continue;
+        }
+        const sequences = byDevice.get(operation.deviceId) ?? new Set<number>();
+        sequences.add(operation.sequence);
+        byDevice.set(operation.deviceId, sequences);
+      }
+      for (const [remoteDevice, sequences] of byDevice) {
+        let next = (remoteFrontier[remoteDevice] ?? 0) + 1;
+        while (sequences.has(next)) next += 1;
+        remoteFrontier[remoteDevice] = next - 1;
+      }
+      db.prepare(
+        `INSERT INTO sync_stream_state (
+           stream_id, next_sequence, local_frontier_json,
+           remote_frontier_json, snapshot_id, updated_at
+         ) VALUES (?, 1, '{}', ?, NULL, ?)
+         ON CONFLICT(stream_id) DO UPDATE SET
+           remote_frontier_json = excluded.remote_frontier_json,
+           updated_at = excluded.updated_at`,
+      ).run([
+        `${profile.workspaceId}:${streamId}`,
+        canonicalJson(remoteFrontier),
+        this.now(),
+      ]);
+    });
+    return appliedOperationIds.size > 0;
+  }
+
+  async applyDownloadedAnnotationOperations(streamId: string) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId || !streamId.startsWith('deck:')) return false;
+    const deckId = streamId.slice('deck:'.length);
+    const deck = await this.getDeck(deckId);
+    if (!deck) return false;
+    const operations = await this.listSyncOperationsForStream(streamId);
+    const pendingInboxRows = db
+      .prepare(
+        `SELECT operation_id FROM sync_inbox
+         WHERE stream_id = ? AND state IN ('downloaded', 'awaiting-version')`,
+      )
+      .all([`${profile.workspaceId}:${streamId}`]) as Array<
+      Record<string, unknown>
+    >;
+    const pendingInboxIds = pendingInboxRows.map((row) =>
+      String(row.operation_id),
+    );
+    if (!operations.length) return false;
+    if (
+      operations.some(
+        (operation) =>
+          operation.kind !== 'noop' &&
+          operation.kind !== 'annotation.put' &&
+          operation.kind !== 'annotation.erase' &&
+          operation.kind !== 'document-version.associate',
+      )
+    ) {
+      return false;
+    }
+    const annotationIdForOperation = (operation: SyncOperation) =>
+      operation.kind === 'annotation.put'
+        ? String((operation.payload.annotation as Record<string, unknown>).id)
+        : operation.kind === 'annotation.erase'
+          ? String(operation.payload.annotationId)
+          : null;
+    const operationAnnotationIds = operations
+      .map(annotationIdForOperation)
+      .filter((id): id is string => id !== null);
+    const suppressedIds = new Set<string>();
+    if (operationAnnotationIds.length) {
+      const uniqueIds = [...new Set(operationAnnotationIds)];
+      const placeholders = uniqueIds.map(() => '?').join(',');
+      const suppressedRows = db
+        .prepare(
+          `SELECT annotation_id FROM sync_suppressed_annotations
+           WHERE workspace_id = ? AND annotation_id IN (${placeholders})`,
+        )
+        .all([profile.workspaceId, ...uniqueIds]) as Array<
+        Record<string, unknown>
+      >;
+      for (const row of suppressedRows) {
+        suppressedIds.add(String(row.annotation_id));
+      }
+    }
+    const readyAssociations: SyncOperation[] = [];
+    const associationTargets = new Map<string, string>();
+    const conflictingAssociationIds = new Set<string>();
+    for (const operation of operations) {
+      if (operation.kind !== 'document-version.associate') continue;
+      const ids = operation.payload.annotationIds as string[];
+      const toVersion = String(operation.payload.toVersion);
+      const puts = operations.filter(
+        (candidate) =>
+          candidate.kind === 'annotation.put' &&
+          candidate.payload.documentVersion === null &&
+          ids.includes(
+            String(
+              (candidate.payload.annotation as Record<string, unknown>).id,
+            ),
+          ),
+      );
+      const putIds = new Set(
+        puts.map((candidate) =>
+          String((candidate.payload.annotation as Record<string, unknown>).id),
+        ),
+      );
+      const placeholders = ids.map(() => '?').join(',');
+      const versions = db
+        .prepare(
+          `SELECT annotation_id, document_version, version_state
+           FROM sync_annotation_versions
+           WHERE deck_id = ?
+             AND annotation_id IN (${placeholders})`,
+        )
+        .all([deckId, ...ids]) as Array<Record<string, unknown>>;
+      const byAnnotation = new Map(
+        versions.map((row) => [String(row.annotation_id), row]),
+      );
+      const complete = ids.every((id) => {
+        const existing = byAnnotation.get(id);
+        if (
+          existing?.version_state === 'known' &&
+          existing.document_version === toVersion
+        ) {
+          return true;
+        }
+        return (
+          existing?.version_state === 'unknown' || (!existing && putIds.has(id))
+        );
+      });
+      if (!complete) continue;
+      readyAssociations.push(operation);
+      for (const id of ids) {
+        if (conflictingAssociationIds.has(id)) continue;
+        const previous = associationTargets.get(id);
+        if (previous && previous !== toVersion) {
+          conflictingAssociationIds.add(id);
+          associationTargets.delete(id);
+        } else {
+          associationTargets.set(id, toVersion);
+        }
+      }
+    }
+    for (let index = readyAssociations.length - 1; index >= 0; index -= 1) {
+      const ids = readyAssociations[index]!.payload.annotationIds as string[];
+      if (ids.some((id) => conflictingAssociationIds.has(id))) {
+        readyAssociations.splice(index, 1);
+      }
+    }
+    const visibleOperations = operations
+      .filter((operation) => {
+        const annotationId = annotationIdForOperation(operation);
+        return annotationId === null || !suppressedIds.has(annotationId);
+      })
+      .map((operation) => {
+        const annotationId = annotationIdForOperation(operation);
+        const associatedVersion = annotationId
+          ? associationTargets.get(annotationId)
+          : undefined;
+        if (
+          !associatedVersion ||
+          (operation.kind !== 'annotation.put' &&
+            operation.kind !== 'annotation.erase') ||
+          operation.payload.documentVersion !== null
+        ) {
+          return operation;
+        }
+        return {
+          ...operation,
+          payload: { ...operation.payload, documentVersion: associatedVersion },
+        };
+      });
+    const observedSequences = new Map<string, Set<number>>();
+    for (const operation of operations) {
+      const sequences =
+        observedSequences.get(operation.deviceId) ?? new Set<number>();
+      sequences.add(operation.sequence);
+      observedSequences.set(operation.deviceId, sequences);
+    }
+    const contiguousObserved = new Map<string, number>();
+    for (const [deviceId, sequences] of observedSequences) {
+      let next = 1;
+      while (sequences.has(next)) next += 1;
+      contiguousObserved.set(deviceId, next - 1);
+    }
+    for (const operation of operations) {
+      if (
+        Object.entries(operation.context).some(
+          ([deviceId, sequence]) =>
+            sequence > (contiguousObserved.get(deviceId) ?? 0),
+        )
+      ) {
+        return false;
+      }
+      for (const requirement of operation.requires) {
+        const prerequisite = db
+          .prepare(
+            `SELECT local_frontier_json, remote_frontier_json
+             FROM sync_stream_state WHERE stream_id = ?`,
+          )
+          .get(`${profile.workspaceId}:${requirement.streamId}`) as
+          | {
+              local_frontier_json?: string;
+              remote_frontier_json?: string;
+            }
+          | undefined;
+        const available = {
+          ...(JSON.parse(prerequisite?.local_frontier_json ?? '{}') as Record<
+            string,
+            number
+          >),
+          ...(JSON.parse(prerequisite?.remote_frontier_json ?? '{}') as Record<
+            string,
+            number
+          >),
+        };
+        for (const [deviceId, sequence] of Object.entries(
+          requirement.frontier,
+        )) {
+          if (sequence > (available[deviceId] ?? 0)) return false;
+        }
+      }
+    }
+    const dbDeckVersion = db
+      .prepare(
+        `SELECT document_version FROM sync_document_versions WHERE deck_id = ?`,
+      )
+      .get(deckId) as { document_version?: string | null } | undefined;
+    const activeDocumentVersion = dbDeckVersion?.document_version ?? null;
+    const matchingOperations =
+      activeDocumentVersion === null
+        ? []
+        : visibleOperations.filter((operation) => {
+            if (
+              operation.kind !== 'annotation.put' &&
+              operation.kind !== 'annotation.erase'
+            ) {
+              return false;
+            }
+            const version =
+              operation.kind === 'annotation.put'
+                ? operation.payload.documentVersion
+                : operation.payload.documentVersion;
+            return version === activeDocumentVersion;
+          });
+    const merged = matchingOperations.length
+      ? mergeAnnotationOperations(matchingOperations)
+      : {
+          annotations: [],
+          tombstones: [],
+          conflicts: [],
+          duplicateOperationIds: [],
+        };
+    const requiredSlides = merged.annotations.map((item) =>
+      String(item.annotation.slideId),
+    );
+    if (requiredSlides.length) {
+      const placeholders = requiredSlides.map(() => '?').join(',');
+      const slides = db
+        .prepare(
+          `SELECT id FROM slides WHERE deck_id = ? AND id IN (${placeholders})`,
+        )
+        .all([deckId, ...requiredSlides]) as Array<Record<string, unknown>>;
+      if (slides.length !== new Set(requiredSlides).size) return false;
+    }
+    const appliedAssociationIds = new Set<string>();
+    await this.transaction(async () => {
+      const associate = db.prepare(
+        `UPDATE sync_annotation_versions
+         SET document_version = ?, version_state = 'known', updated_at = ?
+         WHERE annotation_id = ? AND deck_id = ? AND version_state = 'unknown'`,
+      );
+      for (const operation of readyAssociations) {
+        const ids = operation.payload.annotationIds as string[];
+        const version = String(operation.payload.toVersion);
+        for (const id of ids) {
+          associate.run([version, this.now(), id, deckId]);
+        }
+        appliedAssociationIds.add(operation.operationId);
+      }
+      const conflictIds = new Set(
+        merged.conflicts.map((conflict) => conflict.annotationId),
+      );
+      const operationAnnotationIds = new Set(
+        matchingOperations.map((operation) =>
+          operation.kind === 'annotation.put'
+            ? String(
+                (operation.payload.annotation as Record<string, unknown>).id,
+              )
+            : String(operation.payload.annotationId),
+        ),
+      );
+      for (const annotationId of operationAnnotationIds) {
+        if (conflictIds.has(annotationId)) continue;
+        db.prepare('DELETE FROM annotations WHERE id = ? AND deck_id = ?').run([
+          annotationId,
+          deckId,
+        ]);
+      }
+      for (const item of merged.annotations) {
+        const annotation = item.annotation as unknown as Annotation;
+        if (
+          annotation.deckId !== deckId ||
+          annotation.conferenceId !== deck.conferenceId ||
+          annotation.talkId !== deck.talkId
+        ) {
+          throw new Error(
+            'A remote annotation does not match its local deck identity.',
+          );
+        }
+        db.prepare(
+          `INSERT INTO sync_annotation_versions (
+             annotation_id, deck_id, document_version, version_state,
+             association_operation_id, updated_at
+           ) VALUES (?, ?, ?, ?, NULL, ?)
+           ON CONFLICT(annotation_id) DO UPDATE SET
+             deck_id = excluded.deck_id,
+             document_version = excluded.document_version,
+             version_state = excluded.version_state,
+             updated_at = excluded.updated_at`,
+        ).run([
+          annotation.id,
+          deckId,
+          item.documentVersion,
+          item.documentVersion === null ? 'unknown' : 'known',
+          this.now(),
+        ]);
+        await this.upsertAnnotation(annotation);
+      }
+      for (const conflict of merged.conflicts) {
+        const conflictId = createHash('sha256')
+          .update(
+            canonicalJson([
+              profile.workspaceId,
+              streamId,
+              conflict.documentVersion,
+              conflict.annotationId,
+            ]),
+          )
+          .digest('hex');
+        db.prepare(
+          `INSERT INTO sync_conflicts (
+             conflict_id, stream_id, entity_id, conflict_json, created_at,
+             resolved_at
+           ) VALUES (?, ?, ?, ?, ?, NULL)
+           ON CONFLICT(conflict_id) DO UPDATE SET
+             conflict_json = excluded.conflict_json,
+             resolved_at = NULL`,
+        ).run([
+          conflictId,
+          `${profile.workspaceId}:${streamId}`,
+          conflict.annotationId,
+          canonicalJson(conflict),
+          this.now(),
+        ]);
+      }
+      if (pendingInboxIds.length) {
+        const matchedIds = new Set(
+          matchingOperations.map((operation) => operation.operationId),
+        );
+        for (const operationId of appliedAssociationIds) {
+          matchedIds.add(operationId);
+        }
+        for (const operation of operations) {
+          const annotationId = annotationIdForOperation(operation);
+          if (
+            operation.kind === 'noop' ||
+            (annotationId && suppressedIds.has(annotationId))
+          ) {
+            matchedIds.add(operation.operationId);
+          }
+        }
+        const appliedIds = pendingInboxIds.filter((id) => matchedIds.has(id));
+        const awaitingVersionIds = pendingInboxIds.filter(
+          (id) => !matchedIds.has(id),
+        );
+        const updateState = db.prepare(
+          `UPDATE sync_inbox SET state = ?, applied_at = ?
+           WHERE operation_id = ? AND state IN ('downloaded', 'awaiting-version')`,
+        );
+        for (const operationId of appliedIds) {
+          updateState.run(['applied', this.now(), operationId]);
+        }
+        for (const operationId of awaitingVersionIds) {
+          updateState.run(['awaiting-version', null, operationId]);
+        }
+      }
+      const stateKey = `${profile.workspaceId}:${streamId}`;
+      const stateRow = db
+        .prepare(
+          'SELECT remote_frontier_json FROM sync_stream_state WHERE stream_id = ?',
+        )
+        .get(stateKey) as { remote_frontier_json?: string } | undefined;
+      const remoteFrontier = JSON.parse(
+        stateRow?.remote_frontier_json ?? '{}',
+      ) as Record<string, number>;
+      const byDevice = new Map<string, Set<number>>();
+      const appliedRemoteRows = db
+        .prepare(
+          `SELECT device_id, sequence FROM sync_inbox
+           WHERE stream_id = ? AND device_id <> ? AND state = 'applied'`,
+        )
+        .all([stateKey, profile.deviceId]) as Array<Record<string, unknown>>;
+      for (const row of appliedRemoteRows) {
+        const deviceId = String(row.device_id);
+        const sequences = byDevice.get(deviceId) ?? new Set<number>();
+        sequences.add(Number(row.sequence));
+        byDevice.set(deviceId, sequences);
+      }
+      for (const [remoteDevice, sequences] of byDevice) {
+        let next = (remoteFrontier[remoteDevice] ?? 0) + 1;
+        while (sequences.has(next)) next += 1;
+        remoteFrontier[remoteDevice] = next - 1;
+      }
+      db.prepare(
+        `INSERT INTO sync_stream_state (
+           stream_id, next_sequence, local_frontier_json,
+           remote_frontier_json, snapshot_id, updated_at
+         ) VALUES (?, 1, '{}', ?, NULL, ?)
+         ON CONFLICT(stream_id) DO UPDATE SET
+           remote_frontier_json = excluded.remote_frontier_json,
+           updated_at = excluded.updated_at`,
+      ).run([stateKey, canonicalJson(remoteFrontier), this.now()]);
+    });
+    return true;
+  }
+
   async close() {
     await this.flushIfNeeded();
     this.db?.close();
@@ -987,11 +2897,20 @@ export class PersistenceStore {
 
   async listConferences(): Promise<Conference[]> {
     const db = await this.getDb();
+    const profile = await this.getSyncProfile();
     const rows = db
       .prepare(
-        'SELECT * FROM conferences ORDER BY COALESCE(last_opened_at, updated_at) DESC, updated_at DESC',
+        `SELECT * FROM conferences
+         WHERE (? IS NULL OR NOT EXISTS (
+           SELECT 1 FROM sync_hidden_conferences AS hidden
+           WHERE hidden.workspace_id = ? AND hidden.conference_id = conferences.id
+         ))
+         ORDER BY COALESCE(last_opened_at, updated_at) DESC, updated_at DESC`,
       )
-      .all() as Record<string, unknown>[];
+      .all([profile.workspaceId, profile.workspaceId]) as Record<
+      string,
+      unknown
+    >[];
     return rows.map((row) => rowToConference(row));
   }
 
@@ -1006,6 +2925,31 @@ export class PersistenceStore {
 
   async deleteConference(id: string) {
     const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    const conference = await this.getConference(id);
+    if (
+      profile.workspaceId &&
+      conference &&
+      isShareableSourceUrl(conference.sourceUrl)
+    ) {
+      const deletedAt = this.now();
+      await this.transaction(async () => {
+        db.prepare(
+          `INSERT INTO sync_hidden_conferences (workspace_id, conference_id, hidden_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(workspace_id, conference_id) DO UPDATE SET
+             hidden_at = excluded.hidden_at`,
+        ).run([profile.workspaceId, id, deletedAt]);
+        await this.recordLocalSyncOperation(
+          `metadata:${id}`,
+          id,
+          'conference.delete',
+          { deletedAt, reason: 'user' },
+        );
+      });
+      await this.flushIfNeeded();
+      return;
+    }
     db.prepare('DELETE FROM view_state WHERE conference_id = ?').run(id);
     db.prepare('DELETE FROM annotations WHERE conference_id = ?').run(id);
     db.prepare('DELETE FROM slides WHERE conference_id = ?').run(id);
@@ -1095,10 +3039,23 @@ export class PersistenceStore {
 
   async setTalkBookmarked(id: string, bookmarked: boolean) {
     const db = await this.getDb();
-    db.prepare(
-      'UPDATE talks SET bookmarked = ?, updated_at = ? WHERE id = ?',
-    ).run([bookmarked ? 1 : 0, this.now(), id]);
-    this.markDirty();
+    await this.transaction(async () => {
+      const talk = await this.getTalk(id);
+      if (!talk || talk.bookmarked === bookmarked) return;
+      db.prepare(
+        'UPDATE talks SET bookmarked = ?, updated_at = ? WHERE id = ?',
+      ).run([bookmarked ? 1 : 0, this.now(), id]);
+      const conference = await this.getConference(talk.conferenceId);
+      if (conference && isShareableSourceUrl(conference.sourceUrl)) {
+        await this.recordLocalSyncOperation(
+          `metadata:${conference.id}`,
+          conference.id,
+          'bookmark.set',
+          { talkId: talk.id, bookmarked },
+        );
+      }
+      this.markDirty();
+    });
     await this.flushIfNeeded();
   }
 
@@ -1615,11 +3572,32 @@ export class PersistenceStore {
     }
 
     const slides = await this.listSlidesByDeck(deckId);
+    const syncProfile = await this.getSyncProfile();
+    const visibleAnnotationRows = syncProfile.workspaceId
+      ? ((await this.getDb())
+          .prepare(
+            `SELECT annotation_version.annotation_id
+         FROM sync_annotation_versions AS annotation_version
+         INNER JOIN sync_document_versions AS document_version
+           ON document_version.deck_id = annotation_version.deck_id
+         WHERE annotation_version.deck_id = ?
+           AND annotation_version.version_state = 'known'
+           AND document_version.version_state = 'known'
+           AND annotation_version.document_version = document_version.document_version`,
+          )
+          .all([deckId]) as Array<Record<string, unknown>>)
+      : null;
+    const visibleAnnotationIds = visibleAnnotationRows
+      ? new Set(visibleAnnotationRows.map((row) => String(row.annotation_id)))
+      : null;
     const annotationsBySlide = new Map<string, Annotation[]>();
     for (const slide of slides) {
       annotationsBySlide.set(
         slide.id,
-        await this.listAnnotationsBySlide(slide.id),
+        (await this.listAnnotationsBySlide(slide.id)).filter(
+          (annotation) =>
+            !visibleAnnotationIds || visibleAnnotationIds.has(annotation.id),
+        ),
       );
     }
     const viewState = await this.getViewState(deckId);
@@ -2124,10 +4102,14 @@ export class PersistenceStore {
       if (change.kind === 'delete') {
         const annotation = await this.getAnnotation(change.annotationId);
         if (annotation?.deckId === deckId) {
+          await this.recordLocalSyncAnnotationChange(
+            'annotation.erase',
+            annotation,
+          );
           await this.deleteAnnotation(change.annotationId);
         }
       } else if (change.kind === 'upsert-stroke') {
-        await this.upsertAnnotation({
+        const annotation: PenStroke = {
           id: change.stroke.id,
           conferenceId,
           talkId,
@@ -2142,16 +4124,26 @@ export class PersistenceStore {
           points: change.stroke.points,
           createdAt: now,
           updatedAt: now,
-        });
+        };
+        await this.upsertAnnotation(annotation);
+        await this.recordLocalSyncAnnotationChange(
+          'annotation.put',
+          annotation,
+        );
       } else {
-        await this.upsertAnnotation({
+        const annotation: TextNote = {
           ...change.note,
           conferenceId,
           talkId,
           deckId,
           slideId,
           updatedAt: now,
-        });
+        };
+        await this.upsertAnnotation(annotation);
+        await this.recordLocalSyncAnnotationChange(
+          'annotation.put',
+          annotation,
+        );
       }
     }
 
@@ -2181,6 +4173,246 @@ export class PersistenceStore {
          revision = excluded.revision,
          updated_at = excluded.updated_at`,
     ).run([deckId, state.revision, now]);
+  }
+
+  private async recordLocalSyncAnnotationChange(
+    kind: 'annotation.put' | 'annotation.erase',
+    annotation: Annotation,
+  ) {
+    const db = await this.getDb();
+    const profileRow = db
+      .prepare('SELECT * FROM sync_profile WHERE singleton_id = 1')
+      .get() as Record<string, unknown> | undefined;
+    if (!profileRow || typeof profileRow.workspace_id !== 'string') {
+      return;
+    }
+    const workspaceId = String(profileRow.workspace_id);
+    const deviceId = String(profileRow.device_id);
+    const conference = await this.getConference(annotation.conferenceId);
+    if (!conference || !isShareableSourceUrl(conference.sourceUrl)) {
+      return;
+    }
+    const deck = await this.getDeck(annotation.deckId);
+    if (!deck || deck.kind === 'notebook') return;
+    if (kind === 'annotation.put') {
+      db.prepare(
+        'DELETE FROM sync_suppressed_annotations WHERE workspace_id = ? AND annotation_id = ?',
+      ).run([workspaceId, annotation.id]);
+    }
+
+    const now = this.now();
+    db.prepare(
+      `INSERT OR IGNORE INTO sync_document_versions (
+        deck_id, document_version, version_state, measured_at, updated_at
+      ) VALUES (?, NULL, 'unknown', NULL, ?)`,
+    ).run([annotation.deckId, now]);
+
+    const versionRow = db
+      .prepare(
+        `SELECT annotation_version.annotation_id,
+                annotation_version.document_version,
+                document_version.document_version AS deck_document_version
+         FROM sync_document_versions AS document_version
+         LEFT JOIN sync_annotation_versions AS annotation_version
+           ON annotation_version.deck_id = document_version.deck_id
+          AND annotation_version.annotation_id = ?
+         WHERE document_version.deck_id = ?`,
+      )
+      .get([annotation.id, annotation.deckId]) as
+      | {
+          annotation_id?: string | null;
+          document_version?: string | null;
+          deck_document_version?: string | null;
+        }
+      | undefined;
+    // An older annotation keeps its unknown association even after the deck's
+    // current PDF bytes have been measured. Only new annotations inherit it.
+    const documentVersion = versionRow?.annotation_id
+      ? (versionRow.document_version ?? null)
+      : (versionRow?.deck_document_version ?? null);
+    db.prepare(
+      `INSERT OR IGNORE INTO sync_annotation_versions (
+        annotation_id, deck_id, document_version, version_state,
+        association_operation_id, updated_at
+      ) VALUES (?, ?, ?, ?, NULL, ?)`,
+    ).run([
+      annotation.id,
+      annotation.deckId,
+      documentVersion,
+      documentVersion === null ? 'unknown' : 'known',
+      now,
+    ]);
+    const streamId = `deck:${annotation.deckId}`;
+    const stateKey = `${workspaceId}:${streamId}`;
+    const state = db
+      .prepare('SELECT * FROM sync_stream_state WHERE stream_id = ?')
+      .get(stateKey) as Record<string, unknown> | undefined;
+    const sequence = Number(state?.next_sequence ?? 1);
+    const localFrontier = JSON.parse(
+      String(state?.local_frontier_json ?? '{}'),
+    ) as Record<string, number>;
+    const remoteFrontier = JSON.parse(
+      String(state?.remote_frontier_json ?? '{}'),
+    ) as Record<string, number>;
+    if (
+      !Number.isSafeInteger(sequence) ||
+      sequence < 1 ||
+      (localFrontier[deviceId] ?? 0) > sequence - 1
+    ) {
+      throw new Error('Local sync stream sequence is invalid.');
+    }
+    if ((remoteFrontier[deviceId] ?? 0) >= sequence) {
+      throw new Error(
+        'This device sequence is behind the shared library. Re-enroll this installation before publishing.',
+      );
+    }
+    const context: Record<string, number> = { ...remoteFrontier };
+    for (const [knownDevice, knownSequence] of Object.entries(localFrontier)) {
+      context[knownDevice] = Math.max(context[knownDevice] ?? 0, knownSequence);
+    }
+    if (sequence > 1) context[deviceId] = sequence - 1;
+    else delete context[deviceId];
+
+    const payload =
+      kind === 'annotation.put'
+        ? {
+            annotation: {
+              ...annotation,
+              kind: 'points' in annotation ? 'stroke' : 'text',
+            },
+            documentVersion,
+            logicalNoteId: 'points' in annotation ? null : annotation.id,
+            branchOfOperationId: null,
+            resolves: [],
+          }
+        : { annotationId: annotation.id, documentVersion };
+    const operation = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId,
+      deviceId,
+      sequence,
+      operationId: randomUUID(),
+      context,
+      requires: [],
+      kind,
+      payload,
+    });
+    const operationJson = canonicalJson(operation);
+    db.prepare(
+      `INSERT INTO sync_outbox (
+        operation_id, stream_id, device_id, sequence, operation_json,
+        conference_id, state, created_at, published_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NULL)`,
+    ).run([
+      operation.operationId,
+      stateKey,
+      deviceId,
+      sequence,
+      operationJson,
+      annotation.conferenceId,
+      now,
+    ]);
+    db.prepare(
+      `INSERT INTO sync_stream_state (
+        stream_id, next_sequence, local_frontier_json,
+        remote_frontier_json, snapshot_id, updated_at
+      ) VALUES (?, ?, ?, ?, NULL, ?)
+      ON CONFLICT(stream_id) DO UPDATE SET
+        next_sequence = excluded.next_sequence,
+        local_frontier_json = excluded.local_frontier_json,
+        updated_at = excluded.updated_at`,
+    ).run([
+      stateKey,
+      sequence + 1,
+      JSON.stringify({ ...context, [deviceId]: sequence }),
+      JSON.stringify(remoteFrontier),
+      now,
+    ]);
+    this.markDirty();
+  }
+
+  private async recordLocalSyncOperation(
+    streamId: string,
+    conferenceId: string,
+    kind: 'bookmark.set' | 'conference.metadata' | 'conference.delete',
+    payload: Record<string, unknown>,
+  ) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) return;
+    const workspaceId = profile.workspaceId;
+    const deviceId = profile.deviceId;
+    const stateKey = `${workspaceId}:${streamId}`;
+    const state = db
+      .prepare('SELECT * FROM sync_stream_state WHERE stream_id = ?')
+      .get(stateKey) as Record<string, unknown> | undefined;
+    const sequence = Number(state?.next_sequence ?? 1);
+    const localFrontier = JSON.parse(
+      String(state?.local_frontier_json ?? '{}'),
+    ) as Record<string, number>;
+    const remoteFrontier = JSON.parse(
+      String(state?.remote_frontier_json ?? '{}'),
+    ) as Record<string, number>;
+    if (
+      !Number.isSafeInteger(sequence) ||
+      sequence < 1 ||
+      (localFrontier[deviceId] ?? 0) > sequence - 1 ||
+      (remoteFrontier[deviceId] ?? 0) >= sequence
+    ) {
+      throw new Error('Local sync stream sequence is invalid.');
+    }
+    const context: Record<string, number> = { ...remoteFrontier };
+    for (const [knownDevice, knownSequence] of Object.entries(localFrontier)) {
+      context[knownDevice] = Math.max(context[knownDevice] ?? 0, knownSequence);
+    }
+    if (sequence > 1) context[deviceId] = sequence - 1;
+    else delete context[deviceId];
+    const operation = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId,
+      deviceId,
+      sequence,
+      operationId: randomUUID(),
+      context,
+      requires: [],
+      kind,
+      payload,
+    });
+    db.prepare(
+      `INSERT INTO sync_outbox (
+        operation_id, stream_id, device_id, sequence, operation_json,
+        conference_id, state, created_at, published_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NULL)`,
+    ).run([
+      operation.operationId,
+      stateKey,
+      deviceId,
+      sequence,
+      canonicalJson(operation),
+      conferenceId,
+      this.now(),
+    ]);
+    db.prepare(
+      `INSERT INTO sync_stream_state (
+         stream_id, next_sequence, local_frontier_json,
+         remote_frontier_json, snapshot_id, updated_at
+       ) VALUES (?, ?, ?, ?, NULL, ?)
+       ON CONFLICT(stream_id) DO UPDATE SET
+         next_sequence = excluded.next_sequence,
+         local_frontier_json = excluded.local_frontier_json,
+         updated_at = excluded.updated_at`,
+    ).run([
+      stateKey,
+      sequence + 1,
+      canonicalJson({ ...context, [deviceId]: sequence }),
+      canonicalJson(remoteFrontier),
+      this.now(),
+    ]);
+    this.markDirty();
   }
 
   private async deleteSlidesByDeck(deckId: string) {

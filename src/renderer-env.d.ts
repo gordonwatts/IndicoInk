@@ -1,5 +1,6 @@
 import type { AppInfo } from './shared/appInfo';
 import type { AppSettings } from './shared/appSettings';
+import type { SyncStatus } from './shared/sync';
 import type { AgendaTalkSummary } from './shared/agenda';
 import type {
   AgendaDownloadStartResult,
@@ -39,6 +40,17 @@ declare global {
         listener: (isFullscreen: boolean) => void,
       ) => () => void;
       getAppSettings: () => Promise<AppSettings>;
+      startSync: () => Promise<SyncStatus>;
+      getSyncStatus: () => Promise<SyncStatus>;
+      setSyncActiveDeck: (deckId: string | null) => Promise<void>;
+      retrySync: () => Promise<SyncStatus>;
+      pauseSync: () => Promise<SyncStatus>;
+      resumeSync: () => Promise<SyncStatus>;
+      configureSync: () => Promise<SyncStatus>;
+      disconnectSync: () => Promise<SyncStatus>;
+      onSyncStatusChanged: (
+        listener: (status: SyncStatus) => void,
+      ) => () => void;
       getStartupIndicoEventUrl: () => Promise<string | null>;
       onIndicoEventUrlRequested: (
         listener: (eventUrl: string) => void,
