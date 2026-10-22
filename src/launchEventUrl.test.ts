@@ -28,14 +28,14 @@ describe('getIndicoEventUrlFromArgs', () => {
     ).toBe('https://indico.cern.ch/event/5678');
   });
 
-  it('ignores invalid URLs and unrelated Electron arguments', () => {
+  it('passes event-shaped URLs through for runtime Indico detection', () => {
     expect(
       getIndicoEventUrlFromArgs([
         'IndicoInk.exe',
         '--disable-gpu',
-        'https://example.com/event/1234',
+        'https://events.cels.anl.gov/event/951/timetable/',
       ]),
-    ).toBeNull();
+    ).toBe('https://events.cels.anl.gov/event/951');
     expect(
       getIndicoEventUrlFromArgs([
         'IndicoInk.exe',

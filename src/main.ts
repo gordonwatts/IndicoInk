@@ -19,7 +19,7 @@ import {
 } from './libraryData';
 import { buildAgendaTalkSummaries } from './agendaData';
 import { AgendaDownloadManager } from './agendaDownload';
-import { importIndicoEvent } from './indicoImport';
+import { importIndicoEvent, NotIndicoEventError } from './indicoImport';
 import { refreshIndicoEvent, resolveLinkedAgendaUrl } from './indicoRefresh';
 import { classifyRefreshError } from './refreshResult';
 import { IndicoCredentialStore } from './indicoCredentials';
@@ -704,16 +704,23 @@ ipcMain.handle(
   ): Promise<RefreshLibraryEventResult> => {
     const requestedIndicoIdentity = parseIndicoEventUrl(eventUrl);
     const fetchImpl = session.defaultSession.fetch.bind(session.defaultSession);
-    const normalizedUrl = requestedIndicoIdentity
-      ? requestedIndicoIdentity.canonicalEventUrl
-      : normalizeWebAgendaUrl(eventUrl);
-    const conferenceId = requestedIndicoIdentity
-      ? requestedIndicoIdentity.conferenceId
-      : createConferenceId(normalizedUrl);
-    const conference = await getPersistenceStore().getConference(conferenceId);
+    const normalizedUrl = normalizeWebAgendaUrl(eventUrl);
+    const candidateConferenceIds = [
+      createConferenceId(normalizedUrl),
+      ...(requestedIndicoIdentity
+        ? [requestedIndicoIdentity.conferenceId]
+        : []),
+    ];
+    const conferences = await Promise.all(
+      Array.from(new Set(candidateConferenceIds), (candidateId) =>
+        getPersistenceStore().getConference(candidateId),
+      ),
+    );
+    const conference = conferences.find((item) => item !== null) ?? null;
     if (!conference) {
       throw new Error('The requested event does not exist locally.');
     }
+    const conferenceId = conference.id;
 
     if (conference.sourceKind !== 'web') {
       const identity = parseIndicoEventUrl(conference.sourceUrl);
@@ -815,7 +822,11 @@ ipcMain.handle(
           result,
         };
       } catch (error) {
-        if (
+        if (error instanceof NotIndicoEventError) {
+          // An event-shaped URL is only treated as Indico when its export
+          // endpoint returns a matching Indico API envelope. Otherwise, let
+          // the general webpage agenda importer handle it below.
+        } else if (
           error instanceof IndicoHttpError &&
           isLikelyIndicoApiKeyError(error.statusCode, error.responseBody)
         ) {
@@ -827,8 +838,15 @@ ipcMain.handle(
               error.responseBody,
             ),
           };
+        } else if (
+          error instanceof IndicoHttpError &&
+          error.statusCode === 403
+        ) {
+          // A 403 without an Indico authentication challenge is not enough
+          // evidence to classify this host as Indico.
+        } else {
+          throw error;
         }
-        throw error;
       }
     }
 

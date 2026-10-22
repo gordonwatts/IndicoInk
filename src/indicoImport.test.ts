@@ -49,6 +49,49 @@ describe('importIndicoEvent', () => {
     await store.close();
   });
 
+  it('recognizes a self-hosted Indico export by its response, not its hostname', async () => {
+    const store = makeStore();
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: vi.fn().mockReturnValue(null) },
+      text: vi.fn().mockResolvedValue(JSON.stringify(rawPublicEvent)),
+    });
+
+    const result = await importIndicoEvent(
+      store,
+      'https://events.cels.anl.gov/event/40025/timetable/',
+      { fetchImpl },
+    );
+
+    expect(result.title).toBe('DIRAC Project meeting');
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://events.cels.anl.gov/export/event/40025.json?detail=sessions&pretty=yes',
+      expect.any(Object),
+    );
+    await store.close();
+  });
+
+  it('identifies an event-shaped non-Indico URL from its export response', async () => {
+    const store = makeStore();
+
+    await expect(
+      importIndicoEvent(store, 'https://example.com/event/12/timetable/', {
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: { get: vi.fn().mockReturnValue(null) },
+          text: vi.fn().mockResolvedValue('<html>Not an Indico export</html>'),
+        }),
+      }),
+    ).rejects.toMatchObject({ name: 'NotIndicoEventError' });
+
+    await expect(store.listConferences()).resolves.toHaveLength(0);
+    await store.close();
+  });
+
   it('keeps existing data when the fetch fails', async () => {
     const store = makeStore();
 
