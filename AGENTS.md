@@ -18,7 +18,8 @@
 - For restart or persistence e2e, reuse the same `userDataDir` between launches; a fresh profile is not a restart.
 - Prefer `tests/e2e/electronHarness.ts` for Playwright/Electron validation.
 - If a change needs visual inspection in the app, stop and ask the user rather than guessing.
-- Keep Electron pinned to `42.3.2` until a deliberate upgrade decision is made.
+- Keep Electron pinned to the exact supported stable version recorded in `docs/version-policy.md`.
+- Treat Electron upgrades as dedicated changes and complete the full regression checklist in `docs/version-policy.md` before accepting one.
 - Keep the renderer behind a narrow preload API. Do not add generic IPC send helpers.
 - Prefer small, incremental changes that can be validated immediately.
 
