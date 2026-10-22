@@ -14,6 +14,7 @@ type WindowState = {
   bounds: { x: number; y: number; width: number; height: number };
   isMaximized: boolean;
   isFullScreen: boolean;
+  primaryWorkArea: { x: number; y: number; width: number; height: number };
   workAreas: Array<{ x: number; y: number; width: number; height: number }>;
 };
 
@@ -28,6 +29,7 @@ const readWindowState = (application: ElectronApplication) =>
       bounds: window.getBounds(),
       isMaximized: window.isMaximized(),
       isFullScreen: window.isFullScreen(),
+      primaryWorkArea: screen.getPrimaryDisplay().workArea,
       workAreas: screen.getAllDisplays().map(({ workArea }) => workArea),
     };
   }) as Promise<WindowState>;
@@ -77,8 +79,12 @@ export const verifyWindowStatePersistence = async (packaged = false) => {
     application = await launchApp(userDataDir, packaged);
     await application.firstWindow();
     const firstRun = await readWindowState(application);
-    expect(firstRun.bounds.width).toBe(1280);
-    expect(firstRun.bounds.height).toBe(900);
+    expect(firstRun.bounds.width).toBe(
+      Math.min(1280, firstRun.primaryWorkArea.width),
+    );
+    expect(firstRun.bounds.height).toBe(
+      Math.min(900, firstRun.primaryWorkArea.height),
+    );
 
     const resizedBounds = { x: 80, y: 70, width: 1000, height: 700 };
     await application.evaluate(({ BrowserWindow }, bounds) => {
