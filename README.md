@@ -64,6 +64,6 @@ npm run verify
 
 ## Notes
 
-- Electron is pinned to `42.3.2` for the initial V1 baseline.
+- Electron is pinned to `45.0.0`; see [the version policy](docs/version-policy.md) for the supported-version upgrade and regression checks.
 - The local Electron cache is redirected into the workspace by the npm scripts.
 - The V1 implementation plan lives in `docs/2026-06-03 - V1 Impl.md`.
