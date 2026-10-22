@@ -3576,6 +3576,14 @@ export function App() {
                         event.currentTarget.select();
                       }}
                       onBlur={() => setEventUrlTouched(true)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          if (!isOpeningEvent) {
+                            void handleOpenEvent();
+                          }
+                        }
+                      }}
                       type="url"
                       inputMode="url"
                       autoComplete="off"
