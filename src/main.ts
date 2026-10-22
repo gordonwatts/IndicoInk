@@ -375,8 +375,10 @@ const createWindow = () => {
   );
 
   mainWindow = new BrowserWindow({
+    name: 'indicoink-main-window',
     width: 1280,
     height: 900,
+    windowStatePersistence: true,
     backgroundColor: '#f6f4ef',
     icon: join(app.getAppPath(), 'assets', 'icons', 'indicoink.ico'),
     show: false,
