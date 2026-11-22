@@ -22,6 +22,10 @@ For a local test package, the MSIX maker signs with its generated development
 certificate. Trust that certificate only on a disposable/test machine. Do not
 publish a package signed with the development certificate.
 
+The Windows MSIX validation workflow runs for pull requests to `main` and
+pushes to `main`. Its x64 and ARM64 artifacts each include a development
+package and the matching public `.cer` for installation on a test machine.
+
 Release CI requires these repository settings:
 
 - Secret `INDICOINK_MSIX_CERTIFICATE_BASE64`: base64-encoded PFX signing
