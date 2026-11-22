@@ -184,6 +184,7 @@ describe('local folder sync protocol', () => {
           documentVersion: null,
           logicalNoteId: 'note_abc',
           branchOfOperationId: null,
+          resolves: [],
         },
       }),
     ).toThrow(/branch identity/);
