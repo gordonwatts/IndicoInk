@@ -31,6 +31,7 @@ import { openPdfSelection } from './openPdf';
 import { conferenceFixtures } from './conferenceFixtures';
 import { PersistenceStore } from './persistenceStore';
 import { createConferenceId } from './persistenceModels';
+import type { Deck } from './persistenceModels';
 import type { PdfWorkspaceChangeBatch } from './shared/pdfWorkspace';
 import type {
   ConferenceExportSnapshot,
@@ -252,12 +253,24 @@ const getDeckCacheManager = () =>
     },
   ));
 
+const bindLegacyDeckToExistingCache = async (deck: Deck) => {
+  if (deck.kind !== 'pdf') return;
+  const cachedVersion =
+    await getDeckCacheManager().getCachedPdfDocumentVersion(deck);
+  await getPersistenceStore().bindLegacyDeckDocumentVersion(
+    deck.id,
+    cachedVersion,
+  );
+};
+
 const getAgendaDownloadManager = () =>
   agendaDownloadManager ??
   (agendaDownloadManager = new AgendaDownloadManager(
     getPersistenceStore(),
-    (deck, onStatus) =>
-      getDeckCacheManager().ensureDeckAvailable(deck, onStatus),
+    async (deck, onStatus) => {
+      await bindLegacyDeckToExistingCache(deck);
+      return getDeckCacheManager().ensureDeckAvailable(deck, onStatus);
+    },
     (deck) => getDeckCacheManager().isDeckCached(deck),
   ));
 
@@ -321,6 +334,7 @@ const buildConferenceExportSnapshot = async (
           continue;
         }
 
+        await bindLegacyDeckToExistingCache(deck);
         const availability =
           await getDeckCacheManager().ensureDeckAvailable(deck);
         if (availability.kind !== 'ready') {
@@ -1043,8 +1057,19 @@ ipcMain.handle(
 
 ipcMain.handle(
   'persistence:save-deck-workspace-changes',
-  async (_event, batch: PdfWorkspaceChangeBatch) =>
-    getPersistenceStore().saveDeckPdfWorkspaceChanges(batch),
+  async (_event, batch: PdfWorkspaceChangeBatch) => {
+    const store = getPersistenceStore();
+    const deck = batch.deckId ? await store.getDeck(batch.deckId) : null;
+    if (deck?.kind === 'pdf') {
+      await bindLegacyDeckToExistingCache(deck);
+      const documentVersion =
+        await getDeckCacheManager().getCachedPdfDocumentVersion(deck);
+      if (documentVersion) {
+        await store.recordCurrentDeckDocumentVersion(deck.id, documentVersion);
+      }
+    }
+    return store.saveDeckPdfWorkspaceChanges(batch);
+  },
 );
 
 ipcMain.handle(
@@ -1063,6 +1088,8 @@ ipcMain.handle(
     }
 
     await getPersistenceStore().touchConference(conferenceId);
+    // Resolve the original association before this open can download bytes.
+    await bindLegacyDeckToExistingCache(deck);
     return getDeckCacheManager().openDeck(deck);
   },
 );
