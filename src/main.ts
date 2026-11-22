@@ -78,6 +78,10 @@ import {
   saveAppSettings,
 } from './appSettings';
 import { migrateLegacySquirrelUserData } from './legacyUserDataMigration';
+import {
+  getLegacySquirrelUninstaller,
+  uninstallLegacySquirrel,
+} from './legacySquirrelUninstall';
 
 let mainWindow: BrowserWindow | null = null;
 let persistenceStore: PersistenceStore | null = null;
@@ -97,11 +101,16 @@ if (shouldUseIsolatedUserData()) {
   app.setPath('userData', getIsolatedUserDataPath('IndicoInk'));
 }
 
+let offerLegacyUninstall = false;
 if (app.isPackaged && !shouldUseIsolatedUserData()) {
   const migration = migrateLegacySquirrelUserData(
     process.env.APPDATA,
     app.getPath('userData'),
   );
+  offerLegacyUninstall =
+    process.windowsStore === true &&
+    (migration.status === 'migrated' ||
+      migration.status === 'already-migrated');
   if (migration.status !== 'skipped') {
     appendStartupLogEntry(
       app.getPath('userData'),
@@ -115,6 +124,37 @@ if (app.isPackaged && !shouldUseIsolatedUserData()) {
     );
   }
 }
+
+const promptToRemoveLegacyInstall = async (window: BrowserWindow) => {
+  try {
+    const updatePath = getLegacySquirrelUninstaller(process.env.LOCALAPPDATA);
+    if (!updatePath) return;
+
+    const { response } = await dialog.showMessageBox(window, {
+      type: 'question',
+      message: 'Remove the previous IndicoInk installation?',
+      detail:
+        'Close the previous version and check that your notes are available here before removing it. Choose Not now if you still need to check.',
+      buttons: ['Not now', 'Remove previous version'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (response !== 1) return;
+
+    const currentUpdatePath = getLegacySquirrelUninstaller(
+      process.env.LOCALAPPDATA,
+    );
+    if (currentUpdatePath === updatePath)
+      await uninstallLegacySquirrel(updatePath);
+  } catch {
+    if (window.isDestroyed()) return;
+    await dialog.showMessageBox(window, {
+      type: 'warning',
+      message: 'The previous IndicoInk installation could not be removed.',
+      detail: 'Close the previous version and restart this app to try again.',
+    });
+  }
+};
 
 const getMainWindowDevServerUrl = () =>
   MAIN_WINDOW_VITE_DEV_SERVER_URL?.trim() ||
@@ -442,6 +482,10 @@ const createWindow = () => {
   mainWindow.once('ready-to-show', () => {
     logStartupEvent('window:ready-to-show', 'showing window');
     mainWindow?.show();
+    if (mainWindow && offerLegacyUninstall) {
+      offerLegacyUninstall = false;
+      void promptToRemoveLegacyInstall(mainWindow);
+    }
   });
 
   mainWindow.webContents.on('did-finish-load', () => {

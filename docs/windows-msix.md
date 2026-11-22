@@ -61,8 +61,10 @@ The migration writes `squirrel-user-data-migrated.json` after the copy. It
 never replaces a destination file, so already-created MSIX data takes
 precedence. Credential blobs are copied byte-for-byte and rely on Windows
 DPAPI/safeStorage remaining usable for the same Windows user. Migration is
-logged in `startup.log` when it runs or fails. The old profile is retained;
-the migration does not uninstall the Squirrel application.
+logged in `startup.log` when it runs or fails. Once migration has completed,
+the MSIX app offers to run the old Squirrel uninstaller. Choose **Not now**
+to check your notes first, then close the old app and reopen the MSIX app
+to accept removal. The legacy profile is retained as a backup.
 
 Unit tests cover copy, existing destination precedence, missing source,
 one-time behavior, and interrupted/truncated SQLite and deck-cache copies. A
@@ -80,8 +82,10 @@ arm64 Windows accounts with the production signing certificate:
 
 1. Install, launch, update to a newer signed package with the same package
    identity, and uninstall.
-2. Upgrade from the current Squirrel build and confirm notes, cached events,
-   settings, credentials, and PDF decks remain usable after relaunch.
+2. Upgrade from the current Squirrel build. Defer removal and confirm notes,
+   cached events, settings, credentials, and PDF decks remain usable. Relaunch
+   the MSIX app, accept removal, and confirm that the Squirrel entry is gone
+   and the migrated data still opens after another relaunch.
 3. Exercise command-line Indico URL activation and single-instance focus.
 4. Open a cached PDF, draw and erase annotations, restart with the same user
    profile, and export notes.
