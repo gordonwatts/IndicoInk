@@ -1,0 +1,63 @@
+name: Validate Windows MSIX packages
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/windows-msix-validation.yml'
+      - '.github/workflows/release-tag.yml'
+      - 'assets/icons/**'
+      - 'assets/msix/**'
+      - 'forge.config.cjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - 'src/legacyUserDataMigration.ts'
+      - 'src/msixVersion.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-msix-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-msix:
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --cache .npm-cache
+        env:
+          ELECTRON_INSTALL_ARCH: ${{ matrix.arch }}
+          npm_config_arch: ${{ matrix.arch }}
+
+      - name: Build development MSIX
+        run: npm run make -- --arch=${{ matrix.arch }}
+        env:
+          ELECTRON_INSTALL_ARCH: ${{ matrix.arch }}
+          npm_config_arch: ${{ matrix.arch }}
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: indicoink-msix-validation-${{ matrix.arch }}
+          path: out/make/msix/${{ matrix.arch }}/*.msix
+          if-no-files-found: error
+          retention-days: 7
