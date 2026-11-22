@@ -32,6 +32,12 @@ import type {
   WorkspaceHistoryEntry,
 } from './shared/pdfWorkspace';
 import {
+  canonicalJson,
+  createOperation,
+  isUuid,
+  type SyncOperation,
+} from './syncProtocol';
+import {
   createConferenceId,
   createDeckId,
   createNotebookDeckId,
@@ -745,6 +751,13 @@ export type SyncProfile = {
   updatedAt: number;
 };
 
+export type SyncOutboxEntry = {
+  operation: SyncOperation;
+  state: 'pending' | 'published';
+  createdAt: number;
+  publishedAt: number | null;
+};
+
 const rowToConference = (row: Record<string, unknown>): Conference => ({
   id: String(row.id),
   sourceUrl: String(row.source_url),
@@ -1103,6 +1116,90 @@ export class PersistenceStore {
       createdAt: Number(row.created_at),
       updatedAt: Number(row.updated_at),
     };
+  }
+
+  async setSyncConfiguration(configuration: {
+    workspaceId: string | null;
+    folderPath: string | null;
+    enabled: boolean;
+  }) {
+    if (
+      (configuration.workspaceId !== null &&
+        !isUuid(configuration.workspaceId)) ||
+      (configuration.enabled &&
+        (!configuration.workspaceId || !configuration.folderPath?.trim()))
+    ) {
+      throw new Error('Sync library configuration is invalid.');
+    }
+    const db = await this.getDb();
+    db.prepare(
+      `UPDATE sync_profile
+       SET workspace_id = @workspaceId,
+           folder_path = @folderPath,
+           enabled = @enabled,
+           updated_at = @updatedAt
+       WHERE singleton_id = 1`,
+    ).run({
+      workspaceId: configuration.workspaceId,
+      folderPath: configuration.folderPath?.trim() || null,
+      enabled: configuration.enabled ? 1 : 0,
+      updatedAt: this.now(),
+    });
+    this.markDirty();
+    await this.flushIfNeeded();
+    return this.getSyncProfile();
+  }
+
+  async listPendingSyncOutbox(limit = 32): Promise<SyncOutboxEntry[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 32) {
+      throw new Error('Sync outbox batch limit must be between 1 and 32.');
+    }
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId || !profile.enabled) return [];
+    const rows = db
+      .prepare(
+        `SELECT operation_json, state, created_at, published_at
+         FROM sync_outbox
+         WHERE state = 'pending' AND substr(stream_id, 1, 37) = ?
+         ORDER BY created_at, stream_id, sequence LIMIT ?`,
+      )
+      .all([`${profile.workspaceId}:`, limit]) as Array<
+      Record<string, unknown>
+    >;
+    return rows.map((row) => ({
+      operation: JSON.parse(String(row.operation_json)) as SyncOperation,
+      state: String(row.state) === 'published' ? 'published' : 'pending',
+      createdAt: Number(row.created_at),
+      publishedAt:
+        row.published_at === null || row.published_at === undefined
+          ? null
+          : Number(row.published_at),
+    }));
+  }
+
+  async markSyncOperationPublished(
+    operationId: string,
+    publishedAt = this.now(),
+  ) {
+    const db = await this.getDb();
+    const profile = await this.getSyncProfile();
+    if (!profile.workspaceId) {
+      throw new Error('Sync library is not currently connected.');
+    }
+    const result = db
+      .prepare(
+        `UPDATE sync_outbox
+         SET state = 'published', published_at = COALESCE(published_at, ?)
+         WHERE operation_id = ? AND state IN ('pending', 'published')
+           AND substr(stream_id, 1, 37) = ?`,
+      )
+      .run([publishedAt, operationId, `${profile.workspaceId}:`]);
+    if (result.changes === 0) {
+      throw new Error('Cannot mark an unknown sync operation as published.');
+    }
+    this.markDirty();
+    await this.flushIfNeeded();
   }
 
   async close() {
@@ -2316,10 +2413,14 @@ export class PersistenceStore {
       if (change.kind === 'delete') {
         const annotation = await this.getAnnotation(change.annotationId);
         if (annotation?.deckId === deckId) {
+          await this.recordLocalSyncAnnotationChange(
+            'annotation.erase',
+            annotation,
+          );
           await this.deleteAnnotation(change.annotationId);
         }
       } else if (change.kind === 'upsert-stroke') {
-        await this.upsertAnnotation({
+        const annotation: PenStroke = {
           id: change.stroke.id,
           conferenceId,
           talkId,
@@ -2334,16 +2435,26 @@ export class PersistenceStore {
           points: change.stroke.points,
           createdAt: now,
           updatedAt: now,
-        });
+        };
+        await this.upsertAnnotation(annotation);
+        await this.recordLocalSyncAnnotationChange(
+          'annotation.put',
+          annotation,
+        );
       } else {
-        await this.upsertAnnotation({
+        const annotation: TextNote = {
           ...change.note,
           conferenceId,
           talkId,
           deckId,
           slideId,
           updatedAt: now,
-        });
+        };
+        await this.upsertAnnotation(annotation);
+        await this.recordLocalSyncAnnotationChange(
+          'annotation.put',
+          annotation,
+        );
       }
     }
 
@@ -2373,6 +2484,156 @@ export class PersistenceStore {
          revision = excluded.revision,
          updated_at = excluded.updated_at`,
     ).run([deckId, state.revision, now]);
+  }
+
+  private async recordLocalSyncAnnotationChange(
+    kind: 'annotation.put' | 'annotation.erase',
+    annotation: Annotation,
+  ) {
+    const db = await this.getDb();
+    const profileRow = db
+      .prepare('SELECT * FROM sync_profile WHERE singleton_id = 1')
+      .get() as Record<string, unknown> | undefined;
+    if (!profileRow || typeof profileRow.workspace_id !== 'string') {
+      return;
+    }
+    const workspaceId = String(profileRow.workspace_id);
+    const deviceId = String(profileRow.device_id);
+    const conference = await this.getConference(annotation.conferenceId);
+    if (!conference || !/^https?:\/\//i.test(conference.sourceUrl)) {
+      return;
+    }
+
+    const now = this.now();
+    db.prepare(
+      `INSERT OR IGNORE INTO sync_document_versions (
+        deck_id, document_version, version_state, measured_at, updated_at
+      ) VALUES (?, NULL, 'unknown', NULL, ?)`,
+    ).run([annotation.deckId, now]);
+
+    const versionRow = db
+      .prepare(
+        `SELECT annotation_version.annotation_id,
+                annotation_version.document_version,
+                document_version.document_version AS deck_document_version
+         FROM sync_document_versions AS document_version
+         LEFT JOIN sync_annotation_versions AS annotation_version
+           ON annotation_version.deck_id = document_version.deck_id
+          AND annotation_version.annotation_id = ?
+         WHERE document_version.deck_id = ?`,
+      )
+      .get([annotation.id, annotation.deckId]) as
+      | {
+          annotation_id?: string | null;
+          document_version?: string | null;
+          deck_document_version?: string | null;
+        }
+      | undefined;
+    // An older annotation keeps its unknown association even after the deck's
+    // current PDF bytes have been measured. Only new annotations inherit it.
+    const documentVersion = versionRow?.annotation_id
+      ? (versionRow.document_version ?? null)
+      : (versionRow?.deck_document_version ?? null);
+    db.prepare(
+      `INSERT OR IGNORE INTO sync_annotation_versions (
+        annotation_id, deck_id, document_version, version_state,
+        association_operation_id, updated_at
+      ) VALUES (?, ?, ?, ?, NULL, ?)`,
+    ).run([
+      annotation.id,
+      annotation.deckId,
+      documentVersion,
+      documentVersion === null ? 'unknown' : 'known',
+      now,
+    ]);
+    const streamId = `deck:${annotation.deckId}`;
+    const stateKey = `${workspaceId}:${streamId}`;
+    const state = db
+      .prepare('SELECT * FROM sync_stream_state WHERE stream_id = ?')
+      .get(stateKey) as Record<string, unknown> | undefined;
+    const sequence = Number(state?.next_sequence ?? 1);
+    const localFrontier = JSON.parse(
+      String(state?.local_frontier_json ?? '{}'),
+    ) as Record<string, number>;
+    const remoteFrontier = JSON.parse(
+      String(state?.remote_frontier_json ?? '{}'),
+    ) as Record<string, number>;
+    if (
+      !Number.isSafeInteger(sequence) ||
+      sequence < 1 ||
+      (localFrontier[deviceId] ?? 0) > sequence - 1
+    ) {
+      throw new Error('Local sync stream sequence is invalid.');
+    }
+    if ((remoteFrontier[deviceId] ?? 0) >= sequence) {
+      throw new Error(
+        'This device sequence is behind the shared library. Re-enroll this installation before publishing.',
+      );
+    }
+    const context: Record<string, number> = { ...remoteFrontier };
+    for (const [knownDevice, knownSequence] of Object.entries(localFrontier)) {
+      context[knownDevice] = Math.max(context[knownDevice] ?? 0, knownSequence);
+    }
+    if (sequence > 1) context[deviceId] = sequence - 1;
+    else delete context[deviceId];
+
+    const payload =
+      kind === 'annotation.put'
+        ? {
+            annotation: {
+              ...annotation,
+              kind: 'points' in annotation ? 'stroke' : 'text',
+            },
+            documentVersion,
+            logicalNoteId: 'points' in annotation ? null : annotation.id,
+            branchOfOperationId: null,
+            resolves: [],
+          }
+        : { annotationId: annotation.id, documentVersion };
+    const operation = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId,
+      deviceId,
+      sequence,
+      operationId: randomUUID(),
+      context,
+      requires: [],
+      kind,
+      payload,
+    });
+    const operationJson = canonicalJson(operation);
+    db.prepare(
+      `INSERT INTO sync_outbox (
+        operation_id, stream_id, device_id, sequence, operation_json,
+        state, created_at, published_at
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL)`,
+    ).run([
+      operation.operationId,
+      stateKey,
+      deviceId,
+      sequence,
+      operationJson,
+      now,
+    ]);
+    db.prepare(
+      `INSERT INTO sync_stream_state (
+        stream_id, next_sequence, local_frontier_json,
+        remote_frontier_json, snapshot_id, updated_at
+      ) VALUES (?, ?, ?, ?, NULL, ?)
+      ON CONFLICT(stream_id) DO UPDATE SET
+        next_sequence = excluded.next_sequence,
+        local_frontier_json = excluded.local_frontier_json,
+        updated_at = excluded.updated_at`,
+    ).run([
+      stateKey,
+      sequence + 1,
+      JSON.stringify({ ...context, [deviceId]: sequence }),
+      JSON.stringify(remoteFrontier),
+      now,
+    ]);
+    this.markDirty();
   }
 
   private async deleteSlidesByDeck(deckId: string) {
