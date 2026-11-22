@@ -28,6 +28,181 @@ const getSqlWasmPath = () => {
 };
 
 describe('persistence store', () => {
+  it('creates a stable per-library sync identity and sync ledgers', async () => {
+    const dbPath = createTempDbPath('sync-schema');
+    const firstStore = new PersistenceStore(dbPath, () => 1700000000000);
+    const firstProfile = await firstStore.getSyncProfile();
+
+    expect(firstProfile.libraryId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(firstProfile.deviceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(firstProfile).toMatchObject({
+      workspaceId: null,
+      folderPath: null,
+      enabled: false,
+    });
+    await firstStore.close();
+
+    const reopenedStore = new PersistenceStore(dbPath, () => 1700000001000);
+    await expect(reopenedStore.getSyncProfile()).resolves.toEqual(firstProfile);
+    await expect(reopenedStore.listConferences()).resolves.toEqual([]);
+    await reopenedStore.close();
+
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const tableNames = new Set(
+      (
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+          .all() as Array<{ name: string }>
+      ).map(({ name }) => name),
+    );
+    db.close();
+    expect(tableNames.size).toBeGreaterThan(0);
+    for (const table of [
+      'sync_profile',
+      'sync_stream_state',
+      'sync_outbox',
+      'sync_inbox',
+      'sync_conflicts',
+      'sync_catalog_state',
+      'sync_checkpoints',
+      'sync_document_versions',
+      'sync_annotation_versions',
+      'sync_retirements',
+    ]) {
+      expect(tableNames.has(table), `${table} migration`).toBe(true);
+    }
+  });
+
+  it('upgrades a version 9 library without replacing its existing records', async () => {
+    const dbPath = createTempDbPath('sync-upgrade');
+    const seedStore = new PersistenceStore(dbPath, () => 1700000000000);
+    await seedStore.upsertConference({
+      id: 'conference-1',
+      sourceUrl: 'https://example.org/event',
+      title: 'Existing conference',
+      dates: '',
+      host: 'example.org',
+      timeZone: null,
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await seedStore.upsertTalk({
+      id: 'talk-1',
+      conferenceId: 'conference-1',
+      contributionId: '1',
+      contributionUrl: 'https://example.org/event/contributions/1/',
+      title: 'Existing talk',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await seedStore.upsertDeck({
+      id: 'deck-1',
+      conferenceId: 'conference-1',
+      talkId: 'talk-1',
+      sourceUrl: 'https://example.org/slides.pdf',
+      displayName: 'Existing PDF',
+      mimeType: 'application/pdf',
+      selected: true,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await seedStore.upsertSlide({
+      id: createSlideId('deck-1', 1),
+      conferenceId: 'conference-1',
+      talkId: 'talk-1',
+      deckId: 'deck-1',
+      slideNumber: 1,
+      annotated: true,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await seedStore.upsertAnnotation({
+      id: 'note-1',
+      conferenceId: 'conference-1',
+      talkId: 'talk-1',
+      deckId: 'deck-1',
+      slideId: createSlideId('deck-1', 1),
+      x: 0.25,
+      y: 0.5,
+      width: 0.4,
+      text: 'Existing note',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await seedStore.close();
+
+    const priorSchema = new DatabaseSync(dbPath);
+    priorSchema.exec(`
+      DROP TABLE sync_retirements;
+      DROP TABLE sync_annotation_versions;
+      DROP TABLE sync_document_versions;
+      DROP TABLE sync_checkpoints;
+      DROP TABLE sync_catalog_state;
+      DROP TABLE sync_conflicts;
+      DROP TABLE sync_inbox;
+      DROP TABLE sync_outbox;
+      DROP TABLE sync_stream_state;
+      DROP TABLE sync_profile;
+      PRAGMA user_version = 9;
+    `);
+    priorSchema.close();
+
+    const upgradedStore = new PersistenceStore(dbPath, () => 1700000001000);
+    await expect(upgradedStore.getSyncProfile()).resolves.toMatchObject({
+      enabled: false,
+      workspaceId: null,
+    });
+    await expect(
+      upgradedStore.getConference('conference-1'),
+    ).resolves.toMatchObject({
+      title: 'Existing conference',
+    });
+    await expect(upgradedStore.getAnnotation('note-1')).resolves.toMatchObject({
+      text: 'Existing note',
+      width: 0.4,
+    });
+    await upgradedStore.close();
+
+    const upgradedDb = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      (
+        upgradedDb.prepare('PRAGMA user_version').get() as {
+          user_version: number;
+        }
+      ).user_version,
+    ).toBe(10);
+    expect(
+      upgradedDb
+        .prepare(
+          'SELECT document_version, version_state FROM sync_document_versions WHERE deck_id = ?',
+        )
+        .get('deck-1'),
+    ).toMatchObject({ document_version: null, version_state: 'unknown' });
+    expect(
+      upgradedDb
+        .prepare(
+          'SELECT deck_id, document_version, version_state FROM sync_annotation_versions WHERE annotation_id = ?',
+        )
+        .get('note-1'),
+    ).toMatchObject({
+      deck_id: 'deck-1',
+      document_version: null,
+      version_state: 'unknown',
+    });
+    upgradedDb.close();
+  });
+
   it('creates a fresh schema and supports repository CRUD and transactions', async () => {
     const dbPath = createTempDbPath('fresh');
     const store = new PersistenceStore(dbPath, () => 1700000000000);
@@ -113,6 +288,24 @@ describe('persistence store', () => {
       updatedAt: 1700000000000,
     });
 
+    await store.upsertAnnotation({
+      id: 'note-1',
+      conferenceId: 'conference-1',
+      talkId: 'talk-1',
+      deckId: 'deck-1',
+      slideId: createSlideId('deck-1', 1),
+      x: 0.25,
+      y: 0.5,
+      width: 0.4,
+      text: 'Keep this width',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await expect(store.getAnnotation('note-1')).resolves.toMatchObject({
+      width: 0.4,
+      text: 'Keep this width',
+    });
+
     await store.upsertViewState({
       id: 'view-state-1',
       conferenceId: 'conference-1',
@@ -140,7 +333,7 @@ describe('persistence store', () => {
     ).resolves.toHaveLength(1);
     await expect(
       store.listAnnotationsBySlide(createSlideId('deck-1', 1)),
-    ).resolves.toHaveLength(1);
+    ).resolves.toHaveLength(2);
     await expect(store.countAnnotatedSlidesByTalk('talk-1')).resolves.toBe(1);
     await expect(store.getViewState('deck-1')).resolves.toMatchObject({
       scrollTop: 123,
@@ -171,7 +364,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(9);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(10);
     versionDb.close();
     expect(existsSync(`${dbPath}.pre-node-sqlite-v7.bak`)).toBe(true);
     const backupDb = new SQL.Database(
