@@ -20,12 +20,47 @@ describe('parseIndicoEventUrl', () => {
     });
   });
 
+  it('normalizes the reported Fermi event URL with a trailing slash', () => {
+    const withoutTrailingSlash = parseIndicoEventUrl(
+      'https://indico.fnal.gov/event/65068',
+    );
+    const withTrailingSlash = parseIndicoEventUrl(
+      'https://indico.fnal.gov/event/65068/',
+    );
+
+    expect(withTrailingSlash).toEqual(withoutTrailingSlash);
+    expect(withTrailingSlash).toMatchObject({
+      eventId: '65068',
+      origin: 'https://indico.fnal.gov',
+      canonicalEventUrl: 'https://indico.fnal.gov/event/65068',
+      conferenceId: createConferenceId('https://indico.fnal.gov/event/65068'),
+    });
+  });
+
+  it('accepts event-shaped URLs on self-hosted Indico domains', () => {
+    const identity = parseIndicoEventUrl(
+      'https://events.cels.anl.gov/event/951/timetable/',
+    );
+
+    expect(identity).toEqual({
+      eventId: '951',
+      origin: 'https://events.cels.anl.gov',
+      canonicalEventUrl: 'https://events.cels.anl.gov/event/951',
+      conferenceId: createConferenceId('https://events.cels.anl.gov/event/951'),
+    });
+  });
+
   it('rejects invalid or non-https URLs', () => {
     expect(parseIndicoEventUrl('')).toBeNull();
     expect(
       parseIndicoEventUrl('http://indico.in2p3.fr/event/35043'),
     ).toBeNull();
-    expect(parseIndicoEventUrl('https://example.com/event/35043')).toBeNull();
+    expect(parseIndicoEventUrl('https://example.com/event/35043')).toEqual({
+      eventId: '35043',
+      origin: 'https://example.com',
+      canonicalEventUrl: 'https://example.com/event/35043',
+      conferenceId: createConferenceId('https://example.com/event/35043'),
+    });
     expect(
       parseIndicoEventUrl('https://indico.in2p3.fr/category/1'),
     ).toBeNull();

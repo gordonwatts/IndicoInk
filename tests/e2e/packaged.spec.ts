@@ -7,8 +7,10 @@ import { tmpdir } from 'node:os';
 
 import {
   launchElectronHarness,
+  resolvePackagedAppAsarPath,
   runElectronImportFixtureCommand,
 } from './electronHarness';
+import { verifyWindowStatePersistence } from './windowStatePersistenceCheck';
 import {
   createConferenceId,
   createDeckId,
@@ -330,5 +332,18 @@ test.describe.serial('packaged app', () => {
     expect(exportedMarkdown).toContain('IndicoInk Packaged Acceptance 2026');
     expect(exportedMarkdown).toContain('Packaging acceptance flow');
     expect(exportedMarkdown).toContain('data:image/png;base64,');
+  });
+
+  test('restores packaged window bounds and display mode after restart', async () => {
+    try {
+      resolvePackagedAppAsarPath();
+    } catch {
+      test.skip(
+        true,
+        'Packaged output was not created by npm run package on this host.',
+      );
+    }
+
+    await verifyWindowStatePersistence(true);
   });
 });

@@ -120,6 +120,7 @@ export type IndicoTalkEntity = AgendaTalkEntity;
 export type IndicoImportData = AgendaImportData;
 
 type RawEnvelope = {
+  _type?: unknown;
   count?: unknown;
   results?: unknown;
 };
@@ -154,6 +155,27 @@ export const isEmptyIndicoExportEnvelope = (envelope: RawEnvelope) =>
   envelope.count === 0 &&
   Array.isArray(envelope.results) &&
   envelope.results.length === 0;
+
+export const isIndicoExportEnvelope = (
+  envelope: RawEnvelope,
+  expectedEventId: string,
+) => {
+  if (
+    envelope._type !== 'HTTPAPIResult' ||
+    typeof envelope.count !== 'number' ||
+    (!Array.isArray(envelope.results) &&
+      (!envelope.results || typeof envelope.results !== 'object'))
+  ) {
+    return false;
+  }
+
+  if (isEmptyIndicoExportEnvelope(envelope)) {
+    return true;
+  }
+
+  const event = pickFirstResult(envelope);
+  return event !== null && String(event.id ?? '') === expectedEventId;
+};
 
 const parseDateTime = (value?: IndicoDateValue | null, timeZone = 'UTC') => {
   if (!value?.date) {

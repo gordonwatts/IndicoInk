@@ -37,6 +37,12 @@
 - On the target Windows pen device, mouse uses the crosshair cursor path, pen tip resolves to the in-page pen marker, and hardware eraser contact resolves to the in-page eraser marker even when the native stylus cursor does not visibly change.
 - Pen pressure is reflected in the rendered stroke-width path and the pressure meter, and section 3 is accepted after the target-device pen, eraser, touch, mouse, and cursor checks passed.
 - V1 final target-device manual checklist was run on June 26, 2026 against Electron `42.3.2` with the Slide Notes fixture deck open. Mouse drawing used the crosshair cursor path and enabled undo/redo. Pen-tip input reported `pointerType: "pen"`, `buttons: 1`, pressure from `0` up to about `0.73`, `ink-layer pen`, and the in-page pen marker. Hardware eraser contact reported `button: 5` / `buttons: 32`, `ink-layer eraser`, and the in-page eraser marker. Pen hover reported `buttons: 0` / `pressure: 0` and resolved to the pen marker; eraser hover remains a known platform limitation because reliable eraser identity is only available during contact on this device. Finger touch reported `pointerType: "touch"`, resolved to `ink-layer touch`, showed no marker, and scrolled the app surface from about `767px` to `1913px` without drawing.
+
+## Electron 45 upgrade (issue 181)
+
+- Electron `45.0.0` is pinned as the current stable baseline as of October 22, 2026. Its bundled Chromium, Node.js, and V8 versions are 156.0.8078.48, 24.22.0, and 15.6. Electron `42.3.2` bundled Chromium 148.0.7778.218, Node.js 24.15.0, and V8 14.8.
+- Source review found no use in `src/preload.ts` of the Node shims or globals removed for sandboxed preloads in Electron 45; the preload imports only `contextBridge` and `ipcRenderer` from Electron.
+- Automated and target-device regression checks for this upgrade are pending. Do not infer pen, eraser, touch, PDF, or cursor compatibility from the Electron 42 results above. Record the Electron 45 results here after running the checklist in `docs/version-policy.md` on Windows.
 - Agenda canvas validation notes from real conference data:
   - Column widths that keep the interface readable in practice landed in the roughly `300-420px` range for session columns, with wider single-column days allowed to expand further.
   - Talk titles longer than about one line at those widths need room to wrap cleanly; the renderer now sizes cards from the solved column width instead of assuming a fixed width.

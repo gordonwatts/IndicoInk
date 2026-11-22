@@ -5,11 +5,13 @@ import { parseIndicoEventUrl } from './indicoEvent';
 import {
   fetchIndicoJson,
   IndicoHttpError,
+  IndicoResponseParseError,
   type IndicoFetchProgressStage,
   type FetchIndicoJsonOptions,
 } from './indicoHttp';
 import {
   isEmptyIndicoExportEnvelope,
+  isIndicoExportEnvelope,
   mapIndicoExportEnvelope,
 } from './indicoMapping';
 
@@ -21,6 +23,15 @@ export class IndicoEventImportError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'IndicoEventImportError';
+  }
+}
+
+export class NotIndicoEventError extends Error {
+  constructor(
+    message = 'This URL did not return a matching Indico event export.',
+  ) {
+    super(message);
+    this.name = 'NotIndicoEventError';
   }
 }
 
@@ -36,15 +47,32 @@ export const importIndicoEvent = async (
     );
   }
 
-  const raw = await fetchIndicoJson<unknown>(identity, {
-    ...options,
-    ...(options.onProgress
-      ? {
-          onProgress: (stage: IndicoFetchProgressStage) =>
-            options.onProgress?.(stage),
-        }
-      : {}),
-  });
+  let raw: unknown;
+  try {
+    raw = await fetchIndicoJson<unknown>(identity, {
+      ...options,
+      ...(options.onProgress
+        ? {
+            onProgress: (stage: IndicoFetchProgressStage) =>
+              options.onProgress?.(stage),
+          }
+        : {}),
+    });
+  } catch (error) {
+    if (
+      error instanceof IndicoResponseParseError ||
+      (error instanceof IndicoHttpError &&
+        [400, 404, 405].includes(error.statusCode))
+    ) {
+      throw new NotIndicoEventError();
+    }
+    throw error;
+  }
+  if (
+    !isIndicoExportEnvelope(raw as { [key: string]: unknown }, identity.eventId)
+  ) {
+    throw new NotIndicoEventError();
+  }
   if (
     isEmptyIndicoExportEnvelope(raw as { count?: unknown; results?: unknown })
   ) {

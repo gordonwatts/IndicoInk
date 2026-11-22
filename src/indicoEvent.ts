@@ -6,12 +6,6 @@ const eventOpenPathPattern =
 const eventSessionPathPattern =
   /^\/event\/[^/?#]+\/sessions\/[^/?#]+(?:\/.*)?$/;
 
-const isTrustedIndicoHostname = (hostname: string) =>
-  hostname === 'indico.global' ||
-  hostname === 'indico' ||
-  hostname.startsWith('indico.') ||
-  hostname.includes('.indico.');
-
 const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 export type IndicoEventIdentity = {
@@ -37,10 +31,6 @@ export const parseIndicoEventUrl = (
   }
 
   if (url.protocol !== 'https:') {
-    return null;
-  }
-
-  if (!isTrustedIndicoHostname(url.hostname)) {
     return null;
   }
 

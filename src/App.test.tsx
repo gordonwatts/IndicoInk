@@ -370,11 +370,7 @@ describe('App', () => {
       ),
     ).toBeNull();
 
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Open event',
-      }),
-    );
+    await user.keyboard('{Enter}');
 
     expect(window.indicoInk.openLibraryEvent).toHaveBeenCalledWith(
       'https://indico.example.org/event/example-2026',
