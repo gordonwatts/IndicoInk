@@ -18,11 +18,48 @@ import {
   validateOperationLocation,
   parseStrictSyncJson,
   stableNoteBranchId,
+  validateCatalog,
   validateOperation,
 } from './syncProtocol';
 
 const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
 const deviceA = '72fc257a-40d2-4b19-ae71-b2a02f4fe5e6';
+
+describe('catalog source validation', () => {
+  it('rejects local paths and URL credentials from peer discovery records', () => {
+    const catalogFor = (sourceUrl: string) => ({
+      format: 'indicoink-catalog',
+      version: 1,
+      workspaceId,
+      deviceId: deviceA,
+      generation: 1,
+      updatedAt: 1,
+      conferences: [
+        {
+          conferenceId: createConferenceId(sourceUrl),
+          sourceKind: 'web',
+          sourceUrl,
+          title: 'Event',
+          dates: '',
+          host: '',
+          metadataSnapshotId: null,
+        },
+      ],
+    });
+    expect(() =>
+      validateCatalog(catalogFor('C:\\private\\agenda.json')),
+    ).toThrow(/catalog conference record/);
+    expect(() =>
+      validateCatalog(catalogFor('https://name:secret@example.org/event')),
+    ).toThrow(/catalog conference record/);
+    expect(() =>
+      validateCatalog(catalogFor('https://example.org/event?api_key=secret')),
+    ).toThrow(/catalog conference record/);
+    expect(() =>
+      validateCatalog(catalogFor('https://example.org/event')),
+    ).not.toThrow();
+  });
+});
 const deviceB = '639be5ee-82ea-4a08-93a9-afc608990bdc';
 const conferenceId = 'conference_14f75f8a2a03f095fbf0';
 const operationId = 'a8dd3a82-622b-48ac-9d2a-6b4f6e7f1d35';
@@ -224,6 +261,28 @@ describe('local folder sync protocol', () => {
       },
     };
     expect(() => createOperation(fields)).not.toThrow();
+    const credentialedUrl = 'https://name:secret@example.org/event';
+    const credentialedId = createConferenceId(credentialedUrl);
+    expect(() =>
+      createOperation({
+        ...fields,
+        streamId: `metadata:${credentialedId}`,
+        payload: {
+          ...fields.payload,
+          conference: {
+            ...fields.payload.conference,
+            id: credentialedId,
+            sourceUrl: credentialedUrl,
+          },
+        },
+      }),
+    ).toThrow(/conference metadata identity/);
+    expect(() =>
+      createOperation({
+        ...fields,
+        payload: { ...fields.payload, partCount: Number.MAX_SAFE_INTEGER },
+      }),
+    ).toThrow(/batch part is invalid/);
     expect(() =>
       createOperation({
         ...fields,
@@ -328,6 +387,97 @@ describe('local folder sync protocol', () => {
         },
       }),
     ).toThrow(/deck metadata fields/);
+    expect(() =>
+      createOperation({
+        ...fields,
+        payload: {
+          ...fields.payload,
+          talks: [
+            {
+              ...talk,
+              contributionUrl: 'https://reader:secret@example.org/event/42',
+            },
+          ],
+        },
+      }),
+    ).toThrow(/talk metadata fields/);
+    const credentialedContributionId =
+      'https://example.org/event/42?X-Amz-Security-Token=secret';
+    expect(() =>
+      createOperation({
+        ...fields,
+        payload: {
+          ...fields.payload,
+          talks: [
+            {
+              ...talk,
+              id: createTalkId(
+                metadataConferenceId,
+                credentialedContributionId,
+              ),
+              contributionId: credentialedContributionId,
+            },
+          ],
+        },
+      }),
+    ).toThrow(/talk metadata fields/);
+    expect(() =>
+      createOperation({
+        ...fields,
+        payload: {
+          ...fields.payload,
+          talks: [
+            {
+              ...talk,
+              linkedAgendaUrl: 'https://example.org/agenda?access_token=secret',
+            },
+          ],
+        },
+      }),
+    ).toThrow(/talk metadata fields/);
+    for (const contributionUrl of [
+      'file:///C:/private/agenda.json',
+      'C:\\private\\agenda.json',
+      '//reader:secret@example.org/event/42',
+      'https://example.org/event/42#access_token=secret',
+    ]) {
+      expect(() =>
+        createOperation({
+          ...fields,
+          payload: {
+            ...fields.payload,
+            talks: [{ ...talk, contributionUrl }],
+          },
+        }),
+      ).toThrow(/talk metadata fields/);
+    }
+    expect(() =>
+      createOperation({
+        ...fields,
+        payload: {
+          ...fields.payload,
+          decks: [
+            {
+              ...deck,
+              id: createDeckId(
+                talkId,
+                'https://example.org/slides.pdf?key=secret',
+              ),
+              sourceUrl: 'https://example.org/slides.pdf?key=secret',
+            },
+          ],
+        },
+      }),
+    ).toThrow(/deck metadata fields/);
+    expect(() =>
+      createOperation({
+        ...fields,
+        payload: {
+          ...fields.payload,
+          talks: [{ ...talk, contributionUrl: '' }],
+        },
+      }),
+    ).not.toThrow();
   });
 
   it('keeps only causal maxima and favors a concurrent bookmark', () => {

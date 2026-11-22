@@ -92,10 +92,15 @@ describe('sync utility worker filesystem boundary', () => {
       await writeFile(join(root, 'bucket', name), Buffer.from(name));
     }
 
-    const first = await worker.enumerateDirectory(
+    let first = await worker.enumerateDirectory(
       { relativeDirectory: 'bucket', lastName: null },
       { maxDirectoryEntries: 2 },
     );
+    if (first.entries.length === 0 && first.partial) {
+      first = await worker.enumerateDirectory(first.nextCursor!, {
+        maxDirectoryEntries: 2,
+      });
+    }
     expect(first.entries.map(({ name }) => name)).toEqual(['a.json', 'b.json']);
     expect(first.partial).toBe(true);
     expect(first.nextCursor).toEqual({
@@ -114,6 +119,43 @@ describe('sync utility worker filesystem boundary', () => {
       maxDirectoryEntries: 2,
     });
     expect(afterDeletion.entries.map(({ name }) => name)).toEqual(['c.json']);
+  });
+
+  it('continues through directories larger than one scan page', async () => {
+    const root = await createRoot();
+    const worker = new SyncWorkerCore();
+    await worker.initialize(root, deviceId);
+    await mkdir(join(root, 'conferences'));
+    for (let index = 0; index < 1001; index += 1) {
+      await writeFile(
+        join(
+          root,
+          'conferences',
+          `conference-${String(index).padStart(4, '0')}`,
+        ),
+        Buffer.alloc(0),
+      );
+    }
+
+    const indexingPage = await worker.enumerateDirectory(
+      { relativeDirectory: 'conferences', lastName: null },
+      { maxDirectoryEntries: 1000 },
+    );
+    expect(indexingPage.entries).toHaveLength(0);
+    expect(indexingPage.examined).toBe(1000);
+    expect(indexingPage.partial).toBe(true);
+    await worker.initialize(root, deviceId);
+    const first = await worker.enumerateDirectory(indexingPage.nextCursor!, {
+      maxDirectoryEntries: 1000,
+    });
+    expect(first.entries).toHaveLength(1000);
+    expect(first.partial).toBe(true);
+    const second = await worker.enumerateDirectory(first.nextCursor!, {
+      maxDirectoryEntries: 1000,
+    });
+    expect(second.entries).toHaveLength(1);
+    expect(second.entries[0]?.name).toBe('conference-1000');
+    expect(second.partial).toBe(false);
   });
 
   it('atomically replaces only a device catalog', async () => {
@@ -145,9 +187,9 @@ describe('sync utility worker filesystem boundary', () => {
     await expect(
       readFile(join(root, ...path.split('/')), 'utf8'),
     ).resolves.toBe(catalog(2).toString());
-    await expect(worker.replaceCatalog(path, catalog(2))).rejects.toThrow(
-      /advance/,
-    );
+    await expect(
+      worker.replaceCatalog(path, catalog(2)),
+    ).resolves.toMatchObject({ replaced: false });
     await expect(
       worker.replaceCatalog(
         'devices/639be5ee-82ea-4a08-93a9-afc608990bdc/acks/catalog.json',

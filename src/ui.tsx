@@ -26,10 +26,13 @@ export type IconName =
   | 'text'
   | 'eraser'
   | 'check'
+  | 'pause'
+  | 'close'
   | 'info'
   | 'dialog'
   | 'fullscreen'
-  | 'fullscreen-exit';
+  | 'fullscreen-exit'
+  | 'cloud';
 
 const iconPaths: Record<IconName, string> = {
   library:
@@ -68,6 +71,9 @@ const iconPaths: Record<IconName, string> = {
   eraser:
     'M7 16.5h9.4l2.1-2.1c.8-.8.8-2.1 0-2.9l-4.1-4.1c-.8-.8-2.1-.8-2.9 0L4.5 14.4c-.8.8-.8 2.1 0 2.9.3.2.7.3 1 .3H7Zm1.2-2L14 8.7l3.1 3.1-5.8 5.8H8.2Z',
   check: 'M10 16.2 5.8 12l1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2Z',
+  pause: 'M7 5.5h3v13H7v-13Zm7 0h3v13h-3v-13Z',
+  close:
+    'm7.4 6 4.6 4.6L16.6 6 18 7.4l-4.6 4.6L18 16.6 16.6 18 12 13.4 7.4 18 6 16.6l4.6-4.6L6 7.4 7.4 6Z',
   info: 'M12 6.6a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Zm-1 2.4h2v7h-2V9Z',
   dialog:
     'M6 5.5h12A2.5 2.5 0 0 1 20.5 8v8A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16V8A2.5 2.5 0 0 1 6 5.5Zm0 2A.5.5 0 0 0 5.5 8v8a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V8a.5.5 0 0 0-.5-.5H6Zm2 2h8v2H8v-2Z',
@@ -75,6 +81,8 @@ const iconPaths: Record<IconName, string> = {
     'M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM4 15h2v3h3v2H4v-5Zm14 0h2v5h-5v-2h3v-3Z',
   'fullscreen-exit':
     'M9 4v2H6v3H4V4h5Zm6 0h5v5h-2V6h-3V4ZM4 15h2v5h5v-2H6v-3H4Zm16 0v5h-5v-2h3v-3h2Z',
+  cloud:
+    'M19 18H6.5a4.5 4.5 0 0 1-.42-8.98A6 6 0 0 1 17.5 7.5a5.25 5.25 0 0 1 1.5 10.5Zm-12.5-2h12.5a3.25 3.25 0 0 0-.94-6.36l-.8.05-.22-.77A4 4 0 0 0 9.3 9.5l-.32 1.05-1.1-.04A2.5 2.5 0 0 0 7 16Z',
 };
 
 const filledBookmarkPath = 'M5.5 4.5h13v15.2L12 16.1l-6.5 3.6V4.5Z';

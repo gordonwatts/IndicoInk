@@ -8,6 +8,7 @@ import {
 import {
   mergeAnnotationOperations,
   mergeBookmarkState,
+  causallyReadyMetadataOperations,
   mergeConcurrentConferenceDeletion,
   mergeMetadataRefreshes,
 } from './syncMerge';
@@ -84,6 +85,36 @@ const erase = (
   });
 
 describe('sync merge', () => {
+  it('holds metadata-stream changes until earlier sequences and context arrive', () => {
+    const conferenceId = createConferenceId('https://example.org/event');
+    const later = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `metadata:${conferenceId}`,
+      deviceId: deviceA,
+      sequence: 2,
+      operationId: 'bb444444-0000-4000-8000-000000000001',
+      context: { [deviceA]: 1 },
+      requires: [],
+      kind: 'bookmark.set',
+      payload: { talkId: 'talk-1', bookmarked: false },
+    });
+    expect(causallyReadyMetadataOperations([later], {}).operations).toEqual([]);
+    const { integrity: _laterIntegrity, ...laterFields } = later;
+    void _laterIntegrity;
+    const earlier = createOperation({
+      ...laterFields,
+      sequence: 1,
+      operationId: 'aa444444-0000-4000-8000-000000000001',
+      context: {},
+      payload: { talkId: 'talk-1', bookmarked: true },
+    });
+    const result = causallyReadyMetadataOperations([later, earlier], {});
+    expect(result.operations.map(({ sequence }) => sequence)).toEqual([1, 2]);
+    expect(result.frontier[deviceA]).toBe(2);
+  });
+
   it('keeps independent annotation IDs and removes a causally erased value', () => {
     const first = put(deviceA, 1, {}, 'one');
     const independent = put(

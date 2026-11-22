@@ -61,6 +61,9 @@ test('keeps the PDF roll stable on the first drawing mouse down', async () => {
     const targetPage = harness.page.locator('.pdf-preview-page').nth(2);
     const targetSheet = targetPage.locator('.pdf-preview-sheet');
     await expect(targetSheet).toBeVisible();
+    await expect(harness.page.locator('.pdf-preview-pages')).not.toHaveClass(
+      /is-rendering/,
+    );
     await expect
       .poll(
         async () =>

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,7 +9,9 @@ import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { describe, expect, it } from 'vitest';
 
-import { createSlideId } from './persistenceModels';
+import { createConferenceId, createSlideId } from './persistenceModels';
+import { createDeckId, createTalkId } from './persistenceModels';
+import { createOperation } from './syncProtocol';
 import { PersistenceStore } from './persistenceStore';
 import type { PdfWorkspaceChangeBatch } from './shared/pdfWorkspace';
 import { createWorkspaceHistory } from './workspaceHistory';
@@ -74,9 +76,285 @@ describe('persistence store', () => {
       'sync_annotation_versions',
       'sync_retirements',
       'sync_legacy_version_migration',
+      'sync_hidden_conferences',
     ]) {
       expect(tableNames.has(table), `${table} migration`).toBe(true);
     }
+  });
+
+  it('publishes a fresh catalog generation when the workspace changes', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-catalog-workspace'),
+      () => 1700000000000,
+    );
+    const profile = await store.getSyncProfile();
+    const firstWorkspace = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    const secondWorkspace = '8b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    await store.setSyncConfiguration({
+      workspaceId: firstWorkspace,
+      folderPath: 'C:\\first-sync-library',
+      enabled: true,
+    });
+    const firstCatalog = await store.createSyncCatalog();
+    expect(firstCatalog).toMatchObject({
+      workspaceId: firstWorkspace,
+      deviceId: profile.deviceId,
+      generation: 1,
+    });
+
+    await store.setSyncConfiguration({
+      workspaceId: secondWorkspace,
+      folderPath: 'C:\\second-sync-library',
+      enabled: true,
+    });
+    const secondCatalog = await store.createSyncCatalog();
+    expect(secondCatalog).toMatchObject({
+      workspaceId: secondWorkspace,
+      deviceId: profile.deviceId,
+      generation: 1,
+    });
+    await store.close();
+  });
+
+  it('keeps local-only conferences out of the shared discovery catalog', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-catalog-local-only'),
+      () => 1700000000000,
+    );
+    await store.upsertConference({
+      id: 'local-conference',
+      sourceUrl: 'C:\\private\\agenda.json',
+      title: 'Private agenda',
+      dates: '',
+      host: '',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertConference({
+      id: createConferenceId('https://example.org/public-event'),
+      sourceUrl: 'https://example.org/public-event',
+      title: 'Public event',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    const credentialedUrl = 'https://name:secret@example.org/private-event';
+    const credentialedId = createConferenceId(credentialedUrl);
+    await store.upsertConference({
+      id: credentialedId,
+      sourceUrl: credentialedUrl,
+      title: 'Credentialed event',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.setSyncConfiguration({
+      workspaceId: '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d',
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const catalog = await store.createSyncCatalog();
+    expect(catalog?.conferences.map((conference) => conference.title)).toEqual([
+      'Public event',
+    ]);
+    expect(await store.recordLocalSyncMetadataSnapshot(credentialedId)).toBe(0);
+    await store.requeueSyncEligibleMetadata();
+    expect(
+      (await store.listPendingSyncOutbox()).some(
+        (entry) => entry.conferenceId === credentialedId,
+      ),
+    ).toBe(false);
+    await store.close();
+  });
+
+  it('does not enqueue metadata with credentialed talk or deck URLs', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-credentialed-metadata'),
+      () => 1700000000000,
+    );
+    const conferenceUrl = 'https://example.org/event';
+    const conferenceId = createConferenceId(conferenceUrl);
+    const talkId = createTalkId(conferenceId, '42');
+    const deckUrl = 'https://example.org/slides.pdf';
+    const deckId = createDeckId(talkId, deckUrl);
+    await store.upsertConference({
+      id: conferenceId,
+      sourceUrl: conferenceUrl,
+      title: 'Event',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    const talk = {
+      id: talkId,
+      conferenceId,
+      contributionId: '42',
+      contributionUrl: 'https://example.org/talk?token=secret',
+      title: 'Talk',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    };
+    await store.upsertTalk(talk);
+    await store.setSyncConfiguration({
+      workspaceId: '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d',
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    expect(await store.recordLocalSyncMetadataSnapshot(conferenceId)).toBe(0);
+    await store.requeueSyncEligibleMetadata();
+    expect(await store.listPendingSyncOutbox()).toEqual([]);
+
+    await store.upsertTalk({
+      ...talk,
+      contributionUrl: 'https://example.org/talk',
+      linkedAgendaUrl: 'https://reader:secret@example.org/agenda',
+    });
+    expect(await store.recordLocalSyncMetadataSnapshot(conferenceId)).toBe(0);
+    await store.upsertTalk({
+      ...talk,
+      contributionUrl: 'https://example.org/talk',
+      linkedAgendaUrl: '',
+    });
+    await store.upsertDeck({
+      id: deckId,
+      conferenceId,
+      talkId,
+      sourceUrl: 'https://example.org/slides.pdf?signature=secret',
+      displayName: 'Slides',
+      mimeType: 'application/pdf',
+      selected: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    expect(await store.recordLocalSyncMetadataSnapshot(conferenceId)).toBe(0);
+    expect(await store.listPendingSyncOutbox()).toEqual([]);
+    await store.upsertDeck({
+      id: deckId,
+      conferenceId,
+      talkId,
+      sourceUrl: deckUrl,
+      displayName: 'Slides',
+      mimeType: 'application/pdf',
+      selected: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    expect(await store.recordLocalSyncMetadataSnapshot(conferenceId)).toBe(1);
+    expect(await store.listPendingSyncOutbox()).toHaveLength(1);
+    await store.close();
+  });
+
+  it('does not restore a locally deleted conference from an unchanged catalog', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-catalog-repeat'),
+      () => 1700000000000,
+    );
+    const profile = await store.getSyncProfile();
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const conferenceUrl = 'https://example.org/remote-event';
+    const conferenceId = createConferenceId(conferenceUrl);
+    const catalog = {
+      format: 'indicoink-catalog',
+      version: 1,
+      workspaceId,
+      deviceId: '72fc257a-40d2-4b19-ae71-b2a02f4fe5e6',
+      generation: 1,
+      updatedAt: 1700000000000,
+      conferences: [
+        {
+          conferenceId,
+          sourceKind: 'web',
+          sourceUrl: conferenceUrl,
+          title: 'Remote event',
+          dates: '',
+          host: 'example.org',
+          metadataSnapshotId: null,
+        },
+      ],
+    } as const;
+    expect(catalog.deviceId).not.toBe(profile.deviceId);
+    await expect(store.applyRemoteSyncCatalog(catalog)).resolves.toBe(true);
+    await store.deleteConference(conferenceId);
+    await expect(store.applyRemoteSyncCatalog(catalog)).resolves.toBe(false);
+    await expect(
+      store.applyRemoteSyncCatalog({
+        ...catalog,
+        generation: 2,
+        updatedAt: 1700000001000,
+        conferences: catalog.conferences.map((conference) => ({
+          ...conference,
+          title: 'Updated remote event',
+        })),
+      }),
+    ).resolves.toBe(true);
+    await expect(store.listConferences()).resolves.toEqual([]);
+    await expect(store.getConference(conferenceId)).resolves.toMatchObject({
+      title: 'Remote event',
+    });
+    await store.close();
+  });
+
+  it('records explicit shared conference deletion and retains its local payload', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-conference-delete'),
+      () => 1700000000000,
+    );
+    await store.upsertConference({
+      id: 'conference-delete',
+      sourceUrl: 'https://example.org/delete-event',
+      title: 'Delete event',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.setSyncConfiguration({
+      workspaceId: '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d',
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+
+    await store.deleteConference('conference-delete');
+
+    await expect(store.listConferences()).resolves.toEqual([]);
+    await expect(
+      store.getConference('conference-delete'),
+    ).resolves.toMatchObject({
+      title: 'Delete event',
+    });
+    await expect(store.listPendingSyncOutbox()).resolves.toMatchObject([
+      {
+        operation: {
+          streamId: 'metadata:conference-delete',
+          kind: 'conference.delete',
+          payload: { reason: 'user' },
+        },
+      },
+    ]);
+    await store.close();
   });
 
   it('commits local annotation changes with a durable library-scoped outbox operation', async () => {
@@ -162,6 +440,7 @@ describe('persistence store', () => {
     await save(1, [{ kind: 'upsert-text-note', pageIndex: 0, note }]);
 
     const [pending] = await store.listPendingSyncOutbox();
+    expect(pending?.conferenceId).toBe('conference-sync');
     expect(pending?.operation).toMatchObject({
       workspaceId,
       streamId: 'deck:deck_sync',
@@ -272,6 +551,441 @@ describe('persistence store', () => {
     db.close();
   });
 
+  it('imports complete remote conference metadata and bookmarks idempotently', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-metadata-import'),
+      () => 1700000000000,
+    );
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    const remoteDeviceId = '72fc257a-40d2-4b19-ae71-b2a02f4fe5e6';
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const sourceUrl = 'https://example.org/metadata-event';
+    const conferenceId = createConferenceId(sourceUrl);
+    const talkUrl = `${sourceUrl}/talk-1`;
+    const talkId = createTalkId(conferenceId, 'talk-1');
+    const deckUrl = `${talkUrl}/slides.pdf`;
+    const deckId = createDeckId(talkId, deckUrl);
+    const operation = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `metadata:${conferenceId}`,
+      deviceId: remoteDeviceId,
+      sequence: 1,
+      operationId: randomUUID(),
+      context: {},
+      requires: [],
+      kind: 'conference.metadata',
+      payload: {
+        batchId: randomUUID(),
+        partIndex: 0,
+        partCount: 1,
+        conference: {
+          id: conferenceId,
+          sourceUrl,
+          title: 'Shared event',
+          dates: '2026-10-17',
+          host: 'example.org',
+          sourceKind: 'web',
+          timeZone: null,
+          createdAt: 1700000000000,
+          updatedAt: 1700000000000,
+        },
+        talks: [
+          {
+            id: talkId,
+            conferenceId,
+            contributionId: 'talk-1',
+            contributionUrl: talkUrl,
+            title: 'Shared talk',
+            speaker: 'A speaker',
+            sessionTitle: '',
+            startsAt: null,
+            endsAt: null,
+            room: '',
+            createdAt: 1700000000000,
+            updatedAt: 1700000000000,
+          },
+        ],
+        decks: [
+          {
+            id: deckId,
+            conferenceId,
+            talkId,
+            sourceUrl: deckUrl,
+            displayName: 'Slides',
+            mimeType: 'application/pdf',
+            kind: 'pdf',
+            createdAt: 1700000000000,
+            updatedAt: 1700000000000,
+          },
+        ],
+        upstreamRevision: 'rev-1',
+      },
+    });
+    const bookmark = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `metadata:${conferenceId}`,
+      deviceId: remoteDeviceId,
+      sequence: 2,
+      operationId: randomUUID(),
+      context: { [remoteDeviceId]: 1 },
+      requires: [],
+      kind: 'bookmark.set',
+      payload: { talkId, bookmarked: true },
+    });
+    await store.recordDownloadedSyncOperation(operation);
+    await store.recordDownloadedSyncOperation(bookmark);
+
+    await expect(
+      store.applyDownloadedMetadataOperations(`metadata:${conferenceId}`),
+    ).resolves.toBe(true);
+    await expect(store.getConference(conferenceId)).resolves.toMatchObject({
+      title: 'Shared event',
+      sourceUrl,
+    });
+    await expect(store.getTalk(talkId)).resolves.toMatchObject({
+      title: 'Shared talk',
+      bookmarked: true,
+    });
+    await expect(store.getDeck(deckId)).resolves.toMatchObject({
+      displayName: 'Slides',
+    });
+    const deletion = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `metadata:${conferenceId}`,
+      deviceId: remoteDeviceId,
+      sequence: 3,
+      operationId: randomUUID(),
+      context: { [remoteDeviceId]: 2 },
+      requires: [],
+      kind: 'conference.delete',
+      payload: { deletedAt: 1700000002000, reason: 'user' },
+    });
+    await store.recordDownloadedSyncOperation(deletion);
+    await expect(
+      store.applyDownloadedMetadataOperations(`metadata:${conferenceId}`),
+    ).resolves.toBe(true);
+    await expect(store.listConferences()).resolves.toEqual([]);
+    await expect(store.getConference(conferenceId)).resolves.toMatchObject({
+      title: 'Shared event',
+    });
+    await expect(
+      store.applyDownloadedMetadataOperations(`metadata:${conferenceId}`),
+    ).resolves.toBe(false);
+    await store.close();
+  });
+
+  it('rejects a bookmark routed through another conference stream', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-bookmark-route'),
+      () => 1700000000000,
+    );
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    const remoteDeviceId = '72fc257a-40d2-4b19-ae71-b2a02f4fe5e6';
+    await store.upsertConference({
+      id: 'conference-b',
+      sourceUrl: 'https://example.org/b',
+      title: 'B',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertTalk({
+      id: 'talk-b',
+      conferenceId: 'conference-b',
+      contributionId: 'talk-b',
+      contributionUrl: 'https://example.org/b/talk-b',
+      title: 'Talk B',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const misrouted = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: 'metadata:conference-a',
+      deviceId: remoteDeviceId,
+      sequence: 1,
+      operationId: randomUUID(),
+      context: {},
+      requires: [],
+      kind: 'bookmark.set',
+      payload: { talkId: 'talk-b', bookmarked: true },
+    });
+    await store.recordDownloadedSyncOperation(misrouted);
+    await expect(
+      store.applyDownloadedMetadataOperations('metadata:conference-a'),
+    ).rejects.toThrow('does not match its conference stream');
+    await expect(store.getTalk('talk-b')).resolves.toMatchObject({
+      bookmarked: false,
+    });
+    await store.close();
+  });
+
+  it('rejects remote metadata that attaches a deck to a talk in another conference', async () => {
+    const store = new PersistenceStore(
+      createTempDbPath('sync-deck-route'),
+      () => 1700000000000,
+    );
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    const remoteDeviceId = '72fc257a-40d2-4b19-ae71-b2a02f4fe5e6';
+    const sourceUrl = 'https://example.org/a';
+    const conferenceId = createConferenceId(sourceUrl);
+    const otherConferenceId = createConferenceId('https://example.org/b');
+    const otherTalkId = createTalkId(otherConferenceId, 'talk-b');
+    await store.upsertConference({
+      id: otherConferenceId,
+      sourceUrl: 'https://example.org/b',
+      title: 'B',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertTalk({
+      id: otherTalkId,
+      conferenceId: otherConferenceId,
+      contributionId: 'talk-b',
+      contributionUrl: 'https://example.org/b/talk-b',
+      title: 'Talk B',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const deckUrl = 'https://example.org/b/talk-b/slides.pdf';
+    const misrouted = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `metadata:${conferenceId}`,
+      deviceId: remoteDeviceId,
+      sequence: 1,
+      operationId: randomUUID(),
+      context: {},
+      requires: [],
+      kind: 'conference.metadata',
+      payload: {
+        batchId: randomUUID(),
+        partIndex: 0,
+        partCount: 1,
+        conference: {
+          id: conferenceId,
+          sourceUrl,
+          title: 'A',
+          dates: '',
+          host: 'example.org',
+          sourceKind: 'web',
+          createdAt: 1700000000000,
+          updatedAt: 1700000000000,
+        },
+        talks: [],
+        decks: [
+          {
+            id: createDeckId(otherTalkId, deckUrl),
+            conferenceId,
+            talkId: otherTalkId,
+            sourceUrl: deckUrl,
+            displayName: 'Slides',
+            mimeType: 'application/pdf',
+            kind: 'pdf',
+            createdAt: 1700000000000,
+            updatedAt: 1700000000000,
+          },
+        ],
+        upstreamRevision: null,
+      },
+    });
+    await store.recordDownloadedSyncOperation(misrouted);
+    await expect(
+      store.applyDownloadedMetadataOperations(`metadata:${conferenceId}`),
+    ).rejects.toThrow('does not match its conference metadata');
+    await expect(store.getConference(conferenceId)).resolves.toBeNull();
+    await store.close();
+  });
+
+  it('clears legacy sync annotations, repairs slide counts, and preserves stream sequence', async () => {
+    const dbPath = createTempDbPath('sync-clear-annotations');
+    const store = new PersistenceStore(dbPath, () => 1700000000000);
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    await store.upsertConference({
+      id: 'conference-clear',
+      sourceUrl: 'https://example.org/clear-event',
+      title: 'Clear Event',
+      dates: '',
+      host: 'example.org',
+      sourceKind: 'web',
+      lastOpenedAt: null,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertTalk({
+      id: 'talk-clear',
+      conferenceId: 'conference-clear',
+      contributionId: 'talk-1',
+      contributionUrl: 'https://example.org/clear-event/talk-1',
+      title: 'Clear Talk',
+      speaker: '',
+      sessionTitle: '',
+      startsAt: null,
+      endsAt: null,
+      room: '',
+      bookmarked: false,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.upsertDeck({
+      id: 'deck_clear',
+      conferenceId: 'conference-clear',
+      talkId: 'talk-clear',
+      sourceUrl: 'https://example.org/clear-event/slides.pdf',
+      displayName: 'Slides',
+      mimeType: 'application/pdf',
+      selected: true,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    });
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const note = {
+      id: 'note-clear',
+      conferenceId: 'conference-clear',
+      talkId: 'talk-clear',
+      deckId: 'deck_clear',
+      slideId: createSlideId('deck_clear', 1),
+      x: 0.25,
+      y: 0.5,
+      width: 240,
+      text: 'Legacy note',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    };
+    await store.saveDeckPdfWorkspaceChanges({
+      sourceUrl: 'https://example.org/clear-event/slides.pdf',
+      conferenceId: 'conference-clear',
+      talkId: 'talk-clear',
+      deckId: 'deck_clear',
+      pageCount: 1,
+      revision: 1,
+      changes: [{ kind: 'upsert-text-note', pageIndex: 0, note }],
+      history: createWorkspaceHistory(),
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+    await store.saveDeckPdfWorkspaceChanges({
+      sourceUrl: 'https://example.org/clear-event/slides.pdf',
+      conferenceId: 'conference-clear',
+      talkId: 'talk-clear',
+      deckId: 'deck_clear',
+      pageCount: 1,
+      revision: 2,
+      changes: [{ kind: 'delete', pageIndex: 0, annotationId: 'note-clear' }],
+      history: createWorkspaceHistory(),
+      currentSlideNumber: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+      zoom: 1,
+    });
+    const pending = await store.listPendingSyncOutbox();
+    expect(pending.map((entry) => entry.operation.kind)).toEqual([
+      'annotation.put',
+      'annotation.erase',
+    ]);
+
+    await store.close();
+    const legacyDb = new DatabaseSync(dbPath);
+    legacyDb
+      .prepare('DELETE FROM sync_annotation_versions WHERE annotation_id = ?')
+      .run('note-clear');
+    legacyDb.close();
+
+    const reopenedStore = new PersistenceStore(dbPath, () => 1700000000000);
+    await reopenedStore.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: false,
+    });
+    await expect(
+      reopenedStore.listPendingSyncOutboxForWorkspace(workspaceId),
+    ).resolves.toHaveLength(2);
+    await reopenedStore.clearSyncEligibleAnnotations(workspaceId);
+    await expect(reopenedStore.getAnnotation('note-clear')).resolves.toBeNull();
+    await reopenedStore.close();
+
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      db
+        .prepare('SELECT annotated FROM slides WHERE id = ?')
+        .get(createSlideId('deck_clear', 1)),
+    ).toMatchObject({ annotated: 0 });
+    const outbox = db
+      .prepare('SELECT operation_json FROM sync_outbox')
+      .all() as Array<{ operation_json: string }>;
+    expect(outbox.map((row) => JSON.parse(row.operation_json))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: pending[0]!.operation.operationId,
+          sequence: pending[0]!.operation.sequence,
+          kind: 'noop',
+          payload: {},
+        }),
+        expect.objectContaining({
+          operationId: pending[1]!.operation.operationId,
+          sequence: pending[1]!.operation.sequence,
+          kind: 'noop',
+          payload: {},
+        }),
+      ]),
+    );
+    expect(
+      db
+        .prepare(
+          'SELECT annotation_id FROM sync_suppressed_annotations WHERE workspace_id = ? AND annotation_id = ?',
+        )
+        .get(workspaceId, 'note-clear'),
+    ).toBeDefined();
+    db.close();
+  });
+
   it('upgrades a version 9 library without replacing its existing records', async () => {
     const dbPath = createTempDbPath('sync-upgrade');
     const seedStore = new PersistenceStore(dbPath, () => 1700000000000);
@@ -377,7 +1091,7 @@ describe('persistence store', () => {
           user_version: number;
         }
       ).user_version,
-    ).toBe(11);
+    ).toBe(16);
     expect(
       upgradedDb
         .prepare(
@@ -822,7 +1536,7 @@ describe('persistence store', () => {
     await expect(store.listConferences()).resolves.toEqual([]);
     const versionDb = new SQL.Database(new Uint8Array(await readFile(dbPath)));
     const userVersion = versionDb.exec('PRAGMA user_version;');
-    expect(userVersion[0]?.values[0]?.[0]).toBe(11);
+    expect(userVersion[0]?.values[0]?.[0]).toBe(16);
     versionDb.close();
     expect(existsSync(`${dbPath}.pre-node-sqlite-v7.bak`)).toBe(true);
     const backupDb = new SQL.Database(
@@ -1450,6 +2164,25 @@ describe('persistence store', () => {
     const second = await store.ensureNotebookDeck('talk-notebook');
     expect(first.id).toBe(second.id);
     expect(first.kind).toBe('notebook');
+    const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
+    await store.setSyncConfiguration({
+      workspaceId,
+      folderPath: 'C:\\sync-library',
+      enabled: true,
+    });
+    const notebookNote = {
+      id: 'note-notebook',
+      conferenceId: first.conferenceId,
+      talkId: first.talkId,
+      deckId: first.id,
+      slideId: createSlideId(first.id, 1),
+      x: 0.2,
+      y: 0.3,
+      width: 200,
+      text: 'Notebook only',
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+    };
 
     await store.saveDeckPdfWorkspaceChanges({
       sourceUrl: first.sourceUrl,
@@ -1458,7 +2191,7 @@ describe('persistence store', () => {
       deckId: first.id,
       pageCount: 1,
       revision: 1,
-      changes: [],
+      changes: [{ kind: 'upsert-text-note', pageIndex: 0, note: notebookNote }],
       history: createWorkspaceHistory(),
       currentSlideNumber: 1,
       scrollLeft: 0,
@@ -1469,6 +2202,12 @@ describe('persistence store', () => {
     await expect(store.loadDeckPdfWorkspace(first.id)).resolves.toEqual(
       expect.objectContaining({ pageCount: 1, deckId: first.id }),
     );
+    await expect(store.listPendingSyncOutbox()).resolves.toEqual([]);
+    await store.requeueSyncEligibleAnnotations();
+    await store.clearSyncEligibleAnnotations(workspaceId);
+    await expect(store.getAnnotation('note-notebook')).resolves.toMatchObject({
+      text: 'Notebook only',
+    });
     await store.close();
   });
 });
