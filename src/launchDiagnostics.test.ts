@@ -11,6 +11,7 @@ describe('launch diagnostics', () => {
 
     const preloadPath = join(buildDir, 'preload.js');
     writeFileSync(preloadPath, '// preload');
+    writeFileSync(join(buildDir, 'syncWorker.js'), '// sync worker');
 
     expect(() =>
       assertLaunchArtifacts(getLaunchArtifacts(buildDir, 'main_window')),
@@ -22,6 +23,7 @@ describe('launch diagnostics', () => {
 
     writeFileSync(join(buildDir, 'main.js'), '// main');
     writeFileSync(join(buildDir, 'preload.js'), '// preload');
+    writeFileSync(join(buildDir, 'syncWorker.js'), '// sync worker');
 
     const rendererDir = join(buildDir, '..', 'renderer', 'main_window');
     mkdirSync(rendererDir, { recursive: true });

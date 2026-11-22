@@ -48,7 +48,7 @@ const exactKeys = (value: Record<string, unknown>, keys: string[]) => {
 const isSafeInteger = (value: unknown, minimum = 0): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum;
 
-const isUuid = (value: unknown): value is string =>
+export const isUuid = (value: unknown): value is string =>
   typeof value === 'string' && UUID_PATTERN.test(value);
 
 const isSafePathComponent = (value: unknown): value is string =>
