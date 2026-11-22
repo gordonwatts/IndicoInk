@@ -1,174 +1,101 @@
 # Local-folder sync protocol, version 1
 
-This document specifies a future protocol for sharing annotation changes through a user-selected folder that another machine or a folder-sync provider can copy. It is a wire-format and merge contract only; it does not add sync code or change the app's current local persistence.
+This document defines the wire format, merge contract, worker boundary, and retention rules for syncing conference metadata, bookmarks, and slide annotations through a user-selected OneDrive or Dropbox folder. The shared folder is an exchange format, never a live SQLite database. The local main-process SQLite store remains authoritative for each installation's reads and writes. This document does not promise cloud delivery when only local folder I/O has succeeded.
 
-## Scope and trust boundary
+## Scope and stable identity
 
-Version 1 synchronizes only user-authored slide annotations: pen strokes and text notes. The local main-process SQLite store remains authoritative for each installation. The shared folder contains protocol JSON files only; it never contains SQLite databases, database journals, PDF bytes, credentials or API keys, undo/redo history, view state, or cached Indico responses. Each device applies validated changes to its own local store through the existing main-process boundary.
+Version 1 syncs Indico and web conference records, talk/deck metadata, bookmarks, pen strokes, and text notes. Local PDFs, notebook decks, PDF bytes, credentials, OpenAI settings, cached Indico responses, per-device view state, and undo/redo stacks remain local. Undo and redo actions that change annotations are new shared edits. A Markdown export is not a sync format.
 
-The protocol assumes an eventually copied folder, not a transactional or trusted database. Readers tolerate files arriving late or out of order. Files are immutable after publication, except that a writer may replace its own uniquely named temporary file before publishing it. A missing file is not evidence of deletion. A malformed, unsupported, or conflicting file is preserved and ignored while the device reports a local sync error; readers never repair or delete another device's files.
+The existing IDs are the logical IDs on the wire: `conferenceId`, `talkId`, `deckId`, `slideId`, and annotation `id` from `src/persistenceModels.ts`. They are derived from source URLs and contribution IDs, so two devices address the same record only when those inputs are identical; pairing must not assume that equivalent but differently written URLs produce the same ID. Local-PDF workspaces and notebook decks are excluded because their current path/session identity is not a cross-device identity. A PDF's logical `deckId` is not proof that its bytes match: every PDF-backed annotation operation also carries a SHA-256 `documentVersion` of the exact PDF bytes displayed when the annotation was created.
 
-## Folder layout and JSON records
+If the same logical deck has different PDF hashes on two devices, neither version's annotations may be drawn over the other's bytes. Preserve both version associations and provide explicit user association/recovery. For a legacy workspace, hash only the exact locally cached PDF bytes. If those bytes are absent, retain `documentVersion: null` as unknown; never download a replacement to infer the old version. An explicit user association is a durable operation. PDF bytes are not synchronized, so a device may need its own Indico credentials and download; if the original bytes are unavailable, annotations remain recoverable but cannot be visually reconstructed against them.
 
-All JSON is UTF-8, one JSON object per file, with no comments or trailing commas. Integers are base-10 JSON numbers. UUIDs are lowercase canonical UUID strings. Property names and required/optional fields below are exact. Unknown fields and unsupported versions are not interpreted as version 1.
+## Trust boundary and transport limits
+
+The main process owns SQLite, validation/merge commits, and IPC. A utility process owns every shared-folder operation, including enumeration, file status/read/write, hashing, rename, and watching. Its interface accepts bounded commands and returns bounded byte records or progress; it has no SQLite handle and cannot mutate application state. Pure parsers and merge functions are separate from this transport. The main process revalidates records and applies a bounded import batch in one serialized transaction per stream.
+
+The worker is terminated and restarted after a 10-second attempt deadline. Retry delays are 2, 5, 15, 60, then 300 seconds (capped at 300 seconds); folder watcher events may request an earlier bounded scan. A startup scan begins only after the first local Library render. Recovery scanning is resumed at launch and at least every 15 minutes until all streams have been examined; one budget-limited pass is not a full scan. Pause prevents new work and cancels/terminates current work. Local saves and drawing never wait for the worker.
+
+Limits are checked before parsing or allocation: workspace file 4 KiB; catalog 2 MiB and 10,000 conference entries; operation 2 MiB, at most 32 logical changes, 20,000 points per stroke, and 16,384 UTF-16 code units per note; snapshot manifest 64 KiB, each part 1 MiB, and 64 MiB total per stream snapshot. Reject paths that escape the configured root, symbolic links/reparse points, duplicate names, non-regular files, invalid UTF-8, excessive JSON nesting (32), or files beyond their limit. Do not delete or rewrite an unrecognized file.
+
+One scan examines no more than 1,000 directory entries, reads no more than 8 MiB, and runs for no more than 10 seconds. The main process durably stores a worker-returned continuation cursor consisting of the ordered stream path, device ID, sequence bucket, and last fully examined filename; the worker resumes from it after restart. Within a bucket, the worker enumerates at most 512 operation files, sorts their names, and examines them in that order so the filename cursor is stable. A changed directory or invalid cursor restarts examination of that bucket, with inbox deduplication making repeats harmless. Hitting a budget is a partial check, not evidence that a stream is current or empty. A publication batch is flushed after 750 ms of quiet, 32 changes, or 256 KiB of pending encoded data, whichever comes first. A single encoded operation may be up to 2 MiB. Local annotation persistence remains on its existing save cadence.
+
+## Folder layout and records
+
+All JSON files are UTF-8 objects with no comments or trailing commas. UUIDs are lowercase canonical UUID strings; counters are positive safe integers. Unknown fields and unsupported versions are not interpreted as version 1. Operations, snapshots, acknowledgments, retirements, and `workspace.json` are immutable: each writer publishes a unique temporary sibling, flushes and closes it, then atomically renames without replacing an existing final path. It reopens and byte-verifies the final file. If the filesystem cannot provide same-folder atomic no-clobber publication, the folder is unsupported. A device may atomically replace only its own `catalog.json`, after verifying the existing catalog has the same workspace and device IDs and a lower generation. Temporary files are never treated as published records.
 
 ```text
 <shared-folder>/
   workspace.json
-  operations/<deviceId>/<sequence>.json
-  checkpoints/<deviceId>/<checkpointSequence>.json
+  devices/<deviceId>/catalog.json
+  devices/<deviceId>/retirements/<retirementId>.json
+  devices/<deviceId>/acks/<streamKey>/<ackId>.json
+  conferences/<conferenceId>/metadata/ops/<deviceId>/<bucket>/<sequence>-<operationId>.json
+  conferences/<conferenceId>/metadata/snapshots/<snapshotId>/manifest.json
+  conferences/<conferenceId>/metadata/snapshots/<snapshotId>/parts/<part>.json
+  conferences/<conferenceId>/decks/<deckId>/ops/<deviceId>/<bucket>/<sequence>-<operationId>.json
+  conferences/<conferenceId>/decks/<deckId>/snapshots/<snapshotId>/manifest.json
+  conferences/<conferenceId>/decks/<deckId>/snapshots/<snapshotId>/parts/<part>.json
 ```
 
-`workspace.json` is created once and never overwritten:
+`workspace.json` is immutable and has exactly `{ format: "indicoink-folder-sync", version: 1, workspaceId: UUID }`. A library UUID is independent of any path or conference ID. Pairing validates this file; a different or invalid UUID fails closed and is never silently replaced.
 
-```json
-{
-  "format": "indicoink-folder-sync",
-  "version": 1,
-  "workspaceId": "9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d"
-}
-```
+Each installation writes only its own `catalog.json`, atomically replacing the prior catalog. Its exact top-level fields are `format: "indicoink-catalog"`, `version: 1`, `workspaceId: UUID`, `deviceId: UUID`, `generation: positive safe integer`, `updatedAt: integer epoch milliseconds`, and `conferences: array`. Each conference entry has exactly `conferenceId: non-empty string`, `sourceKind: "indico" | "web"`, `sourceUrl: non-empty string`, `title: string`, `dates: string`, `host: string`, and `metadataSnapshotId: UUID | null`. Entries have unique `conferenceId` values and are sorted by that ID before serialization. Catalogs contain discovery data only: no bookmarks, annotation values, annotation-derived counts, PDF bytes, or authoritative agenda state. Catalog absence never means deletion. The catalog is capped at 10,000 entries; overflow is reported and does not discard locally stored conferences.
 
-Its exact schema is `{ format: "indicoink-folder-sync", version: 1, workspaceId: UUID }`. A workspace ID is generated independently of conference IDs. If an existing file is invalid, has another format/version, or its workspace ID differs from the device's locally paired workspace, sync fails closed; it must not be silently replaced.
+Streams are independent. A conference metadata/bookmark stream is `metadata:<conferenceId>`. Each PDF deck annotation stream is `deck:<deckId>`. A per-device counter is reserved independently for each stream, so an absent or unopened deck cannot block another deck or conference. The stream ID appears in the stream path and record; its per-stream causal vector, snapshot, and acknowledgment use that same ID. A deck stream may declare a cross-stream prerequisite on its conference metadata frontier; it may not infer prerequisites from another stream's sequence number. Each operation bucket is the decimal integer `floor((sequence - 1) / 512)` with no leading zeroes; one honest writer can place at most 512 operations in a bucket. An overfull bucket or unrelated files count against the scan budget and produce a local sync error rather than being silently skipped.
 
-An operation is immutable and its filename is `<deviceId>/<sequence>.json`. `operationId` is the canonical `${deviceId}:${sequence}` string. `context` is a vector clock: a map from device UUID to the greatest contiguous operation sequence from that device that this writer had incorporated before making this operation. Zero entries are omitted. The writer's own entry, when present, is exactly `sequence - 1`.
+For paths under `devices/<deviceId>/acks/`, `<streamKey>` is the unpadded base64url encoding of the UTF-8 bytes of the exact `streamId` string (RFC 4648 URL-safe alphabet, with no `=`). Decoding and re-encoding must reproduce the same key. The decoded stream ID is 1–180 UTF-8 bytes and the encoded key is at most 240 ASCII characters, below the Windows 255-character path-segment limit. This makes path segments reversible and prevents separators or platform-reserved characters from entering a filename.
 
-Common operation fields are exactly:
+An operation has exactly `format`, `version`, `workspaceId`, `streamId`, `deviceId`, `sequence`, `operationId`, `context`, `requires`, `kind`, `payload`, and `integrity`. `format` is `"indicoink-operation"` and `version` is `1`; workspace, device, and operation IDs are UUIDs. A metadata stream ID is `metadata:<conferenceId>` and a deck stream ID is `deck:<deckId>`. `operationId` is a random UUID generated once and persisted with the durable outbox entry. `context` maps device UUIDs to the greatest contiguous sequence incorporated for this same stream; zero entries are omitted. The writer's own entry is omitted for sequence 1 and otherwise equals `sequence - 1`. `requires` is an array of `{ streamId: string, frontier: { [device UUID]: positive safe integer } }` for explicit cross-stream prerequisites and is empty when there are none. `integrity` is `{ byteLength: positive safe integer, sha256: lowercase 64-hex string }`, where byteLength and SHA-256 cover the UTF-8 canonical JSON encoding of all other operation fields (excluding `integrity`). The operation path determines its stream: `conferences/<conferenceId>/metadata` or `conferences/<conferenceId>/decks/<deckId>`. Its filename is exactly `<sequence>-<operationId>.json`; the bucket path segment must match the sequence, and path, filename, and all identity fields must agree. Canonical JSON recursively sorts object keys by Unicode code point, preserves array order, emits no insignificant whitespace, uses JSON string escaping and ECMAScript `JSON.stringify` number formatting, and does not normalize Unicode text. NaN, infinity, negative zero, and duplicate object keys are rejected.
 
-```json
-{
-  "format": "indicoink-operation",
-  "version": 1,
-  "workspaceId": "9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d",
-  "deviceId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6",
-  "sequence": 12,
-  "operationId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6:12",
-  "context": {
-    "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6": 11,
-    "639be5ee-82ea-4a08-93a9-afc608990bdc": 4
-  },
-  "kind": "put",
-  "annotation": {
-    "kind": "stroke",
-    "id": "stroke-uuid",
-    "conferenceId": "conference-id",
-    "talkId": "talk-id",
-    "deckId": "deck-id",
-    "slideId": "slide-id",
-    "createdAt": 1781631000000,
-    "updatedAt": 1781631000000,
-    "baseWidth": 2,
-    "color": "#000000",
-    "points": [
-      { "x": 0.125, "y": 0.25, "pressure": 0.5, "time": 10 },
-      { "x": 0.2, "y": 0.3, "pressure": 0.75, "time": 27 }
-    ]
-  }
-}
-```
+Supported operation kinds and exact payloads:
 
-Exact operation schema:
+| Kind | Stream | Payload |
+| --- | --- | --- |
+| `annotation.put` | deck | `{ annotation, documentVersion, logicalNoteId, branchOfOperationId }`; annotation is the full persisted `PenStroke` or `TextNote` with wire-only `kind: "stroke"` or `kind: "text"`; `documentVersion` is a lowercase 64-hex SHA-256 or null only for an unknown legacy version. For strokes both note fields are null. For a text note, an ordinary note has `logicalNoteId === annotation.id` and null `branchOfOperationId`. A keep-both concurrent branch has a deterministic `annotation.id` equal to `branch:<lowercase SHA-256 of UTF-8(workspaceId + "\n" + logicalNoteId + "\n" + branchOfOperationId)>`, where `branchOfOperationId` is the UUID of the concurrent put that created this branch. Subsequent edits retain these three identities. |
+| `annotation.erase` | deck | `{ annotationId, documentVersion }`; retains a durable tombstone for that exact annotation and PDF version. |
+| `bookmark.set` | metadata | `{ talkId, bookmarked }`. |
+| `conference.metadata` | metadata | `{ batchId, partIndex, partCount, conference, talks, decks, upstreamRevision }`; `batchId` is a UUID, indices are zero-based safe integers, `partCount` is positive, and values use existing persisted models. `conference` is the complete record in part zero and null in later parts. `upstreamRevision` is the same opaque string or null in every part. |
+| `conference.delete` | metadata | `{ deletedAt, reason: "user" }`; an explicit shared deletion, never inferred from missing files or local cleanup. |
+| `document-version.associate` | deck | `{ annotationIds, fromVersion: null, toVersion }`; `annotationIds` is a non-empty array of at most 32 distinct annotation IDs, and `toVersion` is a lowercase 64-hex SHA-256. Allowed only after explicit user confirmation for those legacy unknown-version annotations. |
+| `noop` | any | `{}`; closes a previously durable sequence reservation only when the original operation cannot be recovered. |
 
-- Every operation requires `format`, `version`, `workspaceId`, `deviceId`, `sequence`, `operationId`, `context`, and `kind`. A `put` additionally requires `annotation`; an `erase` additionally requires `target`; a `noop` has neither.
-- `format` is the literal `indicoink-operation`; `version` is integer `1`; workspace and device IDs are UUIDs; `sequence` is a positive safe integer; `operationId` must equal `${deviceId}:${sequence}`.
-- `context` is an object whose keys are device UUIDs and whose values are positive safe integers. It cannot claim a sequence that the writer has not received contiguously. Its own-device entry, if present, must equal `sequence - 1`.
-- `kind` is exactly `put`, `erase`, or `noop`. A `put` contains the complete annotation value below and no `target`. An `erase` has no `annotation` property and targets the same annotation identity using the required locator fields:
+Payloads contain no credentials, view state, local paths, PDF bytes, or undo/redo history. A metadata batch uses consecutive operations from one device in the same stream, with the same `batchId`, `partCount`, and `upstreamRevision`; every part contains at most 32 total talk/deck records and stays under the operation size limit. Readers validate all parts and apply the batch atomically only when complete; conflicting or missing parts stall that batch, not other streams. A single oversized entity is rejected locally rather than truncated. Conference metadata can create missing parent records; subsequent deck operations wait on their explicit metadata prerequisite. Other operations verify parent IDs against the resulting records before application. A document-version association changes only the named unknown-version annotations; a missing, already associated, or conflicting ID blocks that association and leaves its original data intact. Times are data, never conflict-ordering clocks.
 
-```json
-{
-  "format": "indicoink-operation",
-  "version": 1,
-  "workspaceId": "9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d",
-  "deviceId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6",
-  "sequence": 13,
-  "operationId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6:13",
-  "context": {
-    "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6": 12,
-    "639be5ee-82ea-4a08-93a9-afc608990bdc": 4
-  },
-  "kind": "erase",
-  "target": {
-    "conferenceId": "conference-id",
-    "talkId": "talk-id",
-    "deckId": "deck-id",
-    "slideId": "slide-id",
-    "annotationId": "stroke-uuid"
-  }
-}
-```
+Snapshots use an immutable manifest with exactly `format: "indicoink-snapshot"`, `version: 1`, `workspaceId: UUID`, `streamId: string`, `snapshotId: UUID`, `createdBy: UUID`, `frontier: vector`, `partCount: positive safe integer`, `partSha256: array of lowercase 64-hex strings`, `totalByteLength: positive safe integer`, `sha256: lowercase 64-hex string`, and `retentionThrough: vector`. A vector maps device UUIDs to positive safe sequence integers, omitting zero entries. `retentionThrough` cannot exceed `frontier`; it is the inclusive coverage proposed for pruning after safe acknowledgment. Parts are named `0.json` through `<partCount - 1>.json`; `partSha256[i]` hashes the complete bytes of `i.json` and the array length must equal `partCount`. Each part is a UTF-8 canonical JSON object with exactly `format: "indicoink-snapshot-part"`, `version: 1`, `workspaceId`, `streamId`, `snapshotId`, `partIndex`, `partCount`, and `records`. The identifiers and count must match the manifest; `partIndex` is the zero-based filename index. `records` is an array sorted by `(recordType, recordId)` with no duplicate pair. A record is exactly `{ recordType, recordId, causes, value }`. `causes` is a non-empty array of the causally maximal operations that produced this visible value or tombstone; each cause is exactly `{ deviceId, sequence, operationId, context }` with the same field types as an operation. Causes are sorted by `(deviceId, sequence, operationId)` and contain no duplicate operation ID. This provenance is retained even when covered operation files are pruned, so a later operation can be compared with the stored frontier.
 
-An erase requires `target` with exactly the five non-empty string fields shown, and must not contain `annotation`. A put's target identity is taken from its annotation's `conferenceId`, `talkId`, `deckId`, `slideId`, and `id`.
+For a metadata stream, record types are `conference`, `talk`, `deck`, `bookmark`, and `conference-tombstone`; `recordId` is respectively the conference, talk, deck, talk, or conference ID. Their values are the complete corresponding persisted conference/talk/deck model, `{ talkId, bookmarked }`, or `{ deletedAt, reason: "user" }`. For a deck stream, record types are `annotation`, `annotation-tombstone`, `annotation-conflict`, and `document-version-association`; their values are respectively the complete wire annotation put payload, `{ annotationId, documentVersion }`, `{ logicalNoteId, branches: [{ operationId, payload }] }`, or `{ annotationIds, fromVersion, toVersion }`. For annotation and tombstone records, `recordId` is `<documentVersion-or-unknown>:<annotationId>`; for a conflict it is `<documentVersion-or-unknown>:<logicalNoteId>`; for an association it is the originating operation ID. A record's `causes` must all be within the manifest frontier and its value must be consistent with those causes. The records array may be empty only when the stream state is genuinely empty. Partition the globally sorted records consecutively; all parts except the last are non-empty, and each encoded part must fit the 1 MiB limit. The parts together encode the complete stream state at `frontier`, including tombstones, unresolved branches, and document-version associations. `totalByteLength` and `sha256` cover the concatenated UTF-8 part bytes in ascending part order. Readers accept a snapshot only after every part, total length, digest, causal dependency, ordering, and schema validate. A snapshot with missing or invalid parts is never an acknowledgment or a reason to prune.
 
-A `noop` has no `annotation` or `target` property and advances only its writer's operation sequence. It has no annotation effect. It is used only to close a sequence reservation whose original operation cannot be recovered:
+A checkpoint acknowledgment is immutable, stored as `acks/<streamKey>/<ackId>.json`, and has exactly `format: "indicoink-ack"`, `version: 1`, `workspaceId: UUID`, `streamId: string`, `deviceId: UUID`, `ackId: UUID`, `snapshotId: UUID`, `frontier: vector`, and `validatedAt: integer epoch milliseconds`. Its path's device ID and stream key must match the record, and its `frontier` must equal the named snapshot manifest's frontier. It certifies that this device verified the complete snapshot and dependencies for a future bootstrap. A mere manifest/catalog scan is not an acknowledgment and does not hydrate its annotations into SQLite.
 
-```json
-{
-  "format": "indicoink-operation",
-  "version": 1,
-  "workspaceId": "9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d",
-  "deviceId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6",
-  "sequence": 14,
-  "operationId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6:14",
-  "context": {
-    "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6": 13,
-    "639be5ee-82ea-4a08-93a9-afc608990bdc": 4
-  },
-  "kind": "noop"
-}
-```
+## Causality, merge, and recovery
 
-Annotation values are the existing persisted models, with protocol `kind` added as a discriminator. A stroke requires `kind: "stroke"`, `id`, `conferenceId`, `talkId`, `deckId`, `slideId`, integer `createdAt` and `updatedAt` epoch milliseconds, and `points`. It may contain numeric `baseWidth` and string `color`. Each point has exactly numeric `x`, `y`, `pressure`, and `time`; `x` and `y` are normalized page coordinates. A text note requires `kind: "text"`, the same identity/timestamp fields, numeric `x` and `y`, and string `text`; it may contain numeric `width`. Version 1 carries no other annotation fields. IDs and parent IDs must match the local conference/talk/deck/slide relation before applying. The annotation's `createdAt`/`updatedAt` values are payload data, not conflict-ordering clocks.
+An operation at `(stream, device d, sequence n)` happens before another operation exactly when the latter's same-stream `context[d] >= n`, or it declares and satisfies a cross-stream prerequisite. Readers wait on sequence gaps and prerequisites. They never use file arrival order, timestamps, directory ordering, or the annotation model's `createdAt`/`updatedAt` to choose user content. Duplicate IDs with identical bytes are idempotent; conflicting bytes for one operation ID are corruption and remain for diagnosis.
 
-A checkpoint is an immutable processing-progress hint. Its filename is `<deviceId>/<checkpointSequence>.json`; `checkpointSequence` increases per checkpoint writer. `seen` has the same vector-clock shape as `context` and means the writer has validated and incorporated every operation through each listed contiguous sequence, including causal dependencies. Checkpoints do not replace operations, encode annotation contents, or authorize deletion.
+The main process persists each local change and its outbox record in the same SQLite transaction. Outbox entries retain operation ID, stream sequence, exact serialized bytes, and state until the final file is present and byte-verified. Import records discovery, validation, and application separately; the inbox ledger makes repeat imports idempotent. Remote imports use a dedicated transaction, never the viewer's local save API. Local commits and remote imports serialize per deck. The viewer save API names its base revision and returns the committed revision; on import it acknowledges the imported revision and rebases pending local batches in order. A stale batch is rebased or retried, never silently dropped. Remote changes wait until an active stroke completes; subsequent input is preserved or queued. Imports preserve page, zoom, and scroll.
 
-```json
-{
-  "format": "indicoink-checkpoint",
-  "version": 1,
-  "workspaceId": "9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d",
-  "deviceId": "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6",
-  "checkpointSequence": 3,
-  "seen": {
-    "72fc257a-40d2-4b19-ae71-b2a02f4fe5e6": 13,
-    "639be5ee-82ea-4a08-93a9-afc608990bdc": 4
-  }
-}
-```
+For one annotation ID, retain the causally maximal operation frontier. An observed later put or erase supersedes what it observed. Different annotation IDs merge by union. A concurrent erase and put remain recoverable branches and request explicit review. Concurrent edits to the same text note are the exception: keep both values automatically as editable notes without prompting. Initial concurrent puts can both arrive as ordinary puts with the same `logicalNoteId` and `annotation.id`; their immutable wire bytes are never rewritten. On detecting concurrency, materialize **each** branch under the deterministic `branch:<hash>` ID derived from that branch's originating put operation ID by the formula above, including the branch originally created locally. Persist the mapping from the originating operation ID to that branch ID; migrate the displayed/local annotation ID atomically while preserving pending edits. Later edits to that branch use its derived `annotation.id`, the original `logicalNoteId`, and the same `branchOfOperationId`. Causally ordered edits made before branch materialization follow the predecessor's branch lineage; an edit that observes all conflicting branches resolves them only when it explicitly declares that resolution. Concurrent note edit/delete retains both alternatives for review.
 
-Its exact schema is `{ format: "indicoink-checkpoint", version: 1, workspaceId: UUID, deviceId: UUID, checkpointSequence: positive safe integer, seen: { [device UUID]: positive safe integer } }`. A checkpoint is advisory only: a reader still checks available operation files, gaps, and causal dependencies. It never assumes operations below `seen` are safe to remove.
+Concurrent bookmark and unbookmark changes keep the bookmark; a causally later unbookmark removes it. A concurrent explicit conference deletion removes the conference from the normal Library but retains its data, including concurrent annotations, for at least two calendar months from `deletedAt`; tombstones and causal knowledge remain after payload GC to prevent resurrection. A causally later agenda refresh supersedes an earlier one while preserving stable annotated IDs. Concurrent refreshes with equal `upstreamRevision` tokens are equivalent; otherwise retain their alternatives for review. The opaque token must not be lexically or numerically ordered. Simultaneous different manual-conflict resolutions preserve both and request review. Local cleanup, pause, disconnect, and library switching never publish conference or annotation tombstones.
 
-## Causal application and checkpoints
+Undo and redo stacks stay local. Executing either emits a new put or erase operation with a new operation ID and current causal context. Restoring an erased annotation uses a new annotation ID. A merge invalidates or rebases affected local history; undo may not overwrite an unseen remote edit. Resolving a manual conflict emits a new operation whose context observes every branch being resolved.
 
-Each device has a stable random device ID and a durable local sequence reservation. It reserves the next sequence before constructing an operation and never reserves a later sequence while an earlier reservation is unresolved. On restart, it resolves that reservation before issuing another: if the final path already exists, it validates the file as the reserved operation and replays or recognizes its effect before marking the reservation complete; otherwise it recovers the operation from durable local state or a complete temporary file and publishes those exact bytes. If neither a recoverable operation nor a final file exists, it publishes a `noop` for that reserved sequence before advancing. An invalid final file, identity mismatch, or disagreement with recovered bytes is corruption/collision; the device preserves the evidence, reports the error, and does not advance. It must never skip a reservation: readers apply only contiguous sequences, so a hole would permanently block that device's later operations and checkpoints.
+## Retention, device retirement, and budgets
 
-To publish, the writer serializes the complete operation to a uniquely named temporary file in the same directory, flushes and closes it, then uses an atomic **no-clobber** publish primitive (for example, rename-with-no-replace) to create the final path only if it is absent. A plain rename that may replace an existing destination is not sufficient. If the filesystem cannot provide atomic no-clobber publication, the writer must refuse to use that folder. After publication, it reopens the final file and byte-compares it with the serialized operation. If the path already existed or the comparison differs, it reads and verifies the existing bytes: identical bytes make the retry idempotent; different bytes indicate a device-ID collision, so the device stops writing and preserves both records for diagnosis. A device restored from backup must re-enroll with a new device ID if its counter may have gone backwards.
+The release target is at most 10,000 operation/checkpoint/ack files and 1 GiB per library; a soft warning starts at 8,000 files or 800 MiB. Each stream targets a tail of at most 512 operations or 64 MiB after compaction. Snapshots have a 64 MiB stream limit and at most two live generations (current and replacement). The representative automated workload is four devices, 100 conferences, 1,000 talks, 250 decks, and 10,000 operations averaging 2 KiB, with a 20 MiB annotation corpus and 250 deck streams. Verify operation count/bytes, snapshot size, maximum entries/bytes/time per scan, and unopened-deck bootstrap against this workload.
 
-Readers validate format, version, workspace, filename/identity agreement, payload shape, and parent references. They wait on sequence gaps and causal dependencies rather than advancing past them. Duplicate operation IDs with identical contents are idempotent. Two contents for one operation ID are corruption/collision and are not resolved by timestamps. A new operation's context may include only contiguous operations already incorporated by that device.
+Compaction writes and verifies a complete replacement snapshot before acknowledging it. Keep the previous usable snapshot and all operations it needs until the replacement is complete and every active registered device has durably acknowledged that snapshot and its frontier. Only then may operations covered by `retentionThrough` be removed; an acknowledgment of another snapshot is insufficient. An active registered device is any device ID found in a validated catalog, operation, or acknowledgment in this workspace that has not been explicitly retired. A retirement record alone cannot register its issuer. Absence of a device's current files or a stale timestamp does not remove it from this set. A device may acknowledge a fully verified snapshot for future bootstrap without importing that deck into its local annotation tables; metadata-only catalog/manifest scans do not read snapshot parts. An unopened deck must bootstrap later from its retained complete snapshot plus its bounded tail.
 
-Operation A (`deviceId = d`, `sequence = n`) happens before operation B exactly when B's `context[d] >= n`. If neither operation happens before the other, they are concurrent. Wall-clock time, file modification time, directory order, and `createdAt`/`updatedAt` never break ties. For one annotation, discard an operation from the visible frontier only when a later operation causally observes it. One remaining `put` is the current value; one remaining `erase` is deleted. Multiple concurrent frontier values are a conflict and must remain recoverable. In particular, a concurrent erase and put is not silently treated as either deletion or resurrection. A user resolution emits a new operation whose context includes every conflicting frontier operation; its single value then causally supersedes those branches.
+Never discard work to satisfy a budget. If safe compaction is blocked, retain files, report the measured overage and blocking devices, and expose cleanup as blocked. A user may explicitly retire a lost device. Each retirement record has exactly `format: "indicoink-retirement"`, `version: 1`, `workspaceId: UUID`, `retirementId: UUID`, `retiredDeviceId: UUID`, `issuedBy: UUID`, and `issuedAt: integer epoch milliseconds`; its path uses `retiredDeviceId` and `retirementId`. A retirement cannot target its issuer, and the issuer must be an active registered device. Multiple valid retirements of the same device are idempotent. This v1 protocol does not cryptographically authenticate writers: anyone with write access to the shared folder can forge protocol JSON, including retirement records. Therefore all devices paired to the folder trust every folder writer; folder permissions are the authorization boundary. Do not present a retirement as proof that a specific human approved it. A returning retired device bootstraps current snapshots under a new device ID and separately reconciles unsent local operations as recoverable edits before publication. It cannot publish using a counter that may have gone backwards. Retire/reset does not erase local data. Keep tombstones for conference deletion for at least two calendar months and preserve enough causal knowledge afterward to prevent resurrection.
 
-After applying all currently available contiguous operations and dependencies, a device may publish a checkpoint containing its `seen` vector. It must not claim through a gap, unvalidated file, unresolved dependency, or file that has not been incorporated into local state. Checkpoints can accelerate scans and show progress, but missing checkpoints and stale devices are expected. They are not acknowledgements from every device and cannot establish global quiescence.
+## Implementation choices and verification workload
 
-## Examples
+These choices are initial v1 budgets, not claims about OneDrive or Dropbox delivery: worker attempt 10 seconds; backoff 2/5/15/60/300 seconds; periodic scan 15 minutes; publication debounce 750 ms; 32 changes or 256 KiB per normal batch; scan budget 1,000 entries, 8 MiB, and 10 seconds; maximum encoded operation 2 MiB; retention target 10,000 files/1 GiB with safe compaction above. Use monotonic time for attempt deadlines and delays. Wall-clock timestamps never order concurrent content; the deletion timestamp is used only as a conservative lower bound for the two-calendar-month retention period, and uncertain or backward clock changes delay cleanup.
 
-**Add.** Device A creates stroke `stroke-uuid` at sequence 5 with context `{A: 4}`. It publishes one `put`; every reader that receives it validates the slide identity and imports the stroke once. The matching operation path and ID make a retry harmless.
+The automated fixture uses the representative workload above plus delayed, reordered, duplicate, malformed, and missing operation/snapshot files; a 10-second fake stalled worker; four simulated devices with one retired device returning unsent changes; and one same-URL PDF replaced with different bytes. Tests assert bounded work and byte usage, deduplication, recovery, and that local writes finish while the worker is stalled. A shared local test folder does not prove real cloud-provider delivery.
 
-**Erase.** Device A erases that stroke at sequence 6 with context `{A: 5, B: 2}`. The erase causally observes the add (and B's first two operations), so the stroke is absent after both operations arrive, regardless of arrival order. The erase record remains as a tombstone in the log.
+## Compatibility with current storage
 
-**Concurrent edits.** A and B both read the same text note after seeing `{A: 8, B: 3}`. A publishes a changed text at `{A: 9, B: 3}` while B publishes different text at `{A: 8, B: 4}`. Neither context sees the other's operation, so both values remain as conflict branches; timestamps do not choose a winner. After the user selects or combines the desired text, A publishes a new put with context `{A: 9, B: 4}`. That resolution causally observes both branches and becomes the sole current value.
+The wire annotation shapes derive from `PenStroke` and `TextNote` in `src/persistenceModels.ts` and normalized points in `src/inkGeometry.ts`. The local SQLite annotation table stores parent IDs, a kind, and JSON payload. The wire discriminator is not a new local model kind. Before protocol implementation relies on note width, repair `rowToAnnotation` in `src/persistenceStoreNodeSqlite.ts` to restore `TextNote.width` and add a persistence round-trip test. New migrations must preserve existing rows and store unknown/known document versions without silently reassigning annotation data.
 
-**Concurrent erase and edit.** If B erases while A edits without observing B's erase, the frontier contains both a tombstone and a put. Keep both recoverable and request an explicit resolution. A later erase that sees both branches resolves to deleted; a later put that sees both branches resolves to the edited value.
-
-## Safe cleanup and failure behavior
-
-Version 1 does not automatically compact, prune, or garbage-collect operation or checkpoint files. In particular, an erase tombstone must not be dropped merely because one device's checkpoint has passed it: another device may be offline indefinitely or may be restoring an old backup, and shared-folder providers do not give this protocol a complete membership/acknowledgement barrier. Checkpoints are never a deletion license.
-
-Users may remove a whole sync workspace only as an explicit unlink/reset action after pausing sync on all participating devices and making a separate backup of any work they want to keep. Local SQLite data is not deleted by unlink/reset. Re-pairing an existing local database to an empty/different workspace must be an explicit user action; the app must not infer that missing shared files mean the user's local annotations should be erased. Unknown files, malformed records, and unsupported versions are retained for diagnosis or forward compatibility. No cleanup path removes local app data, PDFs, logs, or credentials as a side effect.
-
-## Compatibility check against current storage
-
-The wire value shapes are based on `PenStroke` and `TextNote` from `src/persistenceModels.ts`, and the normalized point `{x, y, pressure, time}` from `src/inkGeometry.ts`. The local SQLite `annotations` table stores parent IDs, a kind, and a JSON payload. The protocol discriminator (`stroke`/`text`) is wire-only; the local store infers stroke versus text from its `kind` column and payload. Stable entity IDs and parent checks use the existing `conferenceId`, `talkId`, `deckId`, `slideId`, and annotation `id` values, while operation IDs remain separate from app entity IDs.
-
-This is not yet a lossless round-trip compatibility claim. `TextNote.width` is present in the model and written into the JSON payload by the current store, but `rowToAnnotation` does not restore it when reading a text note. Before sync implementation relies on this field, the local store read path must be repaired and covered by a persistence round-trip regression test. The protocol keeps `width` optional to match the model; until that prerequisite lands, a read/modify/write path can lose it.
-
-This document does not claim that current storage implements causal frontiers, conflict branches, folder watching, or checkpoints. Those are later implementation work and require their own checklist item and verification.
+This document specifies behavior; it does not claim that the current app implements folder watching, causal frontiers, conflict branches, remote-only catalog entries, PDF-version migration, snapshots, or retention. Implement each in the ordered issue checklist and verify it before proceeding.
