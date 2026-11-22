@@ -5,7 +5,13 @@ import {
   stableNoteBranchId,
   type SyncOperation,
 } from './syncProtocol';
-import { mergeAnnotationOperations, mergeBookmarkState } from './syncMerge';
+import {
+  mergeAnnotationOperations,
+  mergeBookmarkState,
+  mergeConcurrentConferenceDeletion,
+  mergeMetadataRefreshes,
+} from './syncMerge';
+import { createConferenceId } from './persistenceModels';
 
 const workspaceId = '9b9e7cb4-8335-4a1a-9f4d-04a5986cc02d';
 const deviceA = '72fc257a-40d2-4b19-ae71-b2a02f4fe5e6';
@@ -108,21 +114,30 @@ describe('sync merge', () => {
   it('keeps concurrent same-note edits as deterministic editable branches', () => {
     const left = put(deviceA, 1, {}, 'left');
     const right = put(deviceB, 1, {}, 'right');
-    const merged = mergeAnnotationOperations([right, left]);
-    expect(merged.annotations).toHaveLength(2);
+    const third = put(
+      deviceC,
+      1,
+      {},
+      'third',
+      '11444444-0000-4000-8000-000000000001',
+    );
+    const merged = mergeAnnotationOperations([third, right, left]);
+    expect(merged.annotations).toHaveLength(3);
     expect(
       merged.annotations.map(({ annotation }) => annotation.id).sort(),
     ).toEqual(
       [
         stableNoteBranchId(workspaceId, noteId, left.operationId),
         stableNoteBranchId(workspaceId, noteId, right.operationId),
+        stableNoteBranchId(workspaceId, noteId, third.operationId),
       ].sort(),
     );
     expect(
       merged.annotations.map(({ annotation }) => annotation.text).sort(),
-    ).toEqual(['left', 'right']);
+    ).toEqual(['left', 'right', 'third']);
     expect(
-      mergeAnnotationOperations([left, right, left, right]).annotations,
+      mergeAnnotationOperations([left, right, third, left, right, third])
+        .annotations,
     ).toEqual(merged.annotations);
     const conflictingDuplicate = {
       ...left,
@@ -314,7 +329,56 @@ describe('sync merge', () => {
     ]);
   });
 
-  it('keeps concurrent edits of one existing branch as alternatives', () => {
+  it('rejects resolving one original fork through a derived branch while dropping its sibling', () => {
+    const left = put(deviceA, 1, {}, 'left');
+    const right = put(deviceB, 1, {}, 'right');
+    const leftBranchId = stableNoteBranchId(
+      workspaceId,
+      noteId,
+      left.operationId,
+    );
+    const partial = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `deck:${deckId}`,
+      deviceId: deviceA,
+      sequence: 2,
+      operationId: 'cc444444-0000-4000-8000-000000000001',
+      context: { [deviceA]: 1, [deviceB]: 1 },
+      requires: [],
+      kind: 'annotation.put',
+      payload: {
+        annotation: textNote('merged', leftBranchId),
+        documentVersion: null,
+        logicalNoteId: noteId,
+        branchOfOperationId: left.operationId,
+        resolves: [right.operationId],
+      },
+    });
+    expect(() => mergeAnnotationOperations([left, right, partial])).toThrow(
+      /every observed alternative of a source annotation/,
+    );
+    const { integrity: partialIntegrity, ...partialFields } = partial;
+    expect(partialIntegrity.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const complete = createOperation({
+      ...partialFields,
+      operationId: 'dd444444-0000-4000-8000-000000000001',
+      payload: {
+        ...partial.payload,
+        resolves: [left.operationId, right.operationId],
+      },
+    });
+    expect(
+      mergeAnnotationOperations([left, right, complete]).annotations,
+    ).toEqual([
+      expect.objectContaining({
+        annotation: expect.objectContaining({ text: 'merged' }),
+      }),
+    ]);
+  });
+
+  it('keeps concurrent edits of an existing branch as separate notes', () => {
     const origin = put(deviceA, 1, {}, 'origin');
     const other = put(deviceC, 1, {}, 'other');
     const branchId = stableNoteBranchId(
@@ -330,8 +394,11 @@ describe('sync merge', () => {
         streamId: `deck:${deckId}`,
         deviceId,
         operationId,
-        sequence: deviceId === deviceA ? 2 : 1,
-        context: { [deviceA]: 1 },
+        sequence: deviceId === deviceB ? 1 : 2,
+        context:
+          deviceId === deviceC
+            ? { [deviceA]: 1, [deviceC]: 1 }
+            : { [deviceA]: 1 },
         requires: [],
         kind: 'annotation.put',
         payload: {
@@ -342,14 +409,143 @@ describe('sync merge', () => {
           resolves: [],
         },
       });
+    const firstEdit = branchPut(
+      deviceA,
+      'cc444444-0000-4000-8000-000000000001',
+    );
+    const secondEdit = branchPut(
+      deviceB,
+      'dd444444-0000-4000-8000-000000000001',
+    );
+    const thirdEdit = branchPut(
+      deviceC,
+      '11444444-0000-4000-8000-000000000001',
+    );
     const merged = mergeAnnotationOperations([
       origin,
       other,
-      branchPut(deviceA, 'cc444444-0000-4000-8000-000000000001'),
-      branchPut(deviceB, 'dd444444-0000-4000-8000-000000000001'),
+      firstEdit,
+      secondEdit,
+      thirdEdit,
     ]);
-    expect(merged.conflicts).toHaveLength(1);
-    expect(merged.conflicts[0]?.alternatives).toHaveLength(2);
+    expect(merged.conflicts).toEqual([]);
+    expect(merged.annotations).toHaveLength(4);
+    expect(
+      merged.annotations.map(({ annotation }) => annotation.id).sort(),
+    ).toEqual(
+      [
+        stableNoteBranchId(workspaceId, noteId, other.operationId),
+        stableNoteBranchId(workspaceId, noteId, firstEdit.operationId),
+        stableNoteBranchId(workspaceId, noteId, secondEdit.operationId),
+        stableNoteBranchId(workspaceId, noteId, thirdEdit.operationId),
+      ].sort(),
+    );
+    expect(
+      mergeAnnotationOperations([
+        origin,
+        other,
+        firstEdit,
+        secondEdit,
+        thirdEdit,
+        firstEdit,
+        secondEdit,
+        thirdEdit,
+      ]).annotations,
+    ).toEqual(merged.annotations);
+
+    const firstEditBranchId = stableNoteBranchId(
+      workspaceId,
+      noteId,
+      firstEdit.operationId,
+    );
+    const laterEdit = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `deck:${deckId}`,
+      deviceId: deviceA,
+      operationId: '12444444-0000-4000-8000-000000000001',
+      sequence: 3,
+      context: { [deviceA]: 2 },
+      requires: [],
+      kind: 'annotation.put',
+      payload: {
+        annotation: textNote('later edit', firstEditBranchId),
+        documentVersion: null,
+        logicalNoteId: noteId,
+        branchOfOperationId: firstEdit.operationId,
+        resolves: [],
+      },
+    });
+    const afterOrderedEdit = mergeAnnotationOperations([
+      origin,
+      other,
+      firstEdit,
+      secondEdit,
+      thirdEdit,
+      laterEdit,
+    ]);
+    expect(afterOrderedEdit.annotations).toHaveLength(4);
+    expect(
+      afterOrderedEdit.annotations.find(
+        ({ annotation }) => annotation.id === firstEditBranchId,
+      )?.annotation.text,
+    ).toBe('later edit');
+
+    const resolution = createOperation({
+      format: 'indicoink-operation',
+      version: 1,
+      workspaceId,
+      streamId: `deck:${deckId}`,
+      deviceId: deviceA,
+      operationId: 'ee444444-0000-4000-8000-000000000001',
+      sequence: 3,
+      context: { [deviceA]: 2, [deviceB]: 1, [deviceC]: 2 },
+      requires: [],
+      kind: 'annotation.put',
+      payload: {
+        annotation: textNote('resolved edits', branchId),
+        documentVersion: null,
+        logicalNoteId: noteId,
+        branchOfOperationId: origin.operationId,
+        resolves: [
+          firstEdit.operationId,
+          secondEdit.operationId,
+          thirdEdit.operationId,
+        ],
+      },
+    });
+    const { integrity, ...resolutionFields } = resolution;
+    expect(integrity.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const implicitResolution = createOperation({
+      ...resolutionFields,
+      operationId: 'ff444444-0000-4000-8000-000000000001',
+      payload: { ...resolution.payload, resolves: [] },
+    });
+    expect(() =>
+      mergeAnnotationOperations([
+        origin,
+        other,
+        firstEdit,
+        secondEdit,
+        thirdEdit,
+        implicitResolution,
+      ]),
+    ).toThrow(/explicitly resolve every observed alternative/);
+    const afterResolution = mergeAnnotationOperations([
+      origin,
+      other,
+      firstEdit,
+      secondEdit,
+      thirdEdit,
+      resolution,
+    ]);
+    expect(afterResolution.annotations).toHaveLength(2);
+    expect(
+      afterResolution.annotations.find(
+        ({ annotation }) => annotation.id === branchId,
+      )?.annotation.text,
+    ).toBe('resolved edits');
   });
 
   it('preserves concurrent edit-delete alternatives for explicit review', () => {
@@ -366,6 +562,64 @@ describe('sync merge', () => {
     expect(merged.tombstones).toEqual([]);
     expect(merged.conflicts).toHaveLength(1);
     expect(merged.conflicts[0]?.alternatives).toHaveLength(2);
+  });
+
+  it('preserves concurrent different resolutions of an edit-delete conflict', () => {
+    const original = put(deviceA, 1, {}, 'original');
+    const deleted = erase(
+      deviceB,
+      1,
+      {},
+      noteId,
+      'dd444444-0000-4000-8000-000000000001',
+    );
+    const makeResolution = (
+      deviceId: string,
+      operationId: string,
+      text: string,
+    ) =>
+      createOperation({
+        format: 'indicoink-operation',
+        version: 1,
+        workspaceId,
+        streamId: `deck:${deckId}`,
+        deviceId,
+        sequence: deviceId === deviceB ? 2 : 1,
+        operationId,
+        context: { [deviceA]: 1, [deviceB]: 1 },
+        requires: [],
+        kind: 'annotation.put',
+        payload: {
+          annotation: textNote(text),
+          documentVersion: null,
+          logicalNoteId: noteId,
+          branchOfOperationId: null,
+          resolves: [original.operationId],
+        },
+      });
+    const keep = makeResolution(
+      deviceC,
+      'ee444444-0000-4000-8000-000000000001',
+      'keep edit',
+    );
+    const replace = makeResolution(
+      deviceB,
+      'ff444444-0000-4000-8000-000000000001',
+      'different choice',
+    );
+    const merged = mergeAnnotationOperations([
+      original,
+      deleted,
+      keep,
+      replace,
+    ]);
+    expect(merged.annotations).toEqual([]);
+    expect(merged.conflicts).toHaveLength(1);
+    expect(
+      merged.conflicts[0]?.alternatives
+        .map(({ operation }) => operation.operationId)
+        .sort(),
+    ).toEqual([keep.operationId, replace.operationId].sort());
   });
 
   it('keeps a concurrent bookmark unless a later operation observes both', () => {
@@ -412,5 +666,115 @@ describe('sync merge', () => {
     expect(
       mergeBookmarkState([bookmark, unbookmark, laterUnbookmark]).bookmarked,
     ).toBe(false);
+  });
+
+  it('selects causally newer metadata and retains uncertain concurrent refreshes', () => {
+    const metadataConferenceId = createConferenceId(
+      'https://example.org/event',
+    );
+    const refresh = (
+      deviceId: string,
+      operationId: string,
+      context: Record<string, number>,
+      upstreamRevision: string | null,
+      title: string,
+    ) => {
+      const operation = createOperation({
+        format: 'indicoink-operation',
+        version: 1,
+        workspaceId,
+        streamId: `metadata:${metadataConferenceId}`,
+        deviceId,
+        sequence: (context[deviceId] ?? 0) + 1,
+        operationId,
+        context,
+        requires: [],
+        kind: 'conference.metadata',
+        payload: {
+          batchId: '2b9e7cb4-8335-4a1a-9f4d-04a5986cc02d',
+          partIndex: 0,
+          partCount: 1,
+          conference: {
+            id: metadataConferenceId,
+            sourceUrl: 'https://example.org/event',
+            title,
+            dates: '',
+            host: 'example.org',
+            sourceKind: 'web',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          talks: [],
+          decks: [],
+          upstreamRevision,
+        },
+      });
+      return {
+        operation,
+        upstreamRevision,
+        records: { title },
+      };
+    };
+    const first = refresh(
+      deviceA,
+      '11444444-0000-4000-8000-000000000001',
+      {},
+      'rev-1',
+      'Older snapshot',
+    );
+    const second = refresh(
+      deviceB,
+      '22444444-0000-4000-8000-000000000001',
+      {},
+      'rev-2',
+      'Newer from another device',
+    );
+    const concurrent = mergeMetadataRefreshes([first, second]);
+    expect(concurrent.refresh).toBeNull();
+    expect(
+      concurrent.alternatives.map(({ records }) => records.title).sort(),
+    ).toEqual(['Newer from another device', 'Older snapshot']);
+    const noRevision = mergeMetadataRefreshes([
+      { ...first, upstreamRevision: null },
+      { ...second, upstreamRevision: null },
+    ]);
+    expect(noRevision.refresh).toBeNull();
+    expect(noRevision.alternatives).toHaveLength(2);
+    const sameTokenDifferentRecords = mergeMetadataRefreshes([
+      first,
+      { ...second, upstreamRevision: first.upstreamRevision },
+    ]);
+    expect(sameTokenDifferentRecords.refresh).toBeNull();
+    expect(sameTokenDifferentRecords.alternatives).toHaveLength(2);
+
+    const later = refresh(
+      deviceA,
+      '33444444-0000-4000-8000-000000000001',
+      { [deviceA]: 1, [deviceB]: 1 },
+      'rev-3',
+      'Causally later snapshot',
+    );
+    expect(mergeMetadataRefreshes([first, second, later])).toMatchObject({
+      refresh: { records: { title: 'Causally later snapshot' } },
+      alternatives: [],
+    });
+    expect(
+      mergeConcurrentConferenceDeletion([
+        first.operation,
+        createOperation({
+          format: 'indicoink-operation',
+          version: 1,
+          workspaceId,
+          streamId: `metadata:${metadataConferenceId}`,
+          deviceId: deviceC,
+          sequence: 1,
+          operationId: '44444444-0000-4000-8000-000000000001',
+          context: {},
+          requires: [],
+          kind: 'conference.delete',
+          payload: { deletedAt: 1, reason: 'user' },
+        }),
+      ]).deleted,
+    ).toBe(true);
   });
 });

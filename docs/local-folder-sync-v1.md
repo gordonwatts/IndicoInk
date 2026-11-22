@@ -82,6 +82,8 @@ Concurrent bookmark and unbookmark changes keep the bookmark; a causally later u
 
 Undo and redo stacks stay local. Executing either emits a new put or erase operation with a new operation ID and current causal context. Restoring an erased annotation uses a new annotation ID. A merge invalidates or rebases affected local history; undo may not overwrite an unseen remote edit. Resolving a manual conflict emits a new operation whose context observes every branch being resolved.
 
+For example, A adds stroke `S1` at sequence 1, undoes it with an erase at sequence 2 observing A:1, then redoes it with a put at sequence 3 observing A:2 and a fresh annotation ID `S2`. The tombstone for `S1` remains. If B edits `S1` without observing the erase, the edit and erase remain a reviewable conflict; local undo cannot overwrite B's unseen edit. If two devices independently restore an erased stroke, each restore uses a fresh ID, so both edits remain visible and recoverable instead of being selected by arrival order.
+
 ## Retention, device retirement, and budgets
 
 The release target is at most 10,000 operation/checkpoint/ack files and 1 GiB per library; a soft warning starts at 8,000 files or 800 MiB. Each stream targets a tail of at most 512 operations or 64 MiB after compaction. Snapshots have a 64 MiB stream limit and at most two live generations (current and replacement). The representative automated workload is four devices, 100 conferences, 1,000 talks, 250 decks, and 10,000 operations averaging 2 KiB, with a 20 MiB annotation corpus and 250 deck streams. Verify operation count/bytes, snapshot size, maximum entries/bytes/time per scan, and unopened-deck bootstrap against this workload.
